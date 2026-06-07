@@ -34,12 +34,23 @@ function RequireAuth({ children }: { children: JSX.Element }) {
   return children;
 }
 
+// Redirect OAuth callback code to the On-Call page
+function OAuthRedirect() {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("code")) {
+    window.location.replace(`/on-call${window.location.search}`);
+    return null;
+  }
+  return <Navigate to="/on-call" replace />;
+}
+
 export default function App() {
   return (
     <BrowserRouter>
       <ToastProvider>
         <Routes>
           <Route path="/login" element={<Login />} />
+          <Route path="/" element={<OAuthRedirect />} />
           <Route path="/tools/:toolId/print" element={<PrintLabelPage />} />
           <Route
             path="/*"
