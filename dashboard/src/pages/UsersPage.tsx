@@ -46,6 +46,7 @@ const fns = getFunctions();
 const callSendSms           = httpsCallable(fns, "sendTestSms");
 const callPasswordReset     = httpsCallable(fns, "sendPasswordResetEmail");
 const callExportIcs         = httpsCallable(fns, "exportUserIcs");
+const callGetUidByEmail     = httpsCallable(fns, "getUidByEmail");
 
 export default function UsersPage() {
   const isAdmin = useIsAdmin();
@@ -185,15 +186,28 @@ export default function UsersPage() {
     if (!trimmedEmail) { toast("Please enter an email.", "error"); return; }
     setAddingEmailBusy(true);
     try {
-      const tempPassword = Math.random().toString(36).slice(-10) + "A1!";
-      const secondaryApp = initializeApp(firebaseConfig, `secondary-${Date.now()}`);
-      const secondaryAuth = getAuth(secondaryApp);
-      const { user: newUser } = await createUserWithEmailAndPassword(secondaryAuth, trimmedEmail, tempPassword);
-      const newUid = newUser.uid;
-      await secondaryAuth.signOut();
-      await deleteApp(secondaryApp);
+      let newUid = "";
 
-      // Update Firestore first — account creation is the critical step
+      try {
+        // Try creating a new Auth account
+        const tempPassword = Math.random().toString(36).slice(-10) + "A1!";
+        const secondaryApp = initializeApp(firebaseConfig, `secondary-${Date.now()}`);
+        const secondaryAuth = getAuth(secondaryApp);
+        const { user: newUser } = await createUserWithEmailAndPassword(secondaryAuth, trimmedEmail, tempPassword);
+        newUid = newUser.uid;
+        await secondaryAuth.signOut();
+        await deleteApp(secondaryApp);
+      } catch (authErr: any) {
+        if (authErr.code === "auth/email-already-in-use") {
+          // Auth account already exists from a previous partial attempt — look up the uid
+          const result: any = await callGetUidByEmail({ email: trimmedEmail });
+          newUid = result.data.uid;
+        } else {
+          throw authErr;
+        }
+      }
+
+      // Update Firestore
       const oldUid = u.uid;
       await updateDoc(doc(db, "users", u.id), { uid: newUid, email: trimmedEmail });
 
@@ -206,10 +220,10 @@ export default function UsersPage() {
         }
       }
 
-      // Send setup email — non-blocking, failure just shows a note
+      // Send setup email — non-blocking
       callPasswordReset({ email: trimmedEmail, displayName: u.displayName })
-        .then(() => toast(`Account created for ${u.displayName}. Setup email sent to ${trimmedEmail}.`, "success"))
-        .catch(() => toast(`Account created for ${u.displayName}. Could not send setup email — use 🔑 Reset to send it later.`, "success"));
+        .then(() => toast(`Account linked for ${u.displayName}. Setup email sent to ${trimmedEmail}.`, "success"))
+        .catch(() => toast(`Account linked for ${u.displayName}. Use 🔑 Reset to send the setup email.`, "success"));
 
       setAddingEmailId(null);
       setAddEmailValue("");
