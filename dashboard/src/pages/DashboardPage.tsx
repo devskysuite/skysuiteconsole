@@ -432,7 +432,7 @@ export default function DashboardPage() {
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  pageTitle:    { fontSize: 28, fontWeight: 900, color: "#1e7d3a", marginBottom: 24 },
+  pageTitle:    { fontSize: 28, fontWeight: 900, color: "#1565c0", marginBottom: 24 },
   statsRow:     { display: "flex", gap: 16, marginBottom: 36, flexWrap: "wrap" },
   statCard:     { background: "#fff", borderRadius: 12, padding: "20px 24px", boxShadow: "0 1px 6px rgba(0,0,0,0.06)", border: "1px solid #e5e5e5", height: "100%" },
   statValue:    { fontSize: 40, fontWeight: 900, lineHeight: 1 },
@@ -447,17 +447,17 @@ const styles: Record<string, React.CSSProperties> = {
   // Badge colours (reused as badgeStyle overrides)
   zeroCount:    { background: "#f0f0f0", color: "#aaa",    border: "1px solid #ddd" },
   inShopCount:  { background: "#fff8e1", color: "#7a4f00", border: "1px solid #f0c040" },
-  neutralCount: { background: "#eef2f7", color: "#1e7d3a", border: "1px solid #c5d3e8" },
+  neutralCount: { background: "#eef2f7", color: "#1565c0", border: "1px solid #c5d3e8" },
   overdueCount: { background: "#ffeaea", color: "#a80000", border: "1px solid #d32f2f" },
   damagedCount: { background: "#f3e5f5", color: "#6a0080", border: "1px solid #9c27b0" },
   bookingCount: { background: "#e0f0ff", color: "#005a8b", border: "1px solid #90c8f0" },
 
-  emptyBox:     { background: "#edfaf1", border: "1px solid #34c759", borderRadius: 10, padding: "16px 20px", color: "#1a7a3c", fontWeight: 600 },
+  emptyBox:     { background: "#eff6ff", border: "1px solid #93c5fd", borderRadius: 10, padding: "16px 20px", color: "#1565c0", fontWeight: 600 },
   table:        { width: "100%", borderCollapse: "collapse", tableLayout: "fixed", background: "#fff", borderRadius: 12, overflow: "hidden", boxShadow: "0 1px 6px rgba(0,0,0,0.06)" },
-  th:           { background: "#1a4a2e", padding: "10px 14px", textAlign: "left", fontSize: 12, fontWeight: 700, color: "#fff", borderBottom: "1px solid #0d2b19", textTransform: "uppercase", letterSpacing: 0.5 },
+  th:           { background: "#0d2e5e", padding: "10px 14px", textAlign: "left", fontSize: 12, fontWeight: 700, color: "#fff", borderBottom: "1px solid #0d2e5e", textTransform: "uppercase", letterSpacing: 0.5 },
   td:           { padding: "12px 14px", borderBottom: "1px solid #f0f0f0", fontSize: 14 },
   trOverdue:    { backgroundColor: "#fff8f8" },
   trDamaged:    { backgroundColor: "#fdf6ff" },
   trBooking:    { backgroundColor: "#f0f7ff" },
-  idLink:       { color: "#1e7d3a", fontWeight: 700, textDecoration: "none", fontSize: 13 },
+  idLink:       { color: "#1565c0", fontWeight: 700, textDecoration: "none", fontSize: 13 },
 };

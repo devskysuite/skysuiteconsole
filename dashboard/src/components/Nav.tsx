@@ -270,7 +270,7 @@ export default function Nav() {
 
 const styles: Record<string, React.CSSProperties> = {
   nav: {
-    backgroundColor: "#0d2b19",
+    background: "linear-gradient(135deg, #0d2e5e, #1565c0)",
     color: "#fff",
     padding: "0 32px",
     display: "flex",
@@ -323,8 +323,8 @@ const styles: Record<string, React.CSSProperties> = {
     borderBottom: "1px solid #f0f0f0",
   },
   dropdownItemActive: {
-    background: "#eaf5ee",
-    color: "#0d2b19",
+    background: "#eff6ff",
+    color: "#1565c0",
   },
   adminBtn: {
     color: "rgba(255,255,255,0.75)",
