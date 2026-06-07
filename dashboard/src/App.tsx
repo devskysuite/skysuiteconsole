@@ -28,7 +28,20 @@ import Spinner from "./components/Spinner";
 
 function RequireAuth({ children }: { children: JSX.Element }) {
   const [user, setUser] = useState<User | null | "loading">("loading");
-  useEffect(() => onAuthStateChanged(auth, setUser), []);
+  useEffect(() => onAuthStateChanged(auth, async (u) => {
+    setUser(u);
+    // Auto-link: if a Firestore doc has this email but empty uid, fill it in
+    if (u?.email) {
+      try {
+        const { getDocs, collection, query, where, doc, updateDoc } = await import("firebase/firestore");
+        const { db } = await import("./firebase");
+        const snap = await getDocs(query(collection(db, "users"), where("email", "==", u.email), where("uid", "==", "")));
+        for (const d of snap.docs) {
+          await updateDoc(doc(db, "users", d.id), { uid: u.uid });
+        }
+      } catch {}
+    }
+  }), []);
   if (user === "loading") return <div style={{ padding: 40, textAlign: "center" }}><Spinner /></div>;
   if (!user) return <Navigate to="/login" replace />;
   return children;

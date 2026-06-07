@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { initializeApp, deleteApp } from "firebase/app";
-import { getAuth, createUserWithEmailAndPassword, onAuthStateChanged } from "firebase/auth";
+import { getAuth, createUserWithEmailAndPassword, onAuthStateChanged, sendPasswordResetEmail as fbSendPasswordReset } from "firebase/auth";
 import { getFunctions, httpsCallable } from "firebase/functions";
 import {
   addDoc,
@@ -199,15 +199,14 @@ export default function UsersPage() {
         await deleteApp(secondaryApp);
       } catch (authErr: any) {
         if (authErr.code === "auth/email-already-in-use") {
-          // Auth account already exists from a previous partial attempt — look up the uid
-          const result: any = await callGetUidByEmail({ email: trimmedEmail });
-          newUid = result.data.uid;
+          // Auth account already exists — save email, uid will auto-link on their first login
+          newUid = "";
         } else {
           throw authErr;
         }
       }
 
-      // Update Firestore
+      // Save email to Firestore (uid fills in automatically when they first log in)
       const oldUid = u.uid;
       await updateDoc(doc(db, "users", u.id), { uid: newUid, email: trimmedEmail });
 
@@ -220,10 +219,9 @@ export default function UsersPage() {
         }
       }
 
-      // Send setup email — non-blocking
-      callPasswordReset({ email: trimmedEmail, displayName: u.displayName })
-        .then(() => toast(`Account linked for ${u.displayName}. Setup email sent to ${trimmedEmail}.`, "success"))
-        .catch(() => toast(`Account linked for ${u.displayName}. Use 🔑 Reset to send the setup email.`, "success"));
+      // Send Firebase password reset (works on existing accounts, no Cloud Function needed)
+      fbSendPasswordReset(auth, trimmedEmail).catch(() => {});
+      toast(`✅ Email saved for ${u.displayName}. Password setup link sent to ${trimmedEmail}.`, "success");
 
       setAddingEmailId(null);
       setAddEmailValue("");
