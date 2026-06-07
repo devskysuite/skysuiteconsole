@@ -20,6 +20,7 @@ import TimeOffPage from "./pages/TimeOffPage";
 import TimeOffApprovalsPage from "./pages/TimeOffApprovalsPage";
 import OnCallPage from "./pages/OnCallPage";
 import OnCallAdminPage from "./pages/OnCallAdminPage";
+import OnCallManagerPage from "./pages/OnCallManagerPage";
 import PidTuningPage from "./pages/PidTuningPage";
 import Nav from "./components/Nav";
 import { ToastProvider } from "./components/Toast";
@@ -62,7 +63,8 @@ export default function App() {
                       <Route path="/repair-contacts" element={<RepairContactsPage />} />
                       <Route path="/time-off" element={<TimeOffPage />} />
                       <Route path="/time-off/approvals" element={<TimeOffApprovalsPage />} />
-                      <Route path="/on-call" element={<OnCallPage />} />
+                      <Route path="/on-call" element={<OnCallManagerPage />} />
+                      <Route path="/on-call/legacy" element={<OnCallPage />} />
                       <Route path="/on-call/manage" element={<OnCallAdminPage />} />
                       <Route path="/pid-tuning" element={<PidTuningPage />} />
                     </Routes>
