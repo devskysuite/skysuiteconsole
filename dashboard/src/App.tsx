@@ -34,6 +34,21 @@ function RequireAuth({ children }: { children: JSX.Element }) {
   return children;
 }
 
+import { useLocation } from "react-router-dom";
+
+function AppLayout({ children }: { children: React.ReactNode }) {
+  const { pathname } = useLocation();
+  const fullWidth = pathname.startsWith("/on-call");
+  return (
+    <>
+      <Nav />
+      <div className="page-content" style={{ padding: "24px 32px", maxWidth: fullWidth ? "100%" : 1100, margin: "0 auto" }}>
+        {children}
+      </div>
+    </>
+  );
+}
+
 // Redirect OAuth callback code to the On-Call page
 function OAuthRedirect() {
   const params = new URLSearchParams(window.location.search);
@@ -56,9 +71,7 @@ export default function App() {
             path="/*"
             element={
               <RequireAuth>
-                <>
-                  <Nav />
-                  <div className="page-content" style={{ padding: "24px 32px", maxWidth: 1100, margin: "0 auto" }}>
+                <AppLayout>
                     <Routes>
                       <Route path="/" element={<DashboardPage />} />
                       <Route path="/tools" element={<ToolsPage />} />
@@ -79,8 +92,7 @@ export default function App() {
                       <Route path="/on-call/manage" element={<OnCallAdminPage />} />
                       <Route path="/pid-tuning" element={<PidTuningPage />} />
                     </Routes>
-                  </div>
-                </>
+                </AppLayout>
               </RequireAuth>
             }
           />

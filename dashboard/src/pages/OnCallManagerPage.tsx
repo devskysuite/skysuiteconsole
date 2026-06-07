@@ -276,7 +276,7 @@ export default function OnCallManagerPage() {
   const pendingCount=myPendingSwaps.length;
 
   return (
-    <div style={{margin:"0 -32px",padding:"20px 32px"}}>
+    <div>
       {/* Header */}
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20,flexWrap:"wrap",gap:12}}>
         <h1 style={{fontSize:24,fontWeight:800,color:"#0d2e5e"}}>On-Call Manager</h1>
