@@ -501,12 +501,14 @@ function RotationOrderDisplay({ db, rosterNames }: { db: any; rosterNames: strin
     <div>
       {[thisYear, thisYear + 1].map(y => {
         const order = orders[String(y)] || [];
+        const isCurrent = y === thisYear;
         return (
           <div key={y} style={{ marginBottom: 12 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
-              <span style={{ fontSize: 13, fontWeight: 700, color: "#0d2e5e" }}>📅 {y} Order</span>
-              <button onClick={() => shuffleYear(y)} style={{ fontSize: 11, padding: "2px 10px", borderRadius: 99, background: "#f3f4f6", border: "1px solid #d1d5db", cursor: "pointer", fontWeight: 600 }}>🔀 Shuffle</button>
-              {y === thisYear + 1 && <span style={{ fontSize: 11, color: "#9ca3af" }}>Auto-shuffles Jan 1</span>}
+              <span style={{ fontSize: 13, fontWeight: 700, color: "#0d2e5e" }}>📅 {y} {isCurrent ? "(Current)" : "(Next Year)"}</span>
+              {!isCurrent && <button onClick={() => shuffleYear(y)} style={{ fontSize: 11, padding: "2px 10px", borderRadius: 99, background: "#eff6ff", border: "1px solid #bfdbfe", cursor: "pointer", fontWeight: 600, color: "#1565c0" }}>🔀 New Shuffle for {y}</button>}
+              {isCurrent && order.length > 0 && <span style={{ fontSize: 11, color: "#9ca3af" }}>🔒 Locked</span>}
+              {!isCurrent && <span style={{ fontSize: 11, color: "#9ca3af" }}>Auto-generates new order on Jan 1</span>}
             </div>
             {order.length > 0 ? (
               <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
