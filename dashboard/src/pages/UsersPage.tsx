@@ -126,9 +126,10 @@ export default function UsersPage() {
       const { user: newUser } = await createUserWithEmailAndPassword(secondaryAuth, email.trim(), tempPassword);
       const newUid = newUser.uid;
 
-      await callPasswordReset({ email: email.trim(), displayName: displayName.trim() });
       await secondaryAuth.signOut();
       await deleteApp(secondaryApp);
+      // Non-blocking email
+      callPasswordReset({ email: email.trim(), displayName: displayName.trim() }).catch(() => {});
 
       const existingSnap = await getDocs(
         query(collection(db, "users"), where("displayName", "==", displayName.trim()))
@@ -189,13 +190,10 @@ export default function UsersPage() {
       const secondaryAuth = getAuth(secondaryApp);
       const { user: newUser } = await createUserWithEmailAndPassword(secondaryAuth, trimmedEmail, tempPassword);
       const newUid = newUser.uid;
-
-      // Send branded reset email via Cloud Function
-      await callPasswordReset({ email: trimmedEmail, displayName: u.displayName });
-
       await secondaryAuth.signOut();
       await deleteApp(secondaryApp);
 
+      // Update Firestore first — account creation is the critical step
       const oldUid = u.uid;
       await updateDoc(doc(db, "users", u.id), { uid: newUid, email: trimmedEmail });
 
@@ -208,7 +206,11 @@ export default function UsersPage() {
         }
       }
 
-      toast(`Account created for ${u.displayName}. Setup email sent to ${trimmedEmail}.`, "success");
+      // Send setup email — non-blocking, failure just shows a note
+      callPasswordReset({ email: trimmedEmail, displayName: u.displayName })
+        .then(() => toast(`Account created for ${u.displayName}. Setup email sent to ${trimmedEmail}.`, "success"))
+        .catch(() => toast(`Account created for ${u.displayName}. Could not send setup email — use 🔑 Reset to send it later.`, "success"));
+
       setAddingEmailId(null);
       setAddEmailValue("");
       await loadUsers();
