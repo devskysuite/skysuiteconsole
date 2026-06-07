@@ -284,6 +284,141 @@ export default function TimeOffPage() {
           </table>
         )}
       </div>
+
+      {/* Vacation Calendar */}
+      <VacationCalendar />
+    </div>
+  );
+}
+
+// ── Vacation Calendar ─────────────────────────────────────────────────────────
+const TENANT_ID_VC = "1c1d62e8-f392-4caa-a8a6-0ce98e0913d9";
+const CLIENT_ID_VC = "9a1a21f1-40a3-4872-a4d6-888bd51d116d";
+const CAL_ID_VC    = "AAMkADgyOGUwMDUyLTNiZjMtNGQzNi1hNTgwLTQ2M2IzYzE2YmQ5MgBGAAAAAACGxuDePTlOQawDDU8UfW0gBwBxt6lSDH0kQY0tk4wDjNk8AAAAAAEGAABxt6lSDH0kQY0tk4wDjNk8AAALmQObAAA=";
+const MONTHS_VC = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+const DAYS_VC   = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+
+import { doc as fsDoc, getDoc as fsGetDoc, setDoc as fsSetDoc } from "firebase/firestore";
+
+function VacationCalendar() {
+  const today = new Date();
+  const [year,  setYear]  = useState(today.getFullYear());
+  const [month, setMonth] = useState(today.getMonth());
+  const [view,  setView]  = useState<"month"|"list">("month");
+  const [events, setEvents] = useState<{id:string;subject:string;start:string;end:string}[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [token, setToken] = useState("");
+
+  useEffect(()=>{
+    async function loadToken() {
+      try {
+        const snap = await fsGetDoc(fsDoc(db,"settings","outlookOnCall"));
+        if(snap.exists()&&snap.data().refreshToken){
+          const r = await fetch(`https://login.microsoftonline.com/${TENANT_ID_VC}/oauth2/v2.0/token`,{
+            method:"POST",body:new URLSearchParams({client_id:CLIENT_ID_VC,refresh_token:snap.data().refreshToken,grant_type:"refresh_token",scope:"Calendars.ReadWrite offline_access"})
+          });
+          const d = await r.json();
+          if(d.access_token){ setToken(d.access_token); try{await fsSetDoc(fsDoc(db,"settings","outlookOnCall"),{refreshToken:d.refresh_token},{merge:true});}catch{} }
+        }
+      } catch {}
+    }
+    loadToken();
+  },[]);
+
+  useEffect(()=>{
+    if(!token) return;
+    setLoading(true);
+    const start=new Date(year,month,1).toISOString().slice(0,10);
+    const end=new Date(year,month+1,1).toISOString().slice(0,10);
+    (async()=>{
+      const evs:any[]=[];
+      let url=`https://graph.microsoft.com/v1.0/me/calendars/${CAL_ID_VC}/calendarView?startDateTime=${start}T00:00:00&endDateTime=${end}T00:00:00&$top=999&$select=id,subject,start,end`;
+      while(url){
+        const d=await(await fetch(url,{headers:{Authorization:`Bearer ${token}`}})).json();
+        // ONLY vacation events
+        (d.value||[]).filter((e:any)=>e.subject?.toLowerCase().includes("vacation")).forEach((e:any)=>evs.push({id:e.id,subject:e.subject,start:e.start?.date||e.start?.dateTime?.slice(0,10)||"",end:e.end?.date||e.end?.dateTime?.slice(0,10)||""}));
+        url=d["@odata.nextLink"]||"";
+      }
+      setEvents(evs); setLoading(false);
+    })().catch(()=>setLoading(false));
+  },[token,year,month]);
+
+  const todayStr=`${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,"0")}-${String(today.getDate()).padStart(2,"0")}`;
+  const first=new Date(year,month,1).getDay();
+  const days=new Date(year,month+1,0).getDate();
+  const grid:string[]=[];
+  for(let i=0;i<first;i++) grid.push("");
+  for(let d=1;d<=days;d++) grid.push(`${year}-${String(month+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`);
+
+  // Build map: each date that falls within a vacation range
+  const vacMap:Record<string,string[]>={};
+  events.forEach(ev=>{
+    let cur=new Date(ev.start+"T12:00:00");
+    const end=new Date(ev.end+"T12:00:00");
+    const name=ev.subject.replace(/vacation\s*[-–]?\s*/i,"").replace(/[-–]\s*vacation/i,"").trim();
+    while(cur<end){
+      const d=cur.toISOString().slice(0,10);
+      if(!vacMap[d]) vacMap[d]=[];
+      if(!vacMap[d].includes(name)) vacMap[d].push(name);
+      cur.setDate(cur.getDate()+1);
+    }
+  });
+
+  return (
+    <div style={{border:"1px solid #e5e5e5",borderRadius:12,padding:24,marginTop:0,backgroundColor:"#fff"}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:10}}>
+        <h2 style={{fontSize:16,fontWeight:700,color:"#333",margin:0}}>🏖 Vacation Calendar</h2>
+        <div style={{display:"flex",gap:8,alignItems:"center"}}>
+          <select value={view} onChange={e=>setView(e.target.value as any)} style={{padding:"5px 10px",border:"1px solid #ddd",borderRadius:8,fontSize:13}}>
+            <option value="month">Month View</option>
+            <option value="list">List View</option>
+          </select>
+        </div>
+      </div>
+
+      {/* Month nav */}
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
+        <button onClick={()=>{let m=month-1,y=year;if(m<0){m=11;y--;}setMonth(m);setYear(y);}} style={{background:"#f3f4f6",border:"1px solid #ddd",borderRadius:8,padding:"4px 12px",cursor:"pointer",fontWeight:700}}>◀</button>
+        <span style={{fontWeight:700,fontSize:16,color:"#0d2e5e"}}>{MONTHS_VC[month]} {year}</span>
+        <button onClick={()=>{let m=month+1,y=year;if(m>11){m=0;y++;}setMonth(m);setYear(y);}} style={{background:"#f3f4f6",border:"1px solid #ddd",borderRadius:8,padding:"4px 12px",cursor:"pointer",fontWeight:700}}>▶</button>
+      </div>
+
+      {loading&&<p style={{color:"#9ca3af",fontSize:13,textAlign:"center"}}>⏳ Loading...</p>}
+      {!token&&<p style={{color:"#9ca3af",fontSize:13}}>Connect Outlook in On-Call Setup to see the vacation calendar.</p>}
+
+      {token&&!loading&&view==="month"&&(
+        <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2}}>
+          {DAYS_VC.map(d=><div key={d} style={{textAlign:"center",fontSize:11,fontWeight:700,color:"#6b7280",padding:"6px 0",textTransform:"uppercase"}}>{d}</div>)}
+          {grid.map((date,i)=>{
+            const names=date?(vacMap[date]||[]):[];
+            const isToday=date===todayStr;
+            return(
+              <div key={i} style={{minHeight:80,background:isToday?"#fff8f0":names.length?"#fff7ed":"#fafafa",border:isToday?"2px solid #f97316":"1px solid #e5e7eb",borderRadius:6,padding:4}}>
+                {date&&<>
+                  <div style={{fontSize:12,fontWeight:isToday?800:500,color:isToday?"#f97316":"#374151",marginBottom:2}}>{parseInt(date.slice(8))}</div>
+                  {names.slice(0,3).map(n=><div key={n} style={{fontSize:10,fontWeight:600,background:"#f97316",color:"white",borderRadius:4,padding:"1px 4px",marginBottom:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>🏖 {n}</div>)}
+                  {names.length>3&&<div style={{fontSize:9,color:"#9ca3af"}}>+{names.length-3}</div>}
+                </>}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {token&&!loading&&view==="list"&&(
+        <div>
+          {events.length===0&&<p style={{color:"#9ca3af",fontSize:13}}>No vacations this month.</p>}
+          {events.map(ev=>(
+            <div key={ev.id} style={{display:"flex",justifyContent:"space-between",padding:"10px 0",borderBottom:"1px solid #f5f5f5"}}>
+              <div>
+                <div style={{fontWeight:600,fontSize:14}}>{ev.subject.replace(/vacation\s*[-–]?\s*/i,"").replace(/[-–]\s*vacation/i,"").trim()}</div>
+                <div style={{fontSize:12,color:"#6b7280"}}>{ev.start} → {ev.end}</div>
+              </div>
+              <span style={{background:"#fff3e0",color:"#e65100",fontSize:12,fontWeight:600,padding:"3px 10px",borderRadius:99,alignSelf:"center"}}>🏖 Vacation</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

@@ -303,10 +303,9 @@ export default function OnCallManagerPage() {
             <span style={{fontWeight:700,fontSize:18,color:"#0d2e5e"}}>{MONTHS[month]} {year}</span>
             <button onClick={()=>{let m=month+1,y=year;if(m>11){m=0;y++;}setMonth(m);setYear(y);}} style={navS}>▶</button>
           </div>
-          <div style={{display:"flex",gap:16,marginBottom:14,flexWrap:"wrap"}}>
+          <div style={{display:"flex",gap:16,marginBottom:14,flexWrap:"wrap",alignItems:"center"}}>
             <span style={{background:"#1565c0",color:"#fff",fontSize:11,fontWeight:600,padding:"2px 8px",borderRadius:99}}>📞 On Call</span>
-            <span style={{background:"#f97316",color:"#fff",fontSize:11,fontWeight:600,padding:"2px 8px",borderRadius:99}}>🏖 Vacation</span>
-            {connected&&<span style={{fontSize:11,color:"#9ca3af"}}>Click your on-call day to request a swap</span>}
+            {connected&&<span style={{fontSize:11,color:"#9ca3af"}}>Click your on-call day to request a swap · Vacations are in Time Off</span>}
           </div>
           {loading&&<div style={{textAlign:"center",padding:40,color:"#9ca3af"}}>⏳ Loading...</div>}
           {!connected&&!loading&&<div style={{textAlign:"center",padding:40,color:"#9ca3af"}}>Connect Outlook above to view the calendar.</div>}
@@ -314,7 +313,8 @@ export default function OnCallManagerPage() {
             <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:3}}>
               {DAYS.map(d=><div key={d} style={{textAlign:"center",fontSize:12,fontWeight:700,color:"#6b7280",padding:"8px 0",textTransform:"uppercase"}}>{d}</div>)}
               {grid.map((date,i)=>{
-                const dayEvs=date?(eventMap[date]||[]):[];
+                // On-call calendar shows ONLY on-call events — no vacations
+                const dayEvs=date?(eventMap[date]||[]).filter(e=>{const s=e.subject.toLowerCase();return(s.includes("on call")||s.includes("oncall"))&&!s.includes("vacation");}):[];
                 const isToday=date===todayStr;
                 const myOncall=dayEvs.find(e=>{const s=e.subject.toLowerCase();return(s.includes("on call")||s.includes("oncall"))&&!s.includes("vacation")&&getName(e.subject).toLowerCase()===currentUser?.displayName?.split(" ")[0].toLowerCase();});
                 // Admin can click any on-call event; user can only click their own
