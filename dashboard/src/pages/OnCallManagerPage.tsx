@@ -78,9 +78,11 @@ export default function OnCallManagerPage() {
   // Swap modal
   const [swapModal,setSwapModal]=useState<{event:CalEvent}|null>(null);
   const [swapTargetUid,setSwapTargetUid]=useState("");
+  const [swapTargetName,setSwapTargetName]=useState("");
   const [swapTheirDate,setSwapTheirDate]=useState("");
   const [swapReason,setSwapReason]=useState("");
   const [swapSubmitting,setSwapSubmitting]=useState(false);
+  const [rosterNames,setRosterNames]=useState<string[]>([]);
 
   // Auth user
   useEffect(()=>{ return onAuthStateChanged(auth, u=>{ if(u) setCurrentUser({uid:u.uid,displayName:u.displayName||u.email||"Me"}); }); },[]);
@@ -89,6 +91,10 @@ export default function OnCallManagerPage() {
   useEffect(()=>{
     getDocs(collection(db,"users")).then(snap=>{
       setAllUsers(snap.docs.map(d=>({ uid:d.data().uid||d.id, displayName:d.data().displayName||d.data().email||d.id })));
+    }).catch(()=>{});
+    // Load on-call roster
+    getDoc(doc(db,"settings","onCallConfig")).then(snap=>{
+      if(snap.exists()&&snap.data().employees) setRosterNames(snap.data().employees);
     }).catch(()=>{});
   },[]);
 
@@ -156,19 +162,21 @@ export default function OnCallManagerPage() {
 
   // Swap actions
   async function submitSwap() {
-    if(!swapModal||!swapTargetUid||!swapTheirDate||!currentUser) return;
+    if(!swapModal||!swapTargetName||!swapTheirDate||!currentUser) return;
     setSwapSubmitting(true);
-    const target=allUsers.find(u=>u.uid===swapTargetUid);
-    // Find their event on that date
-    const theirEvent=events.find(e=>e.start===swapTheirDate&&getName(e.subject).toLowerCase()===target?.displayName?.split(" ")[0].toLowerCase());
+    const myName=getName(swapModal.event.subject);
+    // Find target's event on their date
+    const theirEvent=events.find(e=>e.start===swapTheirDate&&getName(e.subject).toLowerCase()===swapTargetName.toLowerCase());
+    // Find target user in Firestore (may not exist)
+    const targetUser=allUsers.find(u=>u.displayName.split(" ")[0].toLowerCase()===swapTargetName.toLowerCase());
     await addDoc(collection(db,"onCallSwapRequests"),{
-      requesterUid:currentUser.uid, requesterName:currentUser.displayName,
-      targetUid:swapTargetUid, targetName:target?.displayName||"",
+      requesterUid:currentUser.uid, requesterName:myName,
+      targetUid:targetUser?.uid||swapTargetName, targetName:swapTargetName,
       myDate:swapModal.event.start, myEventId:swapModal.event.id,
       theirDate:swapTheirDate, theirEventId:theirEvent?.id||"",
       reason:swapReason, status:"PENDING", createdAt:serverTimestamp()
     });
-    setSwapModal(null); setSwapReason(""); setSwapTargetUid(""); setSwapTheirDate(""); setSwapSubmitting(false);
+    setSwapModal(null); setSwapReason(""); setSwapTargetName(""); setSwapTargetUid(""); setSwapTheirDate(""); setSwapSubmitting(false);
   }
 
   async function resolveSwap(swap:SwapReq, accept:boolean) {
@@ -412,15 +420,17 @@ export default function OnCallManagerPage() {
             <p style={{fontSize:13,color:"#6b7280",marginBottom:16}}>Your on-call day: <strong>{swapModal.event.start}</strong></p>
 
             <label style={lbl}>Swap with</label>
-            <select value={swapTargetUid} onChange={e=>setSwapTargetUid(e.target.value)} style={inp}>
+            <select value={swapTargetName} onChange={e=>setSwapTargetName(e.target.value)} style={inp}>
               <option value="">— Select person —</option>
-              {allUsers.filter(u=>u.uid!==currentUser?.uid).map(u=><option key={u.uid} value={u.uid}>{u.displayName}</option>)}
+              {(rosterNames.length>0?rosterNames:allUsers.map(u=>u.displayName.split(" ")[0]))
+                .filter(n=>n.toLowerCase()!==getName(swapModal.event.subject).toLowerCase())
+                .map(n=><option key={n} value={n}>{n}</option>)}
             </select>
 
             <label style={{...lbl,marginTop:12}}>Their date to swap</label>
             <select value={swapTheirDate} onChange={e=>setSwapTheirDate(e.target.value)} style={inp}>
               <option value="">— Select date —</option>
-              {events.filter(e=>{const s=e.subject.toLowerCase();const target=allUsers.find(u=>u.uid===swapTargetUid);return(s.includes("on call")||s.includes("oncall"))&&!s.includes("vacation")&&getName(e.subject).toLowerCase()===target?.displayName?.split(" ")[0].toLowerCase()&&e.start>=todayStr;}).map(e=><option key={e.id} value={e.start}>{e.start}</option>)}
+              {events.filter(e=>{const s=e.subject.toLowerCase();return(s.includes("on call")||s.includes("oncall"))&&!s.includes("vacation")&&getName(e.subject).toLowerCase()===swapTargetName.toLowerCase()&&e.start>=todayStr;}).map(e=><option key={e.id} value={e.start}>{e.start}</option>)}
             </select>
 
             <label style={{...lbl,marginTop:12}}>Reason (optional)</label>
@@ -428,7 +438,7 @@ export default function OnCallManagerPage() {
 
             <div style={{display:"flex",gap:10,marginTop:20}}>
               <button onClick={()=>setSwapModal(null)} style={btnS("#6b7280")}>Cancel</button>
-              <button onClick={submitSwap} disabled={!swapTargetUid||!swapTheirDate||swapSubmitting} style={btnS("#1565c0")}>{swapSubmitting?"Sending...":"Send Request"}</button>
+              <button onClick={submitSwap} disabled={!swapTargetName||!swapTheirDate||swapSubmitting} style={btnS("#1565c0")}>{swapSubmitting?"Sending...":"Send Request"}</button>
             </div>
           </div>
         </div>
