@@ -180,7 +180,7 @@ export default function TimeOffPage() {
       <h1 style={styles.h1}>Time Off Requests</h1>
 
       {/* ── Submit Form ── */}
-      <div style={styles.card}>
+      <div id="time-off-request-form" style={styles.card}>
         <h2 style={styles.h2}>Request Vacation</h2>
 
         {/* Single / Multiple day toggle */}
@@ -364,40 +364,44 @@ function VacationCalendar() {
     }
   });
 
+  const scrollToRequest = () => document.getElementById("time-off-request-form")?.scrollIntoView({behavior:"smooth"});
+
   return (
-    <div style={{border:"1px solid #e5e5e5",borderRadius:12,padding:24,marginTop:0,backgroundColor:"#fff"}}>
+    <div style={{background:"white",borderRadius:12,padding:20,boxShadow:"0 1px 4px rgba(0,0,0,0.07)",marginTop:0}}>
+      {/* Header matching on-call style */}
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:10}}>
-        <h2 style={{fontSize:16,fontWeight:700,color:"#333",margin:0}}>🏖 Vacation Calendar</h2>
-        <div style={{display:"flex",gap:8,alignItems:"center"}}>
-          <select value={view} onChange={e=>setView(e.target.value as any)} style={{padding:"5px 10px",border:"1px solid #ddd",borderRadius:8,fontSize:13}}>
-            <option value="month">Month View</option>
-            <option value="list">List View</option>
-          </select>
+        <div style={{display:"flex",alignItems:"center",gap:12}}>
+          <button onClick={()=>{let m=month-1,y=year;if(m<0){m=11;y--;}setMonth(m);setYear(y);}} style={{background:"#f3f4f6",border:"1px solid #d1d5db",borderRadius:8,padding:"6px 14px",cursor:"pointer",fontWeight:700,fontSize:16}}>◀</button>
+          <span style={{fontWeight:700,fontSize:18,color:"#0d2e5e",minWidth:160,textAlign:"center"}}>{MONTHS_VC[month]} {year}</span>
+          <button onClick={()=>{let m=month+1,y=year;if(m>11){m=0;y++;}setMonth(m);setYear(y);}} style={{background:"#f3f4f6",border:"1px solid #d1d5db",borderRadius:8,padding:"6px 14px",cursor:"pointer",fontWeight:700,fontSize:16}}>▶</button>
         </div>
+        <select value={view} onChange={e=>{if(e.target.value==="request"){scrollToRequest();return;}setView(e.target.value as any);}}
+          style={{padding:"7px 12px",border:"1px solid #d1d5db",borderRadius:8,fontSize:14,fontWeight:600,color:"#374151",cursor:"pointer"}}>
+          <option value="month">📅 Month View</option>
+          <option value="list">📋 List View</option>
+          <option value="request">✏️ Request Time Off</option>
+        </select>
       </div>
 
-      {/* Month nav */}
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
-        <button onClick={()=>{let m=month-1,y=year;if(m<0){m=11;y--;}setMonth(m);setYear(y);}} style={{background:"#f3f4f6",border:"1px solid #ddd",borderRadius:8,padding:"4px 12px",cursor:"pointer",fontWeight:700}}>◀</button>
-        <span style={{fontWeight:700,fontSize:16,color:"#0d2e5e"}}>{MONTHS_VC[month]} {year}</span>
-        <button onClick={()=>{let m=month+1,y=year;if(m>11){m=0;y++;}setMonth(m);setYear(y);}} style={{background:"#f3f4f6",border:"1px solid #ddd",borderRadius:8,padding:"4px 12px",cursor:"pointer",fontWeight:700}}>▶</button>
+      <div style={{display:"flex",gap:16,marginBottom:14,alignItems:"center"}}>
+        <span style={{background:"#f97316",color:"#fff",fontSize:11,fontWeight:600,padding:"2px 8px",borderRadius:99}}>🏖 Vacation</span>
+        {!token&&<span style={{fontSize:11,color:"#9ca3af"}}>Connect Outlook in On-Call Setup to see team vacations</span>}
       </div>
 
-      {loading&&<p style={{color:"#9ca3af",fontSize:13,textAlign:"center"}}>⏳ Loading...</p>}
-      {!token&&<p style={{color:"#9ca3af",fontSize:13}}>Connect Outlook in On-Call Setup to see the vacation calendar.</p>}
+      {loading&&<div style={{textAlign:"center",padding:40,color:"#9ca3af"}}>⏳ Loading...</div>}
 
       {token&&!loading&&view==="month"&&(
-        <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2}}>
-          {DAYS_VC.map(d=><div key={d} style={{textAlign:"center",fontSize:11,fontWeight:700,color:"#6b7280",padding:"6px 0",textTransform:"uppercase"}}>{d}</div>)}
+        <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:3}}>
+          {DAYS_VC.map(d=><div key={d} style={{textAlign:"center",fontSize:12,fontWeight:700,color:"#6b7280",padding:"8px 0",textTransform:"uppercase"}}>{d}</div>)}
           {grid.map((date,i)=>{
             const names=date?(vacMap[date]||[]):[];
             const isToday=date===todayStr;
             return(
-              <div key={i} style={{minHeight:80,background:isToday?"#fff8f0":names.length?"#fff7ed":"#fafafa",border:isToday?"2px solid #f97316":"1px solid #e5e7eb",borderRadius:6,padding:4}}>
+              <div key={i} style={{minHeight:110,background:isToday?"#fff8f0":names.length?"#fff7ed":"#fafafa",border:isToday?"2px solid #f97316":"1px solid #e5e7eb",borderRadius:6,padding:6}}>
                 {date&&<>
                   <div style={{fontSize:12,fontWeight:isToday?800:500,color:isToday?"#f97316":"#374151",marginBottom:2}}>{parseInt(date.slice(8))}</div>
-                  {names.slice(0,3).map(n=><div key={n} style={{fontSize:10,fontWeight:600,background:"#f97316",color:"white",borderRadius:4,padding:"1px 4px",marginBottom:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>🏖 {n}</div>)}
-                  {names.length>3&&<div style={{fontSize:9,color:"#9ca3af"}}>+{names.length-3}</div>}
+                  {names.slice(0,2).map(n=><div key={n} style={{fontSize:11,fontWeight:600,background:"#f97316",color:"white",borderRadius:4,padding:"2px 5px",marginBottom:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>🏖 {n}</div>)}
+                  {names.length>2&&<div style={{fontSize:9,color:"#9ca3af"}}>+{names.length-2}</div>}
                 </>}
               </div>
             );
@@ -409,12 +413,12 @@ function VacationCalendar() {
         <div>
           {events.length===0&&<p style={{color:"#9ca3af",fontSize:13}}>No vacations this month.</p>}
           {events.map(ev=>(
-            <div key={ev.id} style={{display:"flex",justifyContent:"space-between",padding:"10px 0",borderBottom:"1px solid #f5f5f5"}}>
+            <div key={ev.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderBottom:"1px solid #f5f5f5"}}>
               <div>
                 <div style={{fontWeight:600,fontSize:14}}>{ev.subject.replace(/vacation\s*[-–]?\s*/i,"").replace(/[-–]\s*vacation/i,"").trim()}</div>
                 <div style={{fontSize:12,color:"#6b7280"}}>{ev.start} → {ev.end}</div>
               </div>
-              <span style={{background:"#fff3e0",color:"#e65100",fontSize:12,fontWeight:600,padding:"3px 10px",borderRadius:99,alignSelf:"center"}}>🏖 Vacation</span>
+              <span style={{background:"#fff3e0",color:"#e65100",fontSize:12,fontWeight:600,padding:"3px 10px",borderRadius:99}}>🏖 Vacation</span>
             </div>
           ))}
         </div>
