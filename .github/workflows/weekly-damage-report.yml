@@ -1,0 +1,30 @@
+name: Weekly Damage Report
+
+on:
+  schedule:
+    # 12:30 UTC = 7:30 AM EST every Monday
+    - cron: "30 12 * * 1"
+  workflow_dispatch: # Allow manual trigger for testing
+
+jobs:
+  send-damage-report:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        run: npm install
+        working-directory: ./scripts
+
+      - name: Run weekly damage report
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          ADMIN_EMAIL: ${{ secrets.ADMIN_EMAIL }}
+        run: node weekly-damage-report.mjs
+        working-directory: ./scripts

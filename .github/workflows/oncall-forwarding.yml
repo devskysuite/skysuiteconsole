@@ -1,0 +1,30 @@
+name: On-Call Forwarding Update
+
+on:
+  schedule:
+    # 12:00 UTC = 7:00 AM EST (winter) / 8:00 AM EDT (summer)
+    - cron: "0 12 * * *"
+  workflow_dispatch: # Allow manual trigger for testing
+
+jobs:
+  update-forwarding:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        run: npm install
+        working-directory: ./scripts
+
+      - name: Update on-call forwarding
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          COZZMIC_USERNAME: ${{ secrets.COZZMIC_USERNAME }}
+          COZZMIC_PASSWORD: ${{ secrets.COZZMIC_PASSWORD }}
+        run: node update-oncall-forwarding.mjs
+        working-directory: ./scripts
