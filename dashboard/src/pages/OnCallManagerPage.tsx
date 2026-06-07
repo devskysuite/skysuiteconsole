@@ -193,17 +193,31 @@ export default function OnCallManagerPage() {
     const status=document.getElementById("rot-status");
     if(!status||!accessToken) return;
     const rotDays=parseInt((document.getElementById("rot-days") as HTMLSelectElement)?.value||"1");
-    const startDate=action==="rebalance"?(document.getElementById("reb-start") as HTMLInputElement)?.value:(document.getElementById("rot-start") as HTMLInputElement)?.value;
+    const rebalanceFrom=(document.getElementById("reb-start") as HTMLInputElement)?.value;
     const shuffle=(document.getElementById("rot-shuffle") as HTMLInputElement)?.checked;
-    if(!startDate){status.textContent="Please select a date.";return;}
 
-    // Get active employees from Firestore config
+    // 365-day rolling window from today
+    const today=new Date().toISOString().slice(0,10);
+    const startDate=action==="rebalance"&&rebalanceFrom?rebalanceFrom:today;
+    const endDate=new Date(); endDate.setDate(endDate.getDate()+364);
+    const endStr=endDate.toISOString().slice(0,10);
+
+    // Get employees — use rotation orders if available
     const cfgSnap=await getDoc(doc(db,"settings","onCallConfig")).catch(()=>null);
-    const employees:string[]=cfgSnap?.data()?.employees||[];
-    if(!employees.length){status.textContent="No employees configured. Add employees in on-call config.";return;}
+    const baseEmployees:string[]=cfgSnap?.data()?.employees||rosterNames;
+    if(!baseEmployees.length){status.textContent="No employees in roster. Set roster in Setup.";return;}
 
-    const end=new Date(startDate); end.setDate(end.getDate()+364);
-    const endStr=end.toISOString().slice(0,10);
+    // Load rotation orders per year
+    const ordersSnap=await getDoc(doc(db,"settings","rotationOrders")).catch(()=>null);
+    const rotOrders:Record<string,string[]>=ordersSnap?.data()||{};
+
+    function getOrderForYear(year:number):string[] {
+      if(rotOrders[String(year)]?.length) return rotOrders[String(year)];
+      const shuffled=[...baseEmployees].sort(()=>Math.random()-0.5);
+      rotOrders[String(year)]=shuffled;
+      setDoc(doc(db,"settings","rotationOrders"),rotOrders,{merge:true}).catch(()=>{});
+      return shuffled;
+    }
 
     status.textContent=action==="preview"?"Building preview...":action==="rebalance"?"Fetching events to rebalance...":"Fetching existing events...";
 
@@ -225,16 +239,18 @@ export default function OnCallManagerPage() {
 
     if(action==="preview"){status.textContent=`${existingEvs.length} days assigned, ${364-existingEvs.length} empty. Push to fill gaps.`;return;}
 
-    // Build schedule
-    let emps=[...employees];
-    if(shuffle) emps=emps.sort(()=>Math.random()-0.5);
+    // Build schedule using year-based rotation orders
+    let currentYear=-1; let yearOrder:string[]=[]; let yearIdx=0;
+    if(shuffle){ const s=[...baseEmployees].sort(()=>Math.random()-0.5); const yr=new Date(startDate).getFullYear(); rotOrders[String(yr)]=s; setDoc(doc(db,"settings","rotationOrders"),rotOrders,{merge:true}).catch(()=>{}); }
     const toAdd:any[]=[];
     let cur=new Date(startDate),idx=0;
     while(cur.toISOString().slice(0,10)<=endStr){
       const d=cur.toISOString().slice(0,10);
+      const yr=cur.getFullYear();
+      if(yr!==currentYear){ currentYear=yr; yearOrder=getOrderForYear(yr); if(cur.getMonth()===0&&cur.getDate()===1) yearIdx=0; }
       if(!occupied.has(d)){
         const end2=new Date(cur); end2.setDate(end2.getDate()+rotDays);
-        toAdd.push({subject:`${emps[idx%emps.length]} On Call`,start:{dateTime:`${d}T00:00:00`,timeZone:"America/Toronto"},end:{dateTime:`${end2.toISOString().slice(0,10)}T00:00:00`,timeZone:"America/Toronto"},isAllDay:true});
+        toAdd.push({subject:`${yearOrder[idx%yearOrder.length]} On Call`,start:{dateTime:`${d}T00:00:00`,timeZone:"America/Toronto"},end:{dateTime:`${end2.toISOString().slice(0,10)}T00:00:00`,timeZone:"America/Toronto"},isAllDay:true});
       }
       idx++; cur.setDate(cur.getDate()+rotDays);
     }
@@ -260,7 +276,7 @@ export default function OnCallManagerPage() {
   const pendingCount=myPendingSwaps.length;
 
   return (
-    <div style={{padding:"20px 16px"}}>
+    <div style={{margin:"0 -32px",padding:"20px 32px"}}>
       {/* Header */}
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20,flexWrap:"wrap",gap:12}}>
         <h1 style={{fontSize:24,fontWeight:800,color:"#0d2e5e"}}>On-Call Manager</h1>
@@ -387,10 +403,13 @@ export default function OnCallManagerPage() {
           {/* Rotation Planner */}
           <div style={{background:"white",borderRadius:12,padding:20,boxShadow:"0 1px 4px rgba(0,0,0,0.07)"}}>
             <h2 style={{fontSize:15,fontWeight:700,color:"#0d2e5e",marginBottom:4}}>🔁 Rotation Planner</h2>
-            <p style={{fontSize:12,color:"#6b7280",marginBottom:16}}>Fills empty on-call days in Outlook. Skips days already assigned.</p>
+            <p style={{fontSize:12,color:"#6b7280",marginBottom:4}}>Always maintains exactly 365 days scheduled. Rotation order shuffles automatically on Jan 1 each year.</p>
+            <p style={{fontSize:11,color:"#9ca3af",marginBottom:16}}>Push fills the next 365 days. Rebalance clears from a date and rebuilds.</p>
 
-            <div style={{display:"flex",gap:12,flexWrap:"wrap",alignItems:"flex-end",marginBottom:16}}>
-              <div><label style={lbl}>Start Date</label><input type="date" id="rot-start" style={{...inp,maxWidth:160}}/></div>
+            {/* Year rotation orders display */}
+            <RotationOrderDisplay db={db} rosterNames={rosterNames}/>
+
+            <div style={{display:"flex",gap:12,flexWrap:"wrap",alignItems:"flex-end",margin:"16px 0"}}>
               <div><label style={lbl}>Days per person</label>
                 <select id="rot-days" style={{...inp,maxWidth:120}}>
                   <option value="1">1 day</option><option value="2">2 days</option><option value="7">7 days</option><option value="14">14 days</option>
@@ -403,9 +422,9 @@ export default function OnCallManagerPage() {
             </div>
 
             <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
-              <button onClick={()=>runRotation("preview")} disabled={!connected} style={btnS("#6b7280")}>👁 Preview</button>
-              <button onClick={()=>runRotation("push")}    disabled={!connected} style={btnS("#1565c0")}>⬆ Push to Outlook</button>
-              <button onClick={()=>runRotation("rebalance")} disabled={!connected} style={btnS("#f97316")}>⚖ Rebalance</button>
+              <button onClick={()=>runRotation("preview")}   disabled={!connected} style={btnS("#6b7280")}>👁 Preview</button>
+              <button onClick={()=>runRotation("push")}      disabled={!connected} style={btnS("#1565c0")}>⬆ Fill 365 Days</button>
+              <button onClick={()=>runRotation("rebalance")} disabled={!connected} style={btnS("#f97316")}>⚖ Rebalance from Date</button>
             </div>
             <div id="rot-status" style={{marginTop:10,fontSize:13,color:"#374151"}}></div>
           </div>
@@ -455,6 +474,53 @@ const btnS=(bg:string):React.CSSProperties=>({background:bg,color:"white",border
 const navS:React.CSSProperties={background:"#f3f4f6",border:"1px solid #d1d5db",borderRadius:8,padding:"6px 14px",cursor:"pointer",fontWeight:700,fontSize:16};
 const lbl:React.CSSProperties={display:"block",fontSize:12,fontWeight:600,color:"#374151",marginBottom:4};
 const inp:React.CSSProperties={width:"100%",padding:"8px 12px",border:"1px solid #d1d5db",borderRadius:8,fontSize:14,boxSizing:"border-box"as const};
+
+// ── Rotation Order Display ───────────────────────────────────────────────────
+function RotationOrderDisplay({ db, rosterNames }: { db: any; rosterNames: string[] }) {
+  const [orders, setOrders] = useState<Record<string, string[]>>({});
+  const thisYear = new Date().getFullYear();
+
+  useEffect(() => {
+    getDoc(doc(db, "settings", "rotationOrders")).then(snap => {
+      if (snap.exists()) setOrders(snap.data() as Record<string, string[]>);
+    }).catch(() => {});
+  }, []);
+
+  const years = [thisYear, thisYear + 1].filter(y => orders[String(y)]);
+
+  async function shuffleYear(year: number) {
+    const shuffled = [...rosterNames].sort(() => Math.random() - 0.5);
+    const newOrders = { ...orders, [String(year)]: shuffled };
+    await setDoc(doc(db, "settings", "rotationOrders"), newOrders, { merge: true });
+    setOrders(newOrders);
+  }
+
+  if (!rosterNames.length) return <p style={{ fontSize: 12, color: "#9ca3af" }}>Save the roster above first.</p>;
+
+  return (
+    <div>
+      {[thisYear, thisYear + 1].map(y => {
+        const order = orders[String(y)] || [];
+        return (
+          <div key={y} style={{ marginBottom: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+              <span style={{ fontSize: 13, fontWeight: 700, color: "#0d2e5e" }}>📅 {y} Order</span>
+              <button onClick={() => shuffleYear(y)} style={{ fontSize: 11, padding: "2px 10px", borderRadius: 99, background: "#f3f4f6", border: "1px solid #d1d5db", cursor: "pointer", fontWeight: 600 }}>🔀 Shuffle</button>
+              {y === thisYear + 1 && <span style={{ fontSize: 11, color: "#9ca3af" }}>Auto-shuffles Jan 1</span>}
+            </div>
+            {order.length > 0 ? (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                {order.map((name, i) => <span key={name} style={{ fontSize: 11, fontWeight: 600, background: "#eff6ff", color: "#1565c0", border: "1px solid #bfdbfe", borderRadius: 99, padding: "2px 8px" }}>{i + 1}. {name}</span>)}
+              </div>
+            ) : (
+              <span style={{ fontSize: 12, color: "#9ca3af" }}>Not set — click Shuffle to generate</span>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 // ── On-Call Roster ────────────────────────────────────────────────────────────
 function OnCallRoster({ db, allUsers }: { db: any; allUsers: UserInfo[] }) {
