@@ -57,7 +57,7 @@ export default function Login() {
   return (
     <div style={styles.page}>
       <div style={styles.card}>
-        <img src="/rbt_logo.png" alt="SkySuite" style={{ width: "100%", maxHeight: 80, objectFit: "contain", marginBottom: 12 }} />
+        <img src="/skysuite_logo.png" alt="SkySuite" style={{ width: "100%", maxHeight: 90, objectFit: "contain", marginBottom: 12, background: "#0d2e5e", borderRadius: 12, padding: "8px 16px" }} />
         <h1 style={styles.title}>SkySuite Console</h1>
         <p style={styles.sub}>Employee Portal</p>
 
@@ -138,16 +138,16 @@ export default function Login() {
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  page:       { minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#f5f7fa" },
-  card:       { background: "#fff", borderRadius: 16, padding: "40px 36px", width: 380, boxShadow: "0 4px 24px rgba(0,0,0,0.08)", textAlign: "center" },
-  title:      { fontSize: 22, fontWeight: 900, letterSpacing: 2, color: "#1e7d3a" },
+  page:       { minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "linear-gradient(135deg, #0d2e5e, #1565c0)" },
+  card:       { background: "#fff", borderRadius: 16, padding: "40px 36px", width: 380, boxShadow: "0 8px 40px rgba(0,0,0,0.25)", textAlign: "center" },
+  title:      { fontSize: 22, fontWeight: 900, letterSpacing: 2, color: "#0d2e5e" },
   sub:        { color: "#888", fontSize: 14, marginTop: 4 },
   label:      { display: "block", fontSize: 13, fontWeight: 600, color: "#444", marginBottom: 6, marginTop: 16, textAlign: "left" },
-  input:      { width: "100%", border: "1px solid #ddd", borderRadius: 8, padding: "10px 12px", fontSize: 15, outline: "none", boxSizing: "border-box" as const },
-  btn:        { marginTop: 16, width: "100%", background: "#1e7d3a", color: "#fff", border: "none", borderRadius: 8, padding: "12px", fontSize: 16, fontWeight: 700, cursor: "pointer" },
+  input:      { width: "100%", border: "1px solid #bfdbfe", borderRadius: 8, padding: "10px 12px", fontSize: 15, outline: "none", boxSizing: "border-box" as const },
+  btn:        { marginTop: 16, width: "100%", background: "#1565c0", color: "#fff", border: "none", borderRadius: 8, padding: "12px", fontSize: 16, fontWeight: 700, cursor: "pointer" },
   error:      { color: "#d32f2f", fontSize: 13, marginTop: 10, textAlign: "left" },
-  forgotLink: { background: "none", border: "none", color: "#1e7d3a", fontSize: 12, fontWeight: 600, cursor: "pointer", padding: 0, textDecoration: "underline" },
+  forgotLink: { background: "none", border: "none", color: "#1565c0", fontSize: 12, fontWeight: 600, cursor: "pointer", padding: 0, textDecoration: "underline" },
   backLink:   { marginTop: 12, width: "100%", background: "none", border: "none", color: "#888", fontSize: 13, fontWeight: 600, cursor: "pointer", padding: "8px 0" },
   resetHint:  { fontSize: 13, color: "#666", textAlign: "left", marginBottom: 4 },
-  successBox: { background: "#edfaf1", border: "1px solid #34c759", borderRadius: 10, padding: "16px", color: "#1a7a3c", fontWeight: 600, fontSize: 14, textAlign: "left" },
+  successBox: { background: "#eff6ff", border: "1px solid #93c5fd", borderRadius: 10, padding: "16px", color: "#1565c0", fontWeight: 600, fontSize: 14, textAlign: "left" },
 };
