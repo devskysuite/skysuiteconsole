@@ -193,28 +193,29 @@ export default function TimeOffPage() {
       {/* ── Full-width calendar card ── */}
       <div style={{ background: "#fff", borderRadius: 12, padding: 24, boxShadow: "0 1px 4px rgba(0,0,0,0.07)", marginBottom: 24 }}>
 
-        {/* Header */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <button onClick={prevMonth} style={styles.navBtn}>◀</button>
-            <span style={{ fontWeight: 700, fontSize: 20, color: "#0d2e5e", minWidth: 180, textAlign: "center" }}>{MONTHS[month]} {year}</span>
-            <button onClick={nextMonth} style={styles.navBtn}>▶</button>
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={{ background: "#f97316", color: "#fff", fontSize: 12, fontWeight: 700, padding: "4px 12px", borderRadius: 99 }}>🏖 Vacation</span>
-            {!token && <span style={{ fontSize: 12, color: "#9ca3af" }}>Connect Outlook in On-Call Setup to see vacations</span>}
-            <select
-              value={view}
-              onChange={e => setView(e.target.value as View)}
-              style={styles.viewSelect}
-            >
-              <option value="month">📅 Month View</option>
-              <option value="list">📋 List View</option>
-              <option value="request">✏️ Request Time Off</option>
-              <option value="my-requests">📋 My Requests</option>
-            </select>
-          </div>
+        {/* Tab buttons — same style as On-Call page */}
+        <div style={{ display: "flex", alignItems: "center", borderBottom: "2px solid #f0f0f0", marginBottom: 20, gap: 0 }}>
+          <TabBtn label="📅 Month View"       active={view === "month"}       onClick={() => setView("month")} />
+          <TabBtn label="📋 List View"        active={view === "list"}        onClick={() => setView("list")} />
+          <TabBtn label="✏️ Request Time Off" active={view === "request"}     onClick={() => setView("request")} />
+          <TabBtn label="🗂 My Requests"      active={view === "my-requests"} onClick={() => setView("my-requests")} />
         </div>
+
+        {/* Month nav — only show on calendar views */}
+        {(view === "month" || view === "list") && (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <button onClick={prevMonth} style={styles.navBtn}>◀</button>
+              <span style={{ fontWeight: 700, fontSize: 20, color: "#0d2e5e", minWidth: 180, textAlign: "center" }}>{MONTHS[month]} {year}</span>
+              <button onClick={nextMonth} style={styles.navBtn}>▶</button>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ background: "#f97316", color: "#fff", fontSize: 12, fontWeight: 700, padding: "4px 12px", borderRadius: 99 }}>🏖 Vacation</span>
+              {!token && <span style={{ fontSize: 12, color: "#9ca3af" }}>Connect Outlook in On-Call Setup to see vacations</span>}
+            </div>
+          </div>
+        )}
+
 
         {/* ── Month Grid ── */}
         {view === "month" && (
@@ -355,6 +356,19 @@ export default function TimeOffPage() {
   );
 }
 
+function TabBtn({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+  return (
+    <button onClick={onClick} style={{
+      padding: "8px 20px", fontWeight: 600, fontSize: 14, cursor: "pointer",
+      background: "none", border: "none",
+      borderBottom: active ? "3px solid #1565c0" : "3px solid transparent",
+      color: active ? "#1565c0" : "#6b7280",
+      marginBottom: -2,
+      whiteSpace: "nowrap",
+    }}>{label}</button>
+  );
+}
+
 const styles: Record<string, React.CSSProperties> = {
   navBtn: {
     background: "#f3f4f6",
@@ -364,16 +378,6 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: "pointer",
     fontWeight: 700,
     fontSize: 16,
-  },
-  viewSelect: {
-    padding: "7px 12px",
-    border: "1px solid #d1d5db",
-    borderRadius: 8,
-    fontSize: 14,
-    fontWeight: 600,
-    color: "#374151",
-    cursor: "pointer",
-    background: "#fff",
   },
   label: { fontSize: 13, fontWeight: 600, marginBottom: 6, color: "#555" },
   input: { border: "1px solid #ddd", borderRadius: 8, padding: "9px 12px", fontSize: 14 },
