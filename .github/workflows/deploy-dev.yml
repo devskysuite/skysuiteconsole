@@ -1,0 +1,28 @@
+name: Deploy to Firebase Dev Preview
+
+on:
+  push:
+    branches:
+      - dev
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dashboard dependencies
+        working-directory: dashboard
+        run: npm ci
+
+      - name: Build dashboard
+        working-directory: dashboard
+        run: npm run build
+
+      - name: Deploy to Firebase Dev Preview Channel
+        run: npx firebase-tools hosting:channel:deploy dev --project sky-suite-d14ff --token "${{ secrets.FIREBASE_TOKEN }}" --non-interactive
