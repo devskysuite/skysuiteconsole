@@ -399,7 +399,7 @@ export default function OnCallManagerPage() {
           <div style={{background:"white",borderRadius:12,padding:20,boxShadow:"0 1px 4px rgba(0,0,0,0.07)",marginBottom:16}}>
             <h2 style={{fontSize:15,fontWeight:700,color:"#0d2e5e",marginBottom:4}}>👥 On-Call Roster</h2>
             <p style={{fontSize:12,color:"#6b7280",marginBottom:14}}>Select which employees are in the on-call rotation. Reads from all user accounts.</p>
-            <OnCallRoster db={db} allUsers={allUsers}/>
+            <OnCallRoster db={db} allUsers={allUsers} onSaved={r => setRosterNames(r)}/>
           </div>
 
           {/* Rotation Planner */}
@@ -409,7 +409,7 @@ export default function OnCallManagerPage() {
             <p style={{fontSize:11,color:"#9ca3af",marginBottom:16}}>Push fills the next 365 days. Rebalance clears from a date and rebuilds.</p>
 
             {/* Year rotation orders display */}
-            <RotationOrderDisplay db={db} rosterNames={rosterNames}/>
+            <RotationOrderDisplay db={db}/>
 
             <div style={{display:"flex",gap:12,flexWrap:"wrap",alignItems:"flex-end",margin:"16px 0"}}>
               <div><label style={lbl}>Days per person</label>
@@ -488,26 +488,33 @@ const lbl:React.CSSProperties={display:"block",fontSize:12,fontWeight:600,color:
 const inp:React.CSSProperties={width:"100%",padding:"8px 12px",border:"1px solid #d1d5db",borderRadius:8,fontSize:14,boxSizing:"border-box"as const};
 
 // ── Rotation Order Display ───────────────────────────────────────────────────
-function RotationOrderDisplay({ db, rosterNames }: { db: any; rosterNames: string[] }) {
-  const [orders, setOrders] = useState<Record<string, string[]>>({});
+function RotationOrderDisplay({ db }: { db: any }) {
+  const [orders,  setOrders]  = useState<Record<string, string[]>>({});
+  const [roster,  setRoster]  = useState<string[]>([]);
+  const [loaded,  setLoaded]  = useState(false);
   const thisYear = new Date().getFullYear();
 
   useEffect(() => {
-    getDoc(doc(db, "settings", "rotationOrders")).then(snap => {
-      if (snap.exists()) setOrders(snap.data() as Record<string, string[]>);
-    }).catch(() => {});
+    Promise.all([
+      getDoc(doc(db, "settings", "rotationOrders")),
+      getDoc(doc(db, "settings", "onCallConfig")),
+    ]).then(([ordSnap, cfgSnap]) => {
+      if (ordSnap.exists()) setOrders(ordSnap.data() as Record<string, string[]>);
+      if (cfgSnap.exists() && cfgSnap.data().employees) setRoster(cfgSnap.data().employees);
+      setLoaded(true);
+    }).catch(() => setLoaded(true));
   }, []);
 
-  const years = [thisYear, thisYear + 1].filter(y => orders[String(y)]);
-
   async function shuffleYear(year: number) {
-    const shuffled = [...rosterNames].sort(() => Math.random() - 0.5);
+    if (!roster.length) return;
+    const shuffled = [...roster].sort(() => Math.random() - 0.5);
     const newOrders = { ...orders, [String(year)]: shuffled };
     await setDoc(doc(db, "settings", "rotationOrders"), newOrders, { merge: true });
     setOrders(newOrders);
   }
 
-  if (!rosterNames.length) return <p style={{ fontSize: 12, color: "#9ca3af" }}>Save the roster above first.</p>;
+  if (!loaded) return <p style={{ fontSize: 12, color: "#9ca3af" }}>Loading rotation…</p>;
+  if (!roster.length) return <p style={{ fontSize: 12, color: "#9ca3af" }}>Save the roster above first to generate a rotation.</p>;
 
   return (
     <div>
@@ -515,19 +522,31 @@ function RotationOrderDisplay({ db, rosterNames }: { db: any; rosterNames: strin
         const order = orders[String(y)] || [];
         const isCurrent = y === thisYear;
         return (
-          <div key={y} style={{ marginBottom: 12 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
-              <span style={{ fontSize: 13, fontWeight: 700, color: "#0d2e5e" }}>📅 {y} {isCurrent ? "(Current)" : "(Next Year)"}</span>
-              {!isCurrent && <button onClick={() => shuffleYear(y)} style={{ fontSize: 11, padding: "2px 10px", borderRadius: 99, background: "#eff6ff", border: "1px solid #bfdbfe", cursor: "pointer", fontWeight: 600, color: "#1565c0" }}>🔀 New Shuffle for {y}</button>}
-              {isCurrent && order.length > 0 && <span style={{ fontSize: 11, color: "#9ca3af" }}>🔒 Locked</span>}
-              {!isCurrent && <span style={{ fontSize: 11, color: "#9ca3af" }}>Auto-generates new order on Jan 1</span>}
+          <div key={y} style={{ marginBottom: 16, background: "#f8fafc", borderRadius: 10, padding: "14px 16px", border: "1px solid #e2e8f0" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+              <span style={{ fontSize: 14, fontWeight: 700, color: "#0d2e5e" }}>📅 {y} {isCurrent ? "(Current Year)" : "(Next Year)"}</span>
+              {!isCurrent && (
+                <button onClick={() => shuffleYear(y)} style={{ fontSize: 11, padding: "3px 12px", borderRadius: 99, background: "#eff6ff", border: "1px solid #bfdbfe", cursor: "pointer", fontWeight: 600, color: "#1565c0" }}>
+                  🔀 {order.length ? "Reshuffle" : "Generate"} {y}
+                </button>
+              )}
+              {isCurrent && order.length > 0 && <span style={{ fontSize: 11, color: "#9ca3af", fontWeight: 600 }}>🔒 Locked</span>}
+              {isCurrent && order.length === 0 && (
+                <button onClick={() => shuffleYear(y)} style={{ fontSize: 11, padding: "3px 12px", borderRadius: 99, background: "#eff6ff", border: "1px solid #bfdbfe", cursor: "pointer", fontWeight: 600, color: "#1565c0" }}>
+                  🔀 Generate {y}
+                </button>
+              )}
             </div>
             {order.length > 0 ? (
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-                {order.map((name, i) => <span key={name} style={{ fontSize: 11, fontWeight: 600, background: "#eff6ff", color: "#1565c0", border: "1px solid #bfdbfe", borderRadius: 99, padding: "2px 8px" }}>{i + 1}. {name}</span>)}
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {order.map((name, i) => (
+                  <span key={name} style={{ fontSize: 12, fontWeight: 600, background: "#eff6ff", color: "#1565c0", border: "1px solid #bfdbfe", borderRadius: 99, padding: "3px 10px" }}>
+                    {i + 1}. {name}
+                  </span>
+                ))}
               </div>
             ) : (
-              <span style={{ fontSize: 12, color: "#9ca3af" }}>Not set — click Shuffle to generate</span>
+              <span style={{ fontSize: 12, color: "#9ca3af" }}>No rotation set — click Generate to create one</span>
             )}
           </div>
         );
@@ -537,19 +556,35 @@ function RotationOrderDisplay({ db, rosterNames }: { db: any; rosterNames: strin
 }
 
 // ── On-Call Roster ────────────────────────────────────────────────────────────
-function OnCallRoster({ db, allUsers }: { db: any; allUsers: UserInfo[] }) {
+function OnCallRoster({ db, allUsers, onSaved }: { db: any; allUsers: UserInfo[]; onSaved?: (roster: string[]) => void }) {
   const [roster, setRoster] = useState<string[]>([]);
+  const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
+  const [saved,  setSaved]  = useState(false);
 
   useEffect(() => {
     getDoc(doc(db, "settings", "onCallConfig")).then(snap => {
       if (snap.exists() && snap.data().employees) setRoster(snap.data().employees);
-    }).catch(() => {});
+      setLoaded(true);
+    }).catch(() => setLoaded(true));
   }, []);
 
-  function toggle(name: string) {
-    setRoster(prev => prev.includes(name) ? prev.filter(n => n !== name) : [...prev, name]);
+  // Case-insensitive check: roster stores "Jordan", displayName may be "JORDAN SIBBICK"
+  function isActive(displayName: string) {
+    const first = displayName.split(" ")[0].toLowerCase();
+    return roster.some(r => r.toLowerCase() === first);
+  }
+
+  function toggle(displayName: string) {
+    const first = displayName.split(" ")[0];
+    // Preserve existing casing in roster if already there; add proper-cased first name if new
+    setRoster(prev => {
+      const idx = prev.findIndex(r => r.toLowerCase() === first.toLowerCase());
+      if (idx >= 0) return prev.filter((_, i) => i !== idx);
+      // Use title-case version
+      const titleCase = first.charAt(0).toUpperCase() + first.slice(1).toLowerCase();
+      return [...prev, titleCase];
+    });
     setSaved(false);
   }
 
@@ -557,18 +592,20 @@ function OnCallRoster({ db, allUsers }: { db: any; allUsers: UserInfo[] }) {
     setSaving(true);
     await setDoc(doc(db, "settings", "onCallConfig"), { employees: roster }, { merge: true });
     setSaving(false); setSaved(true);
+    onSaved?.(roster);
   }
 
   const sorted = [...allUsers].sort((a, b) => a.displayName.localeCompare(b.displayName));
+
+  if (!loaded) return <p style={{ fontSize: 12, color: "#9ca3af" }}>Loading roster…</p>;
 
   return (
     <div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
         {sorted.map(u => {
-          const name = u.displayName.split(" ")[0];
-          const active = roster.includes(name);
+          const active = isActive(u.displayName);
           return (
-            <button key={u.uid} onClick={() => toggle(name)} style={{
+            <button key={u.uid} onClick={() => toggle(u.displayName)} style={{
               padding: "6px 14px", borderRadius: 99, fontSize: 13, fontWeight: 600, cursor: "pointer",
               background: active ? "#1565c0" : "#f3f4f6", color: active ? "white" : "#374151",
               border: active ? "2px solid #1565c0" : "2px solid #e5e7eb",
