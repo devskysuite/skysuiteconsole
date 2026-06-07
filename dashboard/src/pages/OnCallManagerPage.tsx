@@ -201,15 +201,7 @@ export default function OnCallManagerPage() {
         <h1 style={{ fontSize: 24, fontWeight: 800, color: "#0d2e5e" }}>On-Call Manager</h1>
         <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
           {!connected && isAdmin && (
-            IS_PROD ? (
-              <button onClick={connectOutlook} style={btnStyle("#1565c0")}>
-                🔗 Connect Outlook
-              </button>
-            ) : (
-              <a href={PROD_URL} target="_blank" rel="noreferrer" style={{ ...btnStyle("#6b7280"), textDecoration: "none", display: "inline-block" }}>
-                🔗 Connect on Production Site
-              </a>
-            )
+            <span style={{ fontSize: 13, color: "#9ca3af" }}>Go to Setup tab to connect Outlook</span>
           )}
           {connected && <span style={{ fontSize: 13, color: "#059669", fontWeight: 600 }}>✅ Connected to Outlook</span>}
         </div>
@@ -290,15 +282,18 @@ export default function OnCallManagerPage() {
       {activeTab === "setup" && isAdmin && (
         <div style={{ background: "white", borderRadius: 12, padding: 24, boxShadow: "0 1px 4px rgba(0,0,0,0.07)" }}>
           <h2 style={{ fontSize: 16, fontWeight: 700, color: "#0d2e5e", marginBottom: 16 }}>On-Call Setup</h2>
-          <div style={{ color: "#6b7280", fontSize: 14 }}>
-            <p>📌 Rotation planner and employee management coming soon.</p>
-            <p style={{ marginTop: 8 }}>For now, manage on-call schedules directly in the On-Call Manager app.</p>
-            {!connected && (
-              <button onClick={connectOutlook} style={{ ...btnStyle("#1565c0"), marginTop: 16 }}>
-                🔗 Connect Outlook Calendar
-              </button>
-            )}
+
+          <div style={{ marginBottom: 24 }}>
+            <p style={{ fontSize: 13, color: "#6b7280", marginBottom: 12 }}>
+              {connected ? "✅ Outlook connected." : "Paste the Microsoft Refresh Token below to connect the Outlook calendar."}
+            </p>
+            <SetupTokenForm db={db} onConnected={(rt) => {
+              setRefreshToken(rt);
+              refreshAccessToken(rt).then(t => { if (t) { setAccessToken(t.access); setConnected(true); } });
+            }} />
           </div>
+
+          <p style={{ fontSize: 13, color: "#9ca3af" }}>📌 Rotation planner coming soon.</p>
         </div>
       )}
     </div>
@@ -325,3 +320,36 @@ function btnStyle(bg: string): React.CSSProperties {
 }
 
 const navBtn: React.CSSProperties = { background: "#f3f4f6", border: "1px solid #d1d5db", borderRadius: 8, padding: "6px 14px", cursor: "pointer", fontWeight: 700, fontSize: 16 };
+
+function SetupTokenForm({ db, onConnected }: { db: any; onConnected: (rt: string) => void }) {
+  const [rt, setRt] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  async function save() {
+    if (!rt.trim()) return;
+    setSaving(true);
+    try {
+      await setDoc(doc(db, "settings", "outlookOnCall"), { refreshToken: rt.trim() }, { merge: true });
+      setMsg("✅ Saved! Calendar will now load.");
+      onConnected(rt.trim());
+    } catch (e: any) {
+      setMsg("❌ Failed: " + e.message);
+    } finally { setSaving(false); }
+  }
+
+  return (
+    <div>
+      <textarea
+        value={rt} onChange={e => setRt(e.target.value)}
+        placeholder="Paste Microsoft Refresh Token here..."
+        rows={4}
+        style={{ width: "100%", padding: 10, border: "1px solid #d1d5db", borderRadius: 8, fontSize: 12, fontFamily: "monospace", resize: "vertical", boxSizing: "border-box" as const }}
+      />
+      <button onClick={save} disabled={saving || !rt.trim()} style={{ ...btnStyle("#1565c0"), marginTop: 8 }}>
+        {saving ? "Saving..." : "💾 Save Token"}
+      </button>
+      {msg && <p style={{ fontSize: 13, marginTop: 8, color: msg.startsWith("✅") ? "#059669" : "#dc2626" }}>{msg}</p>}
+    </div>
+  );
+}
