@@ -91,10 +91,10 @@ export default function Nav() {
     <nav className="no-print" style={styles.nav}>
       <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
         <img
-          src="https://skysuite.com/wp-content/uploads/2020/10/RBT_Logo01.png"
+          src="/skysuite_logo.png"
           alt="SkySuite Console"
-          style={{ height: 56, objectFit: "contain", filter: "brightness(0) invert(1)" }}
-          onError={(e) => { (e.target as HTMLImageElement).src = "/rbt_logo_white.png"; }}
+          style={{ height: 56, objectFit: "contain" }}
+          onError={(e) => { (e.target as HTMLImageElement).src = "/skysuite_logo_white.png"; }}
         />
         {userName && (
           <span className="nav-username" style={styles.userName}>{userName}</span>
