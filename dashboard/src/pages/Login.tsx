@@ -57,7 +57,7 @@ export default function Login() {
   return (
     <div style={styles.page}>
       <div style={styles.card}>
-        <img src="/skysuite_logo.png" alt="SkySuite" style={{ width: "100%", maxHeight: 90, objectFit: "contain", marginBottom: 12 }} />
+        <img src="/skysuite_logo.png" alt="SkySuite" style={{ width: "100%", maxHeight: 160, objectFit: "contain", marginBottom: 12 }} />
         <h1 style={styles.title}>SkySuite Console</h1>
         <p style={styles.sub}>Employee Portal</p>
 
