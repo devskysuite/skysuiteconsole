@@ -369,6 +369,13 @@ export default function OnCallManagerPage() {
                  <button onClick={connectOutlook} style={btnS("#1565c0")}>🔗 Connect Outlook</button></>}
           </div>
 
+          {/* On-Call Roster */}
+          <div style={{background:"white",borderRadius:12,padding:20,boxShadow:"0 1px 4px rgba(0,0,0,0.07)",marginBottom:16}}>
+            <h2 style={{fontSize:15,fontWeight:700,color:"#0d2e5e",marginBottom:4}}>👥 On-Call Roster</h2>
+            <p style={{fontSize:12,color:"#6b7280",marginBottom:14}}>Select which employees are in the on-call rotation. Reads from all user accounts.</p>
+            <OnCallRoster db={db} allUsers={allUsers}/>
+          </div>
+
           {/* Rotation Planner */}
           <div style={{background:"white",borderRadius:12,padding:20,boxShadow:"0 1px 4px rgba(0,0,0,0.07)"}}>
             <h2 style={{fontSize:15,fontWeight:700,color:"#0d2e5e",marginBottom:4}}>🔁 Rotation Planner</h2>
@@ -438,3 +445,54 @@ const btnS=(bg:string):React.CSSProperties=>({background:bg,color:"white",border
 const navS:React.CSSProperties={background:"#f3f4f6",border:"1px solid #d1d5db",borderRadius:8,padding:"6px 14px",cursor:"pointer",fontWeight:700,fontSize:16};
 const lbl:React.CSSProperties={display:"block",fontSize:12,fontWeight:600,color:"#374151",marginBottom:4};
 const inp:React.CSSProperties={width:"100%",padding:"8px 12px",border:"1px solid #d1d5db",borderRadius:8,fontSize:14,boxSizing:"border-box"as const};
+
+// ── On-Call Roster ────────────────────────────────────────────────────────────
+function OnCallRoster({ db, allUsers }: { db: any; allUsers: UserInfo[] }) {
+  const [roster, setRoster] = useState<string[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    getDoc(doc(db, "settings", "onCallConfig")).then(snap => {
+      if (snap.exists() && snap.data().employees) setRoster(snap.data().employees);
+    }).catch(() => {});
+  }, []);
+
+  function toggle(name: string) {
+    setRoster(prev => prev.includes(name) ? prev.filter(n => n !== name) : [...prev, name]);
+    setSaved(false);
+  }
+
+  async function save() {
+    setSaving(true);
+    await setDoc(doc(db, "settings", "onCallConfig"), { employees: roster }, { merge: true });
+    setSaving(false); setSaved(true);
+  }
+
+  const sorted = [...allUsers].sort((a, b) => a.displayName.localeCompare(b.displayName));
+
+  return (
+    <div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
+        {sorted.map(u => {
+          const name = u.displayName.split(" ")[0];
+          const active = roster.includes(name);
+          return (
+            <button key={u.uid} onClick={() => toggle(name)} style={{
+              padding: "6px 14px", borderRadius: 99, fontSize: 13, fontWeight: 600, cursor: "pointer",
+              background: active ? "#1565c0" : "#f3f4f6", color: active ? "white" : "#374151",
+              border: active ? "2px solid #1565c0" : "2px solid #e5e7eb",
+            }}>
+              {active ? "✓ " : ""}{u.displayName}
+            </button>
+          );
+        })}
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <button onClick={save} disabled={saving} style={btnS("#059669")}>{saving ? "Saving..." : "💾 Save Roster"}</button>
+        <span style={{ fontSize: 12, color: "#6b7280" }}>{roster.length} selected</span>
+        {saved && <span style={{ fontSize: 12, color: "#059669", fontWeight: 600 }}>✅ Saved!</span>}
+      </div>
+    </div>
+  );
+}
