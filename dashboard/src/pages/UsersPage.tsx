@@ -78,7 +78,7 @@ export default function UsersPage() {
   const [clearing, setClearing]     = useState(false);
   const [clearResult, setClearResult] = useState("");
 
-  const isOwner = currentUserRole === "owner";
+  const isOwner = isAdmin === true; // any admin/owner can manage users
 
   // Load current user's role from Firestore
   useEffect(() => {
