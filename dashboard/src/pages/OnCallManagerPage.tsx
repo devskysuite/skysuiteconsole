@@ -93,24 +93,25 @@ export default function OnCallManagerPage() {
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState("");
 
-  // Load stored refresh token from Firestore
+  // Load refresh token — try Firestore first, fall back to hardcoded
+  const FALLBACK_RT = "1.AW8B6GIdHJLzqkyopgzpjgkT2fEhGpqjQHJIpNaIi9UdEW0AABFvAQ.BQABAwEAAAADAOz_BQD0_0V2b1N0c0FydGlmYWN0cwIAAAAAAPr_vnngWePaOrh5eWXUA9QRdzxVk8aOzPXDZ6o5eZqQ9FJ3d-U2eJAcGjlJBQX_opx2RinePiL6IehJXjOMyo-06fXVTJe9W9IO-JxRuAsljsArxXyaDux0RE68kpGs8LCanwBDEspkVI6TOb3e1nFBlwH5mTyGgByJWaxNy2_8kTrkFNUrY4bNuhjER4d1_BJrUjLqcAfIGfOZnUM3_toZyXKSZvniZYemuAJtVeWPPWPRTZ6PYVTB7ebb9844jxpWlpzTqeuhnS9uCe8QFXCOORbgPUKLLt8T8WLteDlwAj8pQTB9toSCWD8NDuBQ2IC_6c6bVd32n1vgf7MtpDwgIQpzt7MtQV5b1_n3kbE_KpXrMXMwJbrNMNi1aIjpXD5HZ5qWshSZeHgdXvOeuz_dGU7C1xKz8MEmJZcmdf2U4jBs0P05MTSlIxuvBndRRPXS9D0ibHaVKumzki52CIc-n-qM3gdljKd7n84EQ6XX7wTlVznYc1PVlc3YoQO9_B9jhbmfPWS0hHcRLe_KegwdTz9dnWojEnfbaFFy08xeYLZtd6-ttbnkJm_oZ3mUmvWuM2T-T_j5Sc7idLD3XZpaFTSBkykxk847XToY7PRxcNEHUOa7HJ5R3MzxXjQSGDoPT6uffxLMut0lTDZSOlgv57lF_8SCRziIeZDGoAXyWeSSZznwsD5jUiZK6VBk_qo_4Z4cw1epID_9D8XiKXNo2XJkQcM4LLwM4sIxb2U6_BW0DPlq5-Qwi9AofJNGRL5prhGsoIHyBFUUQJo16P8ehX817XQmX6SEw3OqIWntf1G7WOmU133BKe8P9WpkgUMsNEoXE7ERIUffd5_cmWeGM86fx31xMDMLh71j-ufkQ0SYtnr1oDjBD0h1jT1IyjAIBquXAP2Hdy5bZ8u5k_-rpmaewKhyhPvdOq1sO0Js5FcFh6i7vgx6Wn5-F7AfCYh0IchbVFHFNVzM63klvyvW6C7Hnn1P24jRwTQRssQO0L3NnkgwrQon-sllv80zk9Y1tXoJ3z139N7WX8lI_SOywnfBWwS8_lvff4OHQzrTDleV_7B3xACijh12N_hFxvegt6a3oumawz9BDK7j2QGXxqHJXxCoqidnO4f1Dm0FsVw7Q6UAOqful6Bl0BVqYFAwBVgquEgBhGIKqpWq5em-k6spRFltaq8CWlGIyRRmtXdSvczQXh9V-xwEcapzXpi_ZPYT1LVc83a3qIshCWTII7EBbpWeG74RCEymwjkpnx_neZPiN2JaFxrfK4zXk9ImOoljU3w5EOQS6wupezItYLBHt0ZYciYXngloYEU5TV0PuHanxC02WlrnBmybRN473iSyM9uoY_5QQfm9X4JpEPAgyfkcb5wq9x8S2zcVMMB2D8YjRkhKVKN4OqGjGDn2dAoLsADoMPx0Wq3v6uBL6Y4H00XOo1mSGoQStZhDmAUP00G4H7hyVQhEFVIQEBKd6Wj5vbBz9I5Vs6qfV3sXollwuievxhGzPfOU9xpxjNQDgUIf_V77GtS0I_mMAXR3seITS3bJmCVRumf8DInjEUKOk7RbqduWJcTcCcxJgwtM6k90AtLQ1qrFIvTxbj7rFHhoryXLiYCOIaOUrzu5Jy4qdEEzDVFmPp2oEzkzUaU95gPfTH-BUetW3AcVj8w";
+
   useEffect(() => {
     async function load() {
+      let rt = FALLBACK_RT;
       try {
         const snap = await getDoc(doc(db, "settings", "outlookOnCall"));
-        if (snap.exists() && snap.data().refreshToken) {
-          const rt = snap.data().refreshToken;
-          setRefreshToken(rt);
-          const tokens = await refreshAccessToken(rt);
-          if (tokens) {
-            setAccessToken(tokens.access);
-            setRefreshToken(tokens.refresh);
-            setConnected(true);
-            // Save updated refresh token
-            await setDoc(doc(db, "settings", "outlookOnCall"), { refreshToken: tokens.refresh }, { merge: true });
-          }
-        }
+        if (snap.exists() && snap.data().refreshToken) rt = snap.data().refreshToken;
       } catch {}
+      const tokens = await refreshAccessToken(rt);
+      if (tokens) {
+        setAccessToken(tokens.access);
+        setRefreshToken(tokens.refresh);
+        setConnected(true);
+        try { await setDoc(doc(db, "settings", "outlookOnCall"), { refreshToken: tokens.refresh }, { merge: true }); } catch {}
+      } else {
+        setError("Could not connect to Outlook calendar.");
+      }
     }
     load();
   }, []);
