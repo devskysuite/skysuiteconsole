@@ -7,9 +7,9 @@ import { useRole, isAdminRole } from "../hooks/useRole";
 const TENANT_ID  = "1c1d62e8-f392-4caa-a8a6-0ce98e0913d9";
 const CLIENT_ID  = "9a1a21f1-40a3-4872-a4d6-888bd51d116d";
 const CAL_ID     = "AAMkADgyOGUwMDUyLTNiZjMtNGQzNi1hNTgwLTQ2M2IzYzE2YmQ5MgBGAAAAAACGxuDePTlOQawDDU8UfW0gBwBxt6lSDH0kQY0tk4wDjNk8AAAAAAEGAABxt6lSDH0kQY0tk4wDjNk8AAALmQObAAA=";
-// Use current origin so both production and dev preview URLs work
-// Register both in Azure: https://sky-suite-d14ff.web.app/ and https://sky-suite-d14ff--dev.web.app/
-const REDIRECT = window.location.origin + "/";
+const PROD_URL = "https://sky-suite-d14ff.web.app/";
+const REDIRECT = PROD_URL; // Always redirect to production after OAuth
+const IS_PROD  = window.location.hostname === "sky-suite-d14ff.web.app";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 interface CalEvent { id: string; subject: string; start: string; end: string; isAllDay: boolean; }
@@ -201,16 +201,15 @@ export default function OnCallManagerPage() {
         <h1 style={{ fontSize: 24, fontWeight: 800, color: "#0d2e5e" }}>On-Call Manager</h1>
         <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
           {!connected && isAdmin && (
-            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            IS_PROD ? (
               <button onClick={connectOutlook} style={btnStyle("#1565c0")}>
                 🔗 Connect Outlook
               </button>
-              {window.location.hostname !== "sky-suite-d14ff.web.app" && (
-                <span style={{ fontSize: 12, color: "#9ca3af" }}>
-                  (Will redirect to production to complete auth, then return here)
-                </span>
-              )}
-            </div>
+            ) : (
+              <a href={PROD_URL} target="_blank" rel="noreferrer" style={{ ...btnStyle("#6b7280"), textDecoration: "none", display: "inline-block" }}>
+                🔗 Connect on Production Site
+              </a>
+            )
           )}
           {connected && <span style={{ fontSize: 13, color: "#059669", fontWeight: 600 }}>✅ Connected to Outlook</span>}
         </div>
