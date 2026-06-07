@@ -185,9 +185,11 @@ export default function OnCallManagerPage() {
 
   function pillColor(subject: string) {
     const s = subject.toLowerCase();
-    if ((s.includes("on call") || s.includes("oncall")) && !s.includes("vacation")) return { bg: "#e0f7fa", color: "#006064", border: "#80deea" };
-    if (s.includes("vacation")) return { bg: "#fff3e0", color: "#e65100", border: "#ffcc80" };
-    return { bg: "#f3f4f6", color: "#374151", border: "#d1d5db" };
+    if ((s.includes("on call") || s.includes("oncall")) && !s.includes("vacation"))
+      return { bg: "#1565c0", color: "#ffffff", border: "#1565c0", prefix: "📞 " };
+    if (s.includes("vacation"))
+      return { bg: "#f97316", color: "#ffffff", border: "#f97316", prefix: "🏖 " };
+    return { bg: "#f3f4f6", color: "#374151", border: "#d1d5db", prefix: "" };
   }
 
   return (
@@ -225,8 +227,8 @@ export default function OnCallManagerPage() {
 
           {/* Legend */}
           <div style={{ display: "flex", gap: 16, marginBottom: 14, flexWrap: "wrap" }}>
-            <Pill label="On Call" bg="#e0f7fa" color="#006064" />
-            <Pill label="Vacation" bg="#fff3e0" color="#e65100" />
+            <Pill label="📞 On Call" bg="#1565c0" color="#ffffff" />
+            <Pill label="🏖 Vacation" bg="#f97316" color="#ffffff" />
           </div>
 
           {loading && <div style={{ textAlign: "center", padding: 40, color: "#9ca3af" }}>⏳ Loading...</div>}
@@ -261,7 +263,7 @@ export default function OnCallManagerPage() {
                           const name = ev.subject.split(/\s+/).find(w => !["on","call","oncall","vacation","-"].includes(w.toLowerCase())) || ev.subject;
                           return (
                             <div key={ev.id} style={{ fontSize: 10, fontWeight: 600, background: c.bg, color: c.color, border: `1px solid ${c.border}`, borderRadius: 4, padding: "1px 4px", marginBottom: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                              {name}
+                              {c.prefix}{name}
                             </div>
                           );
                         })}
