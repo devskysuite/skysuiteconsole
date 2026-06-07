@@ -82,6 +82,7 @@ export default function OnCallManagerPage() {
   const [swapTheirDate,setSwapTheirDate]=useState("");
   const [swapReason,setSwapReason]=useState("");
   const [swapSubmitting,setSwapSubmitting]=useState(false);
+  const [targetFutureEvents,setTargetFutureEvents]=useState<CalEvent[]>([]);
   const [rosterNames,setRosterNames]=useState<string[]>([]);
 
   // Auth user
@@ -166,7 +167,7 @@ export default function OnCallManagerPage() {
     setSwapSubmitting(true);
     const myName=getName(swapModal.event.subject);
     // Find target's event on their date
-    const theirEvent=events.find(e=>e.start===swapTheirDate&&getName(e.subject).toLowerCase()===swapTargetName.toLowerCase());
+    const theirEvent=targetFutureEvents.find(e=>e.start===swapTheirDate)||events.find(e=>e.start===swapTheirDate&&getName(e.subject).toLowerCase()===swapTargetName.toLowerCase());
     // Find target user in Firestore (may not exist)
     const targetUser=allUsers.find(u=>u.displayName.split(" ")[0].toLowerCase()===swapTargetName.toLowerCase());
     await addDoc(collection(db,"onCallSwapRequests"),{
@@ -205,7 +206,8 @@ export default function OnCallManagerPage() {
     // Get employees — use rotation orders if available
     const cfgSnap=await getDoc(doc(db,"settings","onCallConfig")).catch(()=>null);
     const baseEmployees:string[]=cfgSnap?.data()?.employees||rosterNames;
-    if(!baseEmployees.length){status.textContent="No employees in roster. Set roster in Setup.";return;}
+    if(!baseEmployees.length){status.textContent="No employees in roster. Go to Setup → On-Call Roster and save employees.";return;}
+    status.textContent=`Using ${baseEmployees.length} employees: ${baseEmployees.join(", ")}`;
 
     // Load rotation orders per year
     const ordersSnap=await getDoc(doc(db,"settings","rotationOrders")).catch(()=>null);
@@ -439,17 +441,27 @@ export default function OnCallManagerPage() {
             <p style={{fontSize:13,color:"#6b7280",marginBottom:16}}>Your on-call day: <strong>{swapModal.event.start}</strong></p>
 
             <label style={lbl}>Swap with</label>
-            <select value={swapTargetName} onChange={e=>setSwapTargetName(e.target.value)} style={inp}>
+            <select value={swapTargetName} onChange={async e=>{
+              const name=e.target.value; setSwapTargetName(name); setSwapTheirDate(""); setTargetFutureEvents([]);
+              if(!name||!accessToken) return;
+              // Fetch all future on-call events for this person across 12 months
+              const today2=new Date().toISOString().slice(0,10);
+              const end2=new Date(); end2.setMonth(end2.getMonth()+12);
+              let url=`https://graph.microsoft.com/v1.0/me/calendars/${CAL_ID}/calendarView?startDateTime=${today2}T00:00:00&endDateTime=${end2.toISOString().slice(0,10)}T00:00:00&$top=999&$select=id,subject,start`;
+              const evs:CalEvent[]=[];
+              while(url){const d=await(await fetch(url,{headers:{Authorization:`Bearer ${accessToken}`}})).json();(d.value||[]).filter((e:any)=>{const s=(e.subject||"").toLowerCase();return(s.includes("on call")||s.includes("oncall"))&&!s.includes("vacation")&&getName(e.subject).toLowerCase()===name.toLowerCase();}).forEach((e:any)=>evs.push({id:e.id,subject:e.subject,start:e.start?.date||e.start?.dateTime?.slice(0,10)||"",end:e.end?.date||e.end?.dateTime?.slice(0,10)||""}));url=d["@odata.nextLink"]||"";}
+              setTargetFutureEvents(evs);
+            }} style={inp}>
               <option value="">— Select person —</option>
               {(rosterNames.length>0?rosterNames:allUsers.map(u=>u.displayName.split(" ")[0]))
                 .filter(n=>n.toLowerCase()!==getName(swapModal.event.subject).toLowerCase())
                 .map(n=><option key={n} value={n}>{n}</option>)}
             </select>
 
-            <label style={{...lbl,marginTop:12}}>Their date to swap</label>
+            <label style={{...lbl,marginTop:12}}>Their date to swap {swapTargetName&&targetFutureEvents.length===0&&<span style={{color:"#9ca3af",fontWeight:400}}>(loading...)</span>}</label>
             <select value={swapTheirDate} onChange={e=>setSwapTheirDate(e.target.value)} style={inp}>
               <option value="">— Select date —</option>
-              {events.filter(e=>{const s=e.subject.toLowerCase();return(s.includes("on call")||s.includes("oncall"))&&!s.includes("vacation")&&getName(e.subject).toLowerCase()===swapTargetName.toLowerCase()&&e.start>=todayStr;}).map(e=><option key={e.id} value={e.start}>{e.start}</option>)}
+              {targetFutureEvents.map(e=><option key={e.id} value={e.start}>{e.start}</option>)}
             </select>
 
             <label style={{...lbl,marginTop:12}}>Reason (optional)</label>
