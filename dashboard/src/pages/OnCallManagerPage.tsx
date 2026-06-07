@@ -116,36 +116,38 @@ export default function OnCallManagerPage() {
     load();
   }, []);
 
-  // Handle OAuth callback
+  // Handle OAuth callback — works with or without PKCE verifier
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const code   = params.get("code");
-    const verifier = sessionStorage.getItem("pkce_verifier");
-    if (!code || !verifier) return;
+    if (!code) return;
     window.history.replaceState({}, "", window.location.pathname);
+    const verifier = sessionStorage.getItem("pkce_verifier");
     sessionStorage.removeItem("pkce_verifier");
 
     (async () => {
       try {
-        const body = new URLSearchParams({
-          client_id:     CLIENT_ID,
+        const bodyParams: Record<string, string> = {
+          client_id:    CLIENT_ID,
           code,
-          redirect_uri:  REDIRECT,
-          grant_type:    "authorization_code",
-          code_verifier: verifier,
-          scope:         "Calendars.ReadWrite offline_access",
+          redirect_uri: REDIRECT,
+          grant_type:   "authorization_code",
+          scope:        "Calendars.ReadWrite offline_access",
+        };
+        if (verifier) bodyParams.code_verifier = verifier;
+        const r = await fetch(`https://login.microsoftonline.com/${TENANT_ID}/oauth2/v2.0/token`, {
+          method: "POST", body: new URLSearchParams(bodyParams)
         });
-        const r = await fetch(`https://login.microsoftonline.com/${TENANT_ID}/oauth2/v2.0/token`, { method: "POST", body });
         const d = await r.json();
         if (d.access_token) {
           setAccessToken(d.access_token);
           setRefreshToken(d.refresh_token);
           setConnected(true);
-          await setDoc(doc(db, "settings", "outlookOnCall"), { refreshToken: d.refresh_token }, { merge: true });
+          try { await setDoc(doc(db, "settings", "outlookOnCall"), { refreshToken: d.refresh_token }, { merge: true }); } catch {}
         } else {
-          setError("Failed to connect: " + (d.error_description || "unknown error"));
+          setError("Auth failed: " + (d.error_description || JSON.stringify(d)));
         }
-      } catch (e: any) { setError(e.message); }
+      } catch (e: any) { setError("Auth error: " + e.message); }
     })();
   }, []);
 
