@@ -181,6 +181,68 @@ export default function OnCallManagerPage() {
     if(accept) setEvents(prev=>prev.map(e=>{ if(e.id===swap.myEventId) return {...e,subject:`${swap.targetName.split(" ")[0]} On Call`}; if(e.id===swap.theirEventId) return {...e,subject:`${swap.requesterName.split(" ")[0]} On Call`}; return e; }));
   }
 
+  async function runRotation(action:"preview"|"push"|"rebalance") {
+    const status=document.getElementById("rot-status");
+    if(!status||!accessToken) return;
+    const rotDays=parseInt((document.getElementById("rot-days") as HTMLSelectElement)?.value||"1");
+    const startDate=action==="rebalance"?(document.getElementById("reb-start") as HTMLInputElement)?.value:(document.getElementById("rot-start") as HTMLInputElement)?.value;
+    const shuffle=(document.getElementById("rot-shuffle") as HTMLInputElement)?.checked;
+    if(!startDate){status.textContent="Please select a date.";return;}
+
+    // Get active employees from Firestore config
+    const cfgSnap=await getDoc(doc(db,"settings","onCallConfig")).catch(()=>null);
+    const employees:string[]=cfgSnap?.data()?.employees||[];
+    if(!employees.length){status.textContent="No employees configured. Add employees in on-call config.";return;}
+
+    const end=new Date(startDate); end.setDate(end.getDate()+364);
+    const endStr=end.toISOString().slice(0,10);
+
+    status.textContent=action==="preview"?"Building preview...":action==="rebalance"?"Fetching events to rebalance...":"Fetching existing events...";
+
+    // Fetch existing on-call events
+    const existingEvs:any[]=[];
+    let url=`https://graph.microsoft.com/v1.0/me/calendars/${CAL_ID}/calendarView?startDateTime=${startDate}T00:00:00&endDateTime=${endStr}T00:00:00&$top=999&$select=id,subject,start`;
+    while(url){ const d=await graphFetch(accessToken,url.replace("https://graph.microsoft.com/v1.0","")); (d.value||[]).filter((e:any)=>{const s=(e.subject||"").toLowerCase();return(s.includes("on call")||s.includes("oncall"))&&!s.includes("vacation");}).forEach((e:any)=>existingEvs.push(e)); url=d["@odata.nextLink"]||""; }
+
+    const occupied=new Set(existingEvs.map((e:any)=>e.start?.date||e.start?.dateTime?.slice(0,10)));
+
+    if(action==="rebalance"){
+      status.textContent=`Deleting ${existingEvs.length} events...`;
+      for(let i=0;i<existingEvs.length;i+=20){
+        const chunk=existingEvs.slice(i,i+20);
+        await graphFetch(accessToken,"/$batch","POST",{requests:chunk.map((e:any,j:number)=>({id:String(j+1),method:"DELETE",url:`/me/events/${e.id}`}))}).catch(()=>{});
+      }
+      occupied.clear();
+    }
+
+    if(action==="preview"){status.textContent=`${existingEvs.length} days assigned, ${364-existingEvs.length} empty. Push to fill gaps.`;return;}
+
+    // Build schedule
+    let emps=[...employees];
+    if(shuffle) emps=emps.sort(()=>Math.random()-0.5);
+    const toAdd:any[]=[];
+    let cur=new Date(startDate),idx=0;
+    while(cur.toISOString().slice(0,10)<=endStr){
+      const d=cur.toISOString().slice(0,10);
+      if(!occupied.has(d)){
+        const end2=new Date(cur); end2.setDate(end2.getDate()+rotDays);
+        toAdd.push({subject:`${emps[idx%emps.length]} On Call`,start:{dateTime:`${d}T00:00:00`,timeZone:"America/Toronto"},end:{dateTime:`${end2.toISOString().slice(0,10)}T00:00:00`,timeZone:"America/Toronto"},isAllDay:true});
+      }
+      idx++; cur.setDate(cur.getDate()+rotDays);
+    }
+
+    status.textContent=`Pushing ${toAdd.length} events...`;
+    let pushed=0;
+    for(let i=0;i<toAdd.length;i+=4){
+      const chunk=toAdd.slice(i,i+4);
+      await graphFetch(accessToken,"/$batch","POST",{requests:chunk.map((e:any,j:number)=>({id:String(j+1),method:"POST",url:`/me/calendars/${CAL_ID}/events`,headers:{"Content-Type":"application/json"},body:e}))}).catch(()=>{});
+      pushed+=chunk.length;
+      status.textContent=`Pushed ${pushed}/${toAdd.length}...`;
+      await new Promise(r=>setTimeout(r,200));
+    }
+    status.textContent=`✅ Done! ${pushed} events created.`;
+  }
+
   const eventMap:Record<string,CalEvent[]>={};
   events.forEach(e=>{if(!eventMap[e.start])eventMap[e.start]=[];eventMap[e.start].push(e);});
   const todayStr=`${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,"0")}-${String(today.getDate()).padStart(2,"0")}`;
@@ -190,7 +252,7 @@ export default function OnCallManagerPage() {
   const pendingCount=myPendingSwaps.length;
 
   return (
-    <div style={{padding:"24px 32px"}}>
+    <div style={{padding:"20px 16px"}}>
       {/* Header */}
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20,flexWrap:"wrap",gap:12}}>
         <h1 style={{fontSize:24,fontWeight:800,color:"#0d2e5e"}}>On-Call Manager</h1>
@@ -225,8 +287,8 @@ export default function OnCallManagerPage() {
           {loading&&<div style={{textAlign:"center",padding:40,color:"#9ca3af"}}>⏳ Loading...</div>}
           {!connected&&!loading&&<div style={{textAlign:"center",padding:40,color:"#9ca3af"}}>Connect Outlook above to view the calendar.</div>}
           {connected&&!loading&&(
-            <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2}}>
-              {DAYS.map(d=><div key={d} style={{textAlign:"center",fontSize:11,fontWeight:700,color:"#6b7280",padding:"6px 0",textTransform:"uppercase"}}>{d}</div>)}
+            <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:3}}>
+              {DAYS.map(d=><div key={d} style={{textAlign:"center",fontSize:12,fontWeight:700,color:"#6b7280",padding:"8px 0",textTransform:"uppercase"}}>{d}</div>)}
               {grid.map((date,i)=>{
                 const dayEvs=date?(eventMap[date]||[]):[];
                 const isToday=date===todayStr;
@@ -234,12 +296,12 @@ export default function OnCallManagerPage() {
                 // Admin can click any on-call event; user can only click their own
                 const clickableOncall=isAdmin?dayEvs.find(e=>{const s=e.subject.toLowerCase();return(s.includes("on call")||s.includes("oncall"))&&!s.includes("vacation");}):myOncall;
                 return(
-                  <div key={i} style={{minHeight:80,background:isToday?"#eff6ff":"#fafafa",border:isToday?"2px solid #1565c0":"1px solid #e5e7eb",borderRadius:6,padding:4,cursor:clickableOncall?"pointer":"default"}}
+                  <div key={i} style={{minHeight:110,background:isToday?"#eff6ff":"#fafafa",border:isToday?"2px solid #1565c0":"1px solid #e5e7eb",borderRadius:6,padding:6,cursor:clickableOncall?"pointer":"default"}}
                     onClick={()=>{ if(clickableOncall&&connected) setSwapModal({event:clickableOncall}); }}>
                     {date&&<>
                       <div style={{fontSize:12,fontWeight:isToday?800:500,color:isToday?"#1565c0":"#374151",marginBottom:2}}>{parseInt(date.slice(8))}</div>
                       {dayEvs.slice(0,2).map(ev=>{const c=pillStyle(ev.subject);const n=getName(ev.subject);return(
-                        <div key={ev.id} style={{fontSize:10,fontWeight:600,background:c.bg,color:c.color,borderRadius:4,padding:"1px 4px",marginBottom:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                        <div key={ev.id} style={{fontSize:11,fontWeight:600,background:c.bg,color:c.color,borderRadius:4,padding:"2px 5px",marginBottom:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
                           {c.prefix}{n}
                         </div>);})}
                       {dayEvs.length>2&&<div style={{fontSize:9,color:"#9ca3af"}}>+{dayEvs.length-2}</div>}
@@ -298,12 +360,40 @@ export default function OnCallManagerPage() {
 
       {/* ── SETUP TAB ── */}
       {tab==="setup"&&isAdmin&&(
-        <div style={{background:"white",borderRadius:12,padding:24,boxShadow:"0 1px 4px rgba(0,0,0,0.07)"}}>
-          <h2 style={{fontSize:16,fontWeight:700,color:"#0d2e5e",marginBottom:16}}>On-Call Setup</h2>
-          {connected ? <p style={{fontSize:13,color:"#059669",fontWeight:600}}>✅ Outlook connected.</p>
-            : <><p style={{fontSize:13,color:"#6b7280",marginBottom:12}}>Click to sign in with the SkySuite Outlook account.</p>
-               <button onClick={connectOutlook} style={btnS("#1565c0")}>🔗 Connect Outlook</button></>}
-          <p style={{fontSize:13,color:"#9ca3af",marginTop:16}}>📌 Rotation planner coming soon.</p>
+        <div>
+          {/* Connection */}
+          <div style={{background:"white",borderRadius:12,padding:20,boxShadow:"0 1px 4px rgba(0,0,0,0.07)",marginBottom:16}}>
+            <h2 style={{fontSize:15,fontWeight:700,color:"#0d2e5e",marginBottom:12}}>Outlook Connection</h2>
+            {connected ? <span style={{fontSize:13,color:"#059669",fontWeight:600}}>✅ Connected to Outlook</span>
+              : <><p style={{fontSize:13,color:"#6b7280",marginBottom:10}}>Sign in with the SkySuite Outlook account to enable calendar features.</p>
+                 <button onClick={connectOutlook} style={btnS("#1565c0")}>🔗 Connect Outlook</button></>}
+          </div>
+
+          {/* Rotation Planner */}
+          <div style={{background:"white",borderRadius:12,padding:20,boxShadow:"0 1px 4px rgba(0,0,0,0.07)"}}>
+            <h2 style={{fontSize:15,fontWeight:700,color:"#0d2e5e",marginBottom:4}}>🔁 Rotation Planner</h2>
+            <p style={{fontSize:12,color:"#6b7280",marginBottom:16}}>Fills empty on-call days in Outlook. Skips days already assigned.</p>
+
+            <div style={{display:"flex",gap:12,flexWrap:"wrap",alignItems:"flex-end",marginBottom:16}}>
+              <div><label style={lbl}>Start Date</label><input type="date" id="rot-start" style={{...inp,maxWidth:160}}/></div>
+              <div><label style={lbl}>Days per person</label>
+                <select id="rot-days" style={{...inp,maxWidth:120}}>
+                  <option value="1">1 day</option><option value="2">2 days</option><option value="7">7 days</option><option value="14">14 days</option>
+                </select>
+              </div>
+              <div><label style={lbl}>Rebalance from</label><input type="date" id="reb-start" style={{...inp,maxWidth:160}}/></div>
+              <label style={{display:"flex",alignItems:"center",gap:6,fontSize:13,color:"#374151",paddingBottom:2}}>
+                <input type="checkbox" id="rot-shuffle" style={{width:15,height:15}}/>Shuffle order
+              </label>
+            </div>
+
+            <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+              <button onClick={()=>runRotation("preview")} disabled={!connected} style={btnS("#6b7280")}>👁 Preview</button>
+              <button onClick={()=>runRotation("push")}    disabled={!connected} style={btnS("#1565c0")}>⬆ Push to Outlook</button>
+              <button onClick={()=>runRotation("rebalance")} disabled={!connected} style={btnS("#f97316")}>⚖ Rebalance</button>
+            </div>
+            <div id="rot-status" style={{marginTop:10,fontSize:13,color:"#374151"}}></div>
+          </div>
         </div>
       )}
 
