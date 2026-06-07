@@ -199,9 +199,16 @@ export default function OnCallManagerPage() {
         <h1 style={{ fontSize: 24, fontWeight: 800, color: "#0d2e5e" }}>On-Call Manager</h1>
         <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
           {!connected && isAdmin && (
-            <button onClick={connectOutlook} style={btnStyle("#1565c0")}>
-              🔗 Connect Outlook
-            </button>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+              <button onClick={connectOutlook} style={btnStyle("#1565c0")}>
+                🔗 Connect Outlook
+              </button>
+              {window.location.hostname !== "sky-suite-d14ff.web.app" && (
+                <span style={{ fontSize: 12, color: "#9ca3af" }}>
+                  (Will redirect to production to complete auth, then return here)
+                </span>
+              )}
+            </div>
           )}
           {connected && <span style={{ fontSize: 13, color: "#059669", fontWeight: 600 }}>✅ Connected to Outlook</span>}
         </div>
