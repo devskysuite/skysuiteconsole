@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { initializeApp, deleteApp } from "firebase/app";
 import { getAuth, createUserWithEmailAndPassword, onAuthStateChanged } from "firebase/auth";
+import { getFunctions, httpsCallable } from "firebase/functions";
 import {
   addDoc,
   collection,
@@ -22,8 +23,14 @@ type AppUser = {
   uid: string;
   email: string;
   displayName?: string;
+  firstName?: string;
+  lastName?: string;
   phone?: string;
+  department?: string;
+  section?: string;
+  ext?: string;
   role?: string;
+  onCall?: boolean;
   createdAt?: any;
 };
 
@@ -32,21 +39,26 @@ function fmtPhone(raw: string): string {
   const digits = raw.replace(/\D/g, "");
   if (digits.length === 10) return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
   if (digits.length === 11 && digits[0] === "1") return `(${digits.slice(1, 4)}) ${digits.slice(4, 7)}-${digits.slice(7)}`;
-  return raw; // return as-is if not a standard NA number
+  return raw;
 }
+
+const fns = getFunctions();
+const callSendSms           = httpsCallable(fns, "sendTestSms");
+const callPasswordReset     = httpsCallable(fns, "sendPasswordResetEmail");
+const callExportIcs         = httpsCallable(fns, "exportUserIcs");
 
 export default function UsersPage() {
   const isAdmin = useIsAdmin();
   const { toast, confirm } = useToast();
-  const [users, setUsers] = useState<AppUser[]>([]);
+  const [users, setUsers]   = useState<AppUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentUserRole, setCurrentUserRole] = useState("");
 
   const [displayName, setDisplayName] = useState("");
-  const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
+  const [email, setEmail]   = useState("");
+  const [phone, setPhone]   = useState("");
+  const [busy, setBusy]     = useState(false);
+  const [error, setError]   = useState("");
   const [success, setSuccess] = useState("");
 
   // Inline phone editing
@@ -54,11 +66,16 @@ export default function UsersPage() {
   const [editPhoneValue, setEditPhoneValue] = useState("");
 
   // Inline email/account setup
-  const [addingEmailId, setAddingEmailId] = useState<string | null>(null);
-  const [addEmailValue, setAddEmailValue] = useState("");
+  const [addingEmailId, setAddingEmailId]   = useState<string | null>(null);
+  const [addEmailValue, setAddEmailValue]   = useState("");
   const [addingEmailBusy, setAddingEmailBusy] = useState(false);
 
-  const [clearing, setClearing] = useState(false);
+  // Action button states
+  const [smsLoading, setSmsLoading]       = useState<string | null>(null);
+  const [resetLoading, setResetLoading]   = useState<string | null>(null);
+  const [icsLoading, setIcsLoading]       = useState<string | null>(null);
+
+  const [clearing, setClearing]     = useState(false);
   const [clearResult, setClearResult] = useState("");
 
   const isOwner = currentUserRole === "owner";
@@ -80,10 +97,12 @@ export default function UsersPage() {
   async function loadUsers() {
     const snap = await getDocs(collection(db, "users"));
     const all = snap.docs.map((d) => ({ id: d.id, ...d.data() } as AppUser));
+    // Sort: field first, then office; within each group alphabetically
     all.sort((a, b) => {
-      const ta = a.createdAt?.toDate?.()?.getTime?.() ?? 0;
-      const tb = b.createdAt?.toDate?.()?.getTime?.() ?? 0;
-      return tb - ta;
+      const sa = a.section === "field" ? 0 : 1;
+      const sb = b.section === "field" ? 0 : 1;
+      if (sa !== sb) return sa - sb;
+      return (a.displayName || "").localeCompare(b.displayName || "");
     });
     setUsers(all);
     setLoading(false);
@@ -107,44 +126,25 @@ export default function UsersPage() {
       const { user: newUser } = await createUserWithEmailAndPassword(secondaryAuth, email.trim(), tempPassword);
       const newUid = newUser.uid;
 
-      await fetch("/api/send-password-reset", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email.trim(), type: "setup" }),
-      });
+      await callPasswordReset({ email: email.trim(), displayName: displayName.trim() });
       await secondaryAuth.signOut();
       await deleteApp(secondaryApp);
 
-      // Check if a Firestore doc already exists for this employee (from bulk import)
       const existingSnap = await getDocs(
         query(collection(db, "users"), where("displayName", "==", displayName.trim()))
       );
       const existingDoc = existingSnap.docs.find((d) => {
         const data = d.data();
-        // Match if uid is empty or equals the doc ID (placeholder from bulk import)
         return !data.uid || data.uid === "" || data.uid === d.id;
       });
 
       if (existingDoc) {
-        // Link existing doc to the new Auth account
-        const oldUid = existingDoc.data().uid || "";
         await updateDoc(doc(db, "users", existingDoc.id), {
           uid: newUid,
           email: email.trim(),
           phone: phone.trim() || existingDoc.data().phone || "",
         });
-
-        // Update on-call assignments that referenced the old placeholder uid
-        if (oldUid && oldUid !== newUid) {
-          const assignSnap = await getDocs(
-            query(collection(db, "onCallAssignments"), where("uid", "==", oldUid))
-          );
-          for (const aDoc of assignSnap.docs) {
-            await updateDoc(doc(db, "onCallAssignments", aDoc.id), { uid: newUid });
-          }
-        }
       } else {
-        // No existing doc — create a new one
         await addDoc(collection(db, "users"), {
           uid: newUid,
           email: email.trim(),
@@ -169,10 +169,7 @@ export default function UsersPage() {
 
   async function savePhone(u: AppUser) {
     const trimmed = editPhoneValue.trim();
-    if (trimmed === (u.phone || "")) {
-      setEditingPhoneId(null);
-      return;
-    }
+    if (trimmed === (u.phone || "")) { setEditingPhoneId(null); return; }
     try {
       await updateDoc(doc(db, "users", u.id), { phone: trimmed });
       setEditingPhoneId(null);
@@ -193,18 +190,15 @@ export default function UsersPage() {
       const { user: newUser } = await createUserWithEmailAndPassword(secondaryAuth, trimmedEmail, tempPassword);
       const newUid = newUser.uid;
 
-      await fetch("/api/send-password-reset", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: trimmedEmail, type: "setup" }),
-      });
+      // Send branded reset email via Cloud Function
+      await callPasswordReset({ email: trimmedEmail, displayName: u.displayName });
+
       await secondaryAuth.signOut();
       await deleteApp(secondaryApp);
 
       const oldUid = u.uid;
       await updateDoc(doc(db, "users", u.id), { uid: newUid, email: trimmedEmail });
 
-      // Update on-call assignments that referenced the old placeholder uid
       if (oldUid && oldUid !== newUid) {
         const assignSnap = await getDocs(
           query(collection(db, "onCallAssignments"), where("uid", "==", oldUid))
@@ -225,6 +219,55 @@ export default function UsersPage() {
     }
   }
 
+  async function sendPasswordReset(u: AppUser) {
+    if (!u.email) { toast("No email set for this user.", "error"); return; }
+    setResetLoading(u.id);
+    try {
+      await callPasswordReset({ email: u.email, displayName: u.displayName });
+      toast(`Password reset sent to ${u.email}`, "success");
+    } catch (e: any) {
+      toast(e?.message ?? "Failed to send reset email.", "error");
+    } finally {
+      setResetLoading(null);
+    }
+  }
+
+  async function sendTestSms(u: AppUser) {
+    if (!u.phone) { toast("No phone number set for this user.", "error"); return; }
+    setSmsLoading(u.id);
+    try {
+      const result: any = await callSendSms({ to: u.phone, name: u.firstName || u.displayName });
+      toast(`✓ SMS sent to ${fmtPhone(u.phone)} (${result?.data?.status || "sent"})`, "success");
+    } catch (e: any) {
+      toast(e?.message ?? "Failed to send SMS.", "error");
+    } finally {
+      setSmsLoading(null);
+    }
+  }
+
+  async function exportIcs(u: AppUser) {
+    if (!u.displayName) { toast("No name set.", "error"); return; }
+    setIcsLoading(u.id);
+    try {
+      const result: any = await callExportIcs({ personName: u.displayName });
+      const { ics, count } = result.data;
+      if (!count) { toast(`No on-call events found for ${u.displayName}`, "error"); return; }
+      // Download
+      const blob = new Blob([ics], { type: "text/calendar;charset=utf-8" });
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement("a");
+      a.href     = url;
+      a.download = `${(u.displayName || "user").toLowerCase().replace(/\s+/g, "-")}-oncall.ics`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast(`Downloaded ${count} on-call events for ${u.displayName}`, "success");
+    } catch (e: any) {
+      toast(e?.message ?? "Failed to export ICS.", "error");
+    } finally {
+      setIcsLoading(null);
+    }
+  }
+
   async function changeRole(u: AppUser, newRole: string) {
     if (!isOwner || newRole === (u.role || "user")) return;
     const roleLabels: Record<string, string> = { owner: "Owner", admin: "Admin", manager: "Manager", user: "User" };
@@ -238,15 +281,14 @@ export default function UsersPage() {
   }
 
   async function removeUser(userId: string, userEmail: string, userUid: string, userRole: string) {
-    if (userRole === "owner") return;  // owners cannot be deleted
+    if (userRole === "owner") return;
     if (!isOwner) return;
-    if (!await confirm(`Remove ${userEmail}?\n\nThis will fully revoke their login access.`)) return;
+    if (!await confirm(`Remove ${userEmail || userId}?\n\nThis will fully revoke their login access.`)) return;
 
     try {
-      const idToken = await auth.currentUser?.getIdToken();
-      if (!idToken) throw new Error("Not authenticated");
-
       if (userUid) {
+        const idToken = await auth.currentUser?.getIdToken();
+        if (!idToken) throw new Error("Not authenticated");
         const res = await fetch("/api/delete-user", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -257,7 +299,6 @@ export default function UsersPage() {
           throw new Error(data.error ?? "Failed to delete from Auth");
         }
       }
-
       await deleteDoc(doc(db, "users", userId));
       await loadUsers();
     } catch (e: any) {
@@ -273,19 +314,12 @@ export default function UsersPage() {
     setClearResult("");
     try {
       const toolsSnap = await getDocs(collection(db, "tools"));
-      let totalHistory = 0;
-      let totalMaintenance = 0;
+      let totalHistory = 0, totalMaintenance = 0;
       for (const tool of toolsSnap.docs) {
         const histSnap = await getDocs(collection(db, "tools", tool.id, "history"));
-        for (const d of histSnap.docs) {
-          await deleteDoc(doc(db, "tools", tool.id, "history", d.id));
-          totalHistory++;
-        }
+        for (const d of histSnap.docs) { await deleteDoc(doc(db, "tools", tool.id, "history", d.id)); totalHistory++; }
         const maintSnap = await getDocs(collection(db, "tools", tool.id, "maintenance"));
-        for (const d of maintSnap.docs) {
-          await deleteDoc(doc(db, "tools", tool.id, "maintenance", d.id));
-          totalMaintenance++;
-        }
+        for (const d of maintSnap.docs) { await deleteDoc(doc(db, "tools", tool.id, "maintenance", d.id)); totalMaintenance++; }
       }
       setClearResult(`Cleared ${totalHistory} history entries and ${totalMaintenance} maintenance entries across ${toolsSnap.size} tools.`);
     } catch (e: any) {
@@ -298,6 +332,165 @@ export default function UsersPage() {
   if (isAdmin === null) return <div style={{ padding: 40, textAlign: "center" }}><Spinner /></div>;
   if (!isAdmin) return <div style={{ padding: 40, textAlign: "center", color: "#cc0000" }}>Access denied.</div>;
 
+  // Group users
+  const fieldUsers  = users.filter(u => u.section === "field" || (!u.section && u.department !== "OFFICE" && u.department !== "AUTOMATION"));
+  const officeUsers = users.filter(u => u.section === "office");
+  const otherUsers  = users.filter(u => !u.section && u.department !== "OFFICE" && u.department !== "AUTOMATION" && !fieldUsers.includes(u));
+
+  function renderRow(u: AppUser) {
+    const isOwnerRow = u.role === "owner";
+    const roleBadge  = isOwnerRow ? styles.badgeOwner
+      : u.role === "admin"   ? styles.badgeAdmin
+      : u.role === "manager" ? styles.badgeManager
+      : styles.badgeUser;
+    const roleLabel = isOwnerRow ? "Owner"
+      : u.role === "admin"   ? "Admin"
+      : u.role === "manager" ? "Manager"
+      : "User";
+    const isSelf = u.uid === auth.currentUser?.uid;
+
+    return (
+      <tr key={u.id} style={styles.tr}>
+        {/* Name */}
+        <td style={styles.td}>
+          <div style={{ fontWeight: 600, fontSize: 13 }}>{u.displayName || "—"}</div>
+          {u.department && <div style={{ fontSize: 11, color: "#999", marginTop: 2 }}>{u.department}</div>}
+        </td>
+
+        {/* Email */}
+        <td style={styles.td}>
+          {u.email ? (
+            <span style={{ fontSize: 13 }}>{u.email}</span>
+          ) : addingEmailId === u.id ? (
+            <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+              <input
+                style={{ ...styles.input, padding: "4px 8px", fontSize: 13, width: 160 }}
+                type="email"
+                value={addEmailValue}
+                onChange={(e) => setAddEmailValue(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") addEmailToUser(u); if (e.key === "Escape") setAddingEmailId(null); }}
+                placeholder="email@example.com"
+                autoFocus
+                disabled={addingEmailBusy}
+              />
+              <button style={{ ...styles.actionBtn, borderColor: "#1565c0", color: "#1565c0" }}
+                onClick={() => addEmailToUser(u)} disabled={addingEmailBusy}>
+                {addingEmailBusy ? "…" : "Go"}
+              </button>
+              <button style={{ ...styles.actionBtn }}
+                onClick={() => { setAddingEmailId(null); setAddEmailValue(""); }} disabled={addingEmailBusy}>
+                ✕
+              </button>
+            </div>
+          ) : isOwner ? (
+            <button style={{ ...styles.actionBtn, borderColor: "#1565c0", color: "#1565c0", fontSize: 11 }}
+              onClick={() => { setAddingEmailId(u.id); setAddEmailValue(""); }}>
+              + Add Email
+            </button>
+          ) : (
+            <span style={{ color: "#bbb", fontSize: 13 }}>—</span>
+          )}
+        </td>
+
+        {/* Phone */}
+        <td style={styles.td}>
+          {editingPhoneId === u.id ? (
+            <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+              <input
+                style={{ ...styles.input, padding: "4px 8px", fontSize: 13, width: 120 }}
+                type="tel"
+                value={editPhoneValue}
+                onChange={(e) => setEditPhoneValue(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") savePhone(u); if (e.key === "Escape") setEditingPhoneId(null); }}
+                autoFocus
+              />
+              <button style={{ ...styles.actionBtn, borderColor: "#1565c0", color: "#1565c0" }} onClick={() => savePhone(u)}>Save</button>
+            </div>
+          ) : (
+            <span
+              style={{ cursor: isOwner ? "pointer" : "default", color: u.phone ? "#333" : "#bbb", fontSize: 13 }}
+              onClick={() => { if (!isOwner) return; setEditingPhoneId(u.id); setEditPhoneValue(u.phone || ""); }}
+              title={isOwner ? "Click to edit" : ""}
+            >
+              {u.phone ? fmtPhone(u.phone) : "—"}
+            </span>
+          )}
+        </td>
+
+        {/* Role */}
+        <td style={styles.td}>
+          <span style={roleBadge}>{roleLabel}</span>
+          {u.onCall && <span style={styles.badgeOnCall}>On-Call</span>}
+        </td>
+
+        {/* Actions */}
+        <td style={{ ...styles.td, whiteSpace: "nowrap" }}>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+            {/* Password Reset */}
+            {u.email && isOwner && (
+              <button
+                style={{ ...styles.actionBtn, borderColor: "#1565c0", color: "#1565c0" }}
+                onClick={() => sendPasswordReset(u)}
+                disabled={resetLoading === u.id}
+                title="Send password reset email"
+              >
+                {resetLoading === u.id ? "…" : "🔑 Reset"}
+              </button>
+            )}
+
+            {/* Test SMS */}
+            {u.phone && isOwner && (
+              <button
+                style={{ ...styles.actionBtn, borderColor: "#16a34a", color: "#15803d" }}
+                onClick={() => sendTestSms(u)}
+                disabled={smsLoading === u.id}
+                title="Send test SMS"
+              >
+                {smsLoading === u.id ? "…" : "📱 Test SMS"}
+              </button>
+            )}
+
+            {/* Export ICS */}
+            {u.onCall && isOwner && (
+              <button
+                style={{ ...styles.actionBtn, borderColor: "#9333ea", color: "#7c3aed" }}
+                onClick={() => exportIcs(u)}
+                disabled={icsLoading === u.id}
+                title="Download on-call ICS calendar"
+              >
+                {icsLoading === u.id ? "…" : "📅 ICS"}
+              </button>
+            )}
+
+            {/* Role select + Remove */}
+            {isOwner && !isSelf && (
+              <>
+                <select
+                  style={styles.roleSelect}
+                  value={u.role || "user"}
+                  onChange={(e) => changeRole(u, e.target.value)}
+                >
+                  <option value="user">User</option>
+                  <option value="manager">Manager</option>
+                  <option value="admin">Admin</option>
+                  <option value="owner">Owner</option>
+                </select>
+                {!isOwnerRow && (
+                  <button
+                    style={styles.removeBtn}
+                    onClick={() => removeUser(u.id, u.email, u.uid, u.role ?? "")}
+                  >
+                    Remove
+                  </button>
+                )}
+              </>
+            )}
+          </div>
+        </td>
+      </tr>
+    );
+  }
+
   return (
     <div>
       <h1 style={styles.h1}>Manage Users</h1>
@@ -308,38 +501,22 @@ export default function UsersPage() {
         <div style={styles.row}>
           <div style={styles.field}>
             <label style={styles.label}>Full Name</label>
-            <input
-              style={styles.input}
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-              placeholder="John Smith"
-            />
+            <input style={styles.input} value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)} placeholder="John Smith" />
           </div>
           <div style={styles.field}>
             <label style={styles.label}>Email</label>
-            <input
-              style={styles.input}
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="john@rbtautomate.com"
-            />
+            <input style={styles.input} type="email" value={email}
+              onChange={(e) => setEmail(e.target.value)} placeholder="john@rbtautomate.com" />
           </div>
           <div style={styles.field}>
             <label style={styles.label}>Phone (optional)</label>
-            <input
-              style={styles.input}
-              type="tel"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              placeholder="905-555-1234"
-            />
+            <input style={styles.input} type="tel" value={phone}
+              onChange={(e) => setPhone(e.target.value)} placeholder="905-555-1234" />
           </div>
         </div>
-
-        {error && <p style={styles.error}>{error}</p>}
+        {error   && <p style={styles.error}>{error}</p>}
         {success && <p style={styles.success}>{success}</p>}
-
         <button style={styles.btn} onClick={addUser} disabled={busy}>
           {busy ? "Creating…" : "+ Add User"}
         </button>
@@ -357,166 +534,63 @@ export default function UsersPage() {
               {clearResult}
             </p>
           )}
-          <button
-            style={{ ...styles.btn, backgroundColor: "#cc0000" }}
-            onClick={clearAllHistoryAndMaintenance}
-            disabled={clearing}
-          >
+          <button style={{ ...styles.btn, backgroundColor: "#cc0000" }}
+            onClick={clearAllHistoryAndMaintenance} disabled={clearing}>
             {clearing ? "Clearing…" : "Clear All History & Maintenance Logs"}
           </button>
         </div>
       )}
 
-      {/* ── Users List ── */}
-      <div style={styles.card}>
-        <h2 style={styles.h2}>Current Users</h2>
-        {loading ? (
-          <div style={{ padding: 40, textAlign: "center" }}><Spinner /></div>
-        ) : users.length === 0 ? (
-          <p style={{ color: "#888", fontSize: 14 }}>No users added yet.</p>
-        ) : (
-          <table style={styles.table}>
-            <thead>
-              <tr>
-                <th style={styles.th}>Name</th>
-                <th style={styles.th}>Email</th>
-                <th style={styles.th}>Phone</th>
-                <th style={styles.th}>Role</th>
-                <th style={styles.th}>Added</th>
-                <th style={styles.th}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {users.map((u) => {
-                const isOwnerRow = u.role === "owner";
-                const roleBadge = isOwnerRow ? styles.badgeOwner
-                  : u.role === "admin" ? styles.badgeAdmin
-                  : u.role === "manager" ? styles.badgeManager
-                  : styles.badgeUser;
-                const roleLabel = isOwnerRow ? "Owner"
-                  : u.role === "admin" ? "Admin"
-                  : u.role === "manager" ? "Manager"
-                  : "User";
-                // Don't show action buttons on the current user's own row
-                const isSelf = u.uid === auth.currentUser?.uid;
-                return (
-                <tr key={u.id} style={styles.tr}>
-                  <td style={styles.td}>{u.displayName || "—"}</td>
-                  <td style={styles.td}>
-                    {u.email ? (
-                      u.email
-                    ) : addingEmailId === u.id ? (
-                      <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
-                        <input
-                          style={{ ...styles.input, padding: "4px 8px", fontSize: 13, width: 160 }}
-                          type="email"
-                          value={addEmailValue}
-                          onChange={(e) => setAddEmailValue(e.target.value)}
-                          onKeyDown={(e) => { if (e.key === "Enter") addEmailToUser(u); if (e.key === "Escape") setAddingEmailId(null); }}
-                          placeholder="email@example.com"
-                          autoFocus
-                          disabled={addingEmailBusy}
-                        />
-                        <button
-                          style={{ ...styles.promoteBtn, padding: "3px 8px", fontSize: 11 }}
-                          onClick={() => addEmailToUser(u)}
-                          disabled={addingEmailBusy}
-                        >
-                          {addingEmailBusy ? "…" : "Go"}
-                        </button>
-                        <button
-                          style={{ ...styles.demoteBtn, padding: "3px 8px", fontSize: 11 }}
-                          onClick={() => { setAddingEmailId(null); setAddEmailValue(""); }}
-                          disabled={addingEmailBusy}
-                        >
-                          ✕
-                        </button>
-                      </div>
-                    ) : isOwner ? (
-                      <button
-                        style={{ ...styles.promoteBtn, padding: "3px 10px", fontSize: 12 }}
-                        onClick={() => { setAddingEmailId(u.id); setAddEmailValue(""); }}
-                      >
-                        + Add Email
-                      </button>
-                    ) : (
-                      <span style={{ color: "#bbb" }}>—</span>
-                    )}
-                  </td>
-                  <td style={styles.td}>
-                    {editingPhoneId === u.id ? (
-                      <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
-                        <input
-                          style={{ ...styles.input, padding: "4px 8px", fontSize: 13, width: 120 }}
-                          type="tel"
-                          value={editPhoneValue}
-                          onChange={(e) => setEditPhoneValue(e.target.value)}
-                          onKeyDown={(e) => { if (e.key === "Enter") savePhone(u); if (e.key === "Escape") setEditingPhoneId(null); }}
-                          autoFocus
-                        />
-                        <button style={{ ...styles.promoteBtn, padding: "3px 8px", fontSize: 11 }} onClick={() => savePhone(u)}>Save</button>
-                      </div>
-                    ) : (
-                      <span
-                        style={{ cursor: isOwner ? "pointer" : "default", color: u.phone ? "#333" : "#bbb" }}
-                        onClick={() => { if (!isOwner) return; setEditingPhoneId(u.id); setEditPhoneValue(u.phone || ""); }}
-                        title={isOwner ? "Click to edit" : ""}
-                      >
-                        {u.phone ? fmtPhone(u.phone) : "—"}
-                      </span>
-                    )}
-                  </td>
-                  <td style={styles.td}>
-                    <span style={roleBadge}>{roleLabel}</span>
-                  </td>
-                  <td style={styles.td}>
-                    {u.createdAt?.toDate
-                      ? u.createdAt.toDate().toLocaleDateString("en-US", {
-                          month: "long",
-                          day: "2-digit",
-                          year: "numeric",
-                        })
-                      : "—"}
-                  </td>
-                  <td style={{ ...styles.td, display: "flex", gap: 8, alignItems: "center" }}>
-                    {isOwner && !isSelf && (
-                      <>
-                        <select
-                          style={styles.roleSelect}
-                          value={u.role || "user"}
-                          onChange={(e) => changeRole(u, e.target.value)}
-                        >
-                          <option value="user">User</option>
-                          <option value="manager">Manager</option>
-                          <option value="admin">Admin</option>
-                          <option value="owner">Owner</option>
-                        </select>
-                        {!isOwnerRow && (
-                          <button
-                            style={styles.removeBtn}
-                            onClick={() => removeUser(u.id, u.email, u.uid, u.role ?? "")}
-                          >
-                            Remove
-                          </button>
-                        )}
-                      </>
-                    )}
-                  </td>
-                </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        )}
-      </div>
+      {/* ── Field Employees ── */}
+      {fieldUsers.length > 0 && (
+        <div style={styles.card}>
+          <h2 style={styles.h2}>Field Employees <span style={styles.count}>{fieldUsers.length}</span></h2>
+          <UserTable rows={fieldUsers} renderRow={renderRow} />
+        </div>
+      )}
 
+      {/* ── Office Employees ── */}
+      {officeUsers.length > 0 && (
+        <div style={styles.card}>
+          <h2 style={styles.h2}>Office / Management <span style={styles.count}>{officeUsers.length}</span></h2>
+          <UserTable rows={officeUsers} renderRow={renderRow} />
+        </div>
+      )}
+
+      {/* ── Other (no section set) ── */}
+      {otherUsers.length > 0 && (
+        <div style={styles.card}>
+          <h2 style={styles.h2}>Other <span style={styles.count}>{otherUsers.length}</span></h2>
+          <UserTable rows={otherUsers} renderRow={renderRow} />
+        </div>
+      )}
+
+      {loading && <div style={{ padding: 40, textAlign: "center" }}><Spinner /></div>}
     </div>
+  );
+}
+
+function UserTable({ rows, renderRow }: { rows: AppUser[]; renderRow: (u: AppUser) => JSX.Element }) {
+  return (
+    <table style={styles.table}>
+      <thead>
+        <tr>
+          <th style={styles.th}>Name</th>
+          <th style={styles.th}>Email</th>
+          <th style={styles.th}>Phone</th>
+          <th style={styles.th}>Role</th>
+          <th style={styles.th}>Actions</th>
+        </tr>
+      </thead>
+      <tbody>{rows.map(renderRow)}</tbody>
+    </table>
   );
 }
 
 const styles: Record<string, React.CSSProperties> = {
   h1: { fontSize: 24, fontWeight: 800, marginBottom: 20 },
-  h2: { fontSize: 16, fontWeight: 700, marginBottom: 16, color: "#333" },
+  h2: { fontSize: 16, fontWeight: 700, marginBottom: 16, color: "#333", display: "flex", alignItems: "center", gap: 8 },
+  count: { background: "#e8f0ff", color: "#1565c0", borderRadius: 12, padding: "1px 8px", fontSize: 12, fontWeight: 700 },
   card: {
     border: "1px solid #e5e5e5",
     borderRadius: 12,
@@ -524,12 +598,12 @@ const styles: Record<string, React.CSSProperties> = {
     marginBottom: 24,
     backgroundColor: "#fff",
   },
-  row: { display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 16 },
+  row:   { display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 16 },
   field: { display: "flex", flexDirection: "column", flex: 1, minWidth: 200 },
   label: { fontSize: 13, fontWeight: 600, marginBottom: 6, color: "#555" },
   input: { border: "1px solid #ddd", borderRadius: 8, padding: "9px 12px", fontSize: 14 },
   btn: {
-    backgroundColor: "#1e7d3a",
+    backgroundColor: "#1565c0",
     color: "#fff",
     border: "none",
     borderRadius: 8,
@@ -538,9 +612,9 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 600,
     cursor: "pointer",
   },
-  error: { color: "#cc0000", fontSize: 13, marginBottom: 12 },
+  error:   { color: "#cc0000", fontSize: 13, marginBottom: 12 },
   success: { color: "#007700", fontSize: 13, marginBottom: 12 },
-  table: { width: "100%", borderCollapse: "collapse" },
+  table:   { width: "100%", borderCollapse: "collapse" },
   th: {
     textAlign: "left",
     fontSize: 12,
@@ -552,74 +626,51 @@ const styles: Record<string, React.CSSProperties> = {
     borderBottom: "1px solid #eee",
   },
   tr: { borderBottom: "1px solid #f5f5f5" },
-  td: { padding: "12px 8px 12px 0", fontSize: 14, color: "#333" },
+  td: { padding: "10px 8px 10px 0", fontSize: 14, color: "#333", verticalAlign: "middle" },
   badgeOwner: {
-    backgroundColor: "#fff8e1",
-    color: "#b45309",
-    borderRadius: 4,
-    padding: "2px 8px",
-    fontSize: 12,
-    fontWeight: 700,
+    backgroundColor: "#fff8e1", color: "#b45309",
+    borderRadius: 4, padding: "2px 8px", fontSize: 11, fontWeight: 700,
     border: "1px solid #f59e0b55",
   },
   badgeAdmin: {
-    backgroundColor: "#e8f0ff",
-    color: "#1e7d3a",
-    borderRadius: 4,
-    padding: "2px 8px",
-    fontSize: 12,
-    fontWeight: 700,
+    backgroundColor: "#e8f0ff", color: "#1565c0",
+    borderRadius: 4, padding: "2px 8px", fontSize: 11, fontWeight: 700,
   },
   badgeManager: {
-    backgroundColor: "#f0fdf4",
-    color: "#166534",
-    borderRadius: 4,
-    padding: "2px 8px",
-    fontSize: 12,
-    fontWeight: 700,
+    backgroundColor: "#f0fdf4", color: "#166534",
+    borderRadius: 4, padding: "2px 8px", fontSize: 11, fontWeight: 700,
     border: "1px solid #bbf7d055",
   },
   badgeUser: {
-    backgroundColor: "#f5f5f5",
-    color: "#666",
-    borderRadius: 4,
-    padding: "2px 8px",
-    fontSize: 12,
-    fontWeight: 600,
+    backgroundColor: "#f5f5f5", color: "#666",
+    borderRadius: 4, padding: "2px 8px", fontSize: 11, fontWeight: 600,
+  },
+  badgeOnCall: {
+    backgroundColor: "#dbeafe", color: "#1d4ed8",
+    borderRadius: 4, padding: "2px 6px", fontSize: 10, fontWeight: 700,
+    marginLeft: 4, border: "1px solid #bfdbfe",
   },
   roleSelect: {
-    border: "1px solid #ddd",
-    borderRadius: 6,
-    padding: "4px 8px",
-    fontSize: 13,
-    color: "#333",
-    cursor: "pointer",
-    background: "#fff",
+    border: "1px solid #ddd", borderRadius: 6,
+    padding: "3px 6px", fontSize: 12, color: "#333",
+    cursor: "pointer", background: "#fff",
   },
-  promoteBtn: {
+  actionBtn: {
     background: "transparent",
-    border: "1px solid #1e7d3a",
-    color: "#1e7d3a",
-    borderRadius: 6,
-    padding: "4px 10px",
-    fontSize: 12,
-    cursor: "pointer",
-  },
-  demoteBtn: {
-    background: "transparent",
-    border: "1px solid #888",
+    border: "1px solid #ccc",
     color: "#666",
     borderRadius: 6,
-    padding: "4px 10px",
+    padding: "3px 9px",
     fontSize: 12,
     cursor: "pointer",
+    whiteSpace: "nowrap" as const,
   },
   removeBtn: {
     background: "transparent",
     border: "1px solid #ffcccc",
     color: "#cc0000",
     borderRadius: 6,
-    padding: "4px 10px",
+    padding: "3px 9px",
     fontSize: 12,
     cursor: "pointer",
   },
