@@ -231,9 +231,11 @@ export default function OnCallManagerPage() {
                 const dayEvs=date?(eventMap[date]||[]):[];
                 const isToday=date===todayStr;
                 const myOncall=dayEvs.find(e=>{const s=e.subject.toLowerCase();return(s.includes("on call")||s.includes("oncall"))&&!s.includes("vacation")&&getName(e.subject).toLowerCase()===currentUser?.displayName?.split(" ")[0].toLowerCase();});
+                // Admin can click any on-call event; user can only click their own
+                const clickableOncall=isAdmin?dayEvs.find(e=>{const s=e.subject.toLowerCase();return(s.includes("on call")||s.includes("oncall"))&&!s.includes("vacation");}):myOncall;
                 return(
-                  <div key={i} style={{minHeight:80,background:isToday?"#eff6ff":"#fafafa",border:isToday?"2px solid #1565c0":"1px solid #e5e7eb",borderRadius:6,padding:4,cursor:myOncall?"pointer":"default"}}
-                    onClick={()=>{ if(myOncall&&connected) setSwapModal({event:myOncall}); }}>
+                  <div key={i} style={{minHeight:80,background:isToday?"#eff6ff":"#fafafa",border:isToday?"2px solid #1565c0":"1px solid #e5e7eb",borderRadius:6,padding:4,cursor:clickableOncall?"pointer":"default"}}
+                    onClick={()=>{ if(clickableOncall&&connected) setSwapModal({event:clickableOncall}); }}>
                     {date&&<>
                       <div style={{fontSize:12,fontWeight:isToday?800:500,color:isToday?"#1565c0":"#374151",marginBottom:2}}>{parseInt(date.slice(8))}</div>
                       {dayEvs.slice(0,2).map(ev=>{const c=pillStyle(ev.subject);const n=getName(ev.subject);return(
@@ -241,7 +243,7 @@ export default function OnCallManagerPage() {
                           {c.prefix}{n}
                         </div>);})}
                       {dayEvs.length>2&&<div style={{fontSize:9,color:"#9ca3af"}}>+{dayEvs.length-2}</div>}
-                      {myOncall&&<div style={{fontSize:9,color:"#1565c0",marginTop:2}}>tap to swap</div>}
+                      {clickableOncall&&<div style={{fontSize:9,color:"#1565c0",marginTop:2}}>tap to swap</div>}
                     </>}
                   </div>);
               })}
