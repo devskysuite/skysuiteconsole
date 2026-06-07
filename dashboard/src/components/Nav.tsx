@@ -93,7 +93,7 @@ export default function Nav() {
         <img
           src="/skysuite_logo.png"
           alt="SkySuite Console"
-          style={{ height: 56, objectFit: "contain" }}
+          style={{ height: 56, objectFit: "contain", filter: "brightness(0) invert(1)" }}
           onError={(e) => { (e.target as HTMLImageElement).src = "/skysuite_logo_white.png"; }}
         />
         {userName && (
