@@ -126,46 +126,14 @@ export default function Nav() {
           </Link>
         ))}
 
-        {/* Time Off — direct link for users, dropdown for approvers */}
-        {canApprove ? (
-          <div ref={timeOffRef} style={{ position: "relative" }}>
-            <button
-              style={{ ...styles.adminBtn, position: "relative" as const, ...(pathname.startsWith("/time-off") ? styles.linkActive : {}) }}
-              onClick={() => setTimeOffMenuOpen((v) => !v)}
-            >
-              Time Off
-              {pendingTimeOff > 0 && <span style={styles.badge}>{pendingTimeOff}</span>}
-            </button>
-            {timeOffMenuOpen && (
-              <div style={styles.dropdown}>
-                <Link to="/time-off" style={{ ...styles.dropdownItem, ...(pathname === "/time-off" ? styles.dropdownItemActive : {}) }}>
-                  My Requests
-                </Link>
-                <Link
-                  to="/time-off/approvals"
-                  style={{
-                    ...styles.dropdownItem,
-                    ...(pathname === "/time-off/approvals" ? styles.dropdownItemActive : {}),
-                    display: "flex", alignItems: "center", justifyContent: "space-between",
-                  }}
-                >
-                  Approvals
-                  {pendingTimeOff > 0 && <span style={styles.dropdownBadge}>{pendingTimeOff}</span>}
-                </Link>
-              </div>
-            )}
-          </div>
-        ) : (
-          <Link
-            to="/time-off"
-            style={{
-              ...styles.link,
-              ...(pathname === "/time-off" ? styles.linkActive : {}),
-            }}
-          >
-            Time Off
-          </Link>
-        )}
+        {/* Vacation — always a direct link; approvals are a tab on the page */}
+        <Link
+          to="/time-off"
+          style={{ ...styles.link, ...(pathname.startsWith("/time-off") ? styles.linkActive : {}), position: "relative" as const }}
+        >
+          Vacation
+          {pendingTimeOff > 0 && <span style={styles.badge}>{pendingTimeOff}</span>}
+        </Link>
 
         {/* Resources dropdown */}
         <div ref={resourcesRef} style={{ position: "relative" }}>
@@ -235,17 +203,7 @@ export default function Nav() {
           {l.label}
         </Link>
       ))}
-      {canApprove ? (
-        <>
-          <Link to="/time-off" className="mobile-nav-link">My Requests</Link>
-          <Link to="/time-off/approvals" className="mobile-nav-link" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            Approvals
-            {pendingTimeOff > 0 && <span style={styles.dropdownBadge}>{pendingTimeOff}</span>}
-          </Link>
-        </>
-      ) : (
-        <Link to="/time-off" className="mobile-nav-link">Time Off</Link>
-      )}
+      <Link to="/time-off" className="mobile-nav-link">Vacation</Link>
       {RESOURCE_ITEMS.map((item) => (
         <Link key={item.to} to={item.to} className="mobile-nav-link">
           {item.label}

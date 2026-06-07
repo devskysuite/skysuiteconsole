@@ -1,17 +1,13 @@
 import { useEffect, useState } from "react";
 import { onAuthStateChanged } from "firebase/auth";
 import {
-  addDoc,
-  collection,
-  doc,
-  getDocs,
-  query,
-  updateDoc,
-  where,
+  addDoc, collection, doc, getDocs, onSnapshot,
+  query, updateDoc, deleteDoc, where,
 } from "firebase/firestore";
 import { doc as fsDoc, getDoc as fsGetDoc, setDoc as fsSetDoc } from "firebase/firestore";
 import { auth, db } from "../firebase";
 import { useToast } from "../components/Toast";
+import { useRole, canApproveTimeOff } from "../hooks/useRole";
 import { fmtISODate, timeOffStatusBadge } from "../utils/formatting";
 import type { TimeOffRequest } from "../types";
 
@@ -21,14 +17,18 @@ const CAL_ID     = "AAMkADgyOGUwMDUyLTNiZjMtNGQzNi1hNTgwLTQ2M2IzYzE2YmQ5MgBGAAAA
 const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 const DAYS   = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
 
-type View = "month" | "list" | "request" | "my-requests";
+type View = "month" | "list" | "request" | "my-requests" | "approvals";
 
 export default function TimeOffPage() {
-  const [currentUser, setCurrentUser] = useState<{ uid: string; email: string; displayName: string } | null>(null);
   const { confirm } = useToast();
-  const [myRequests, setMyRequests] = useState<TimeOffRequest[]>([]);
+  const role = useRole();
+  const canApprove = canApproveTimeOff(role);
 
-  // Calendar state
+  const [currentUser, setCurrentUser] = useState<{ uid: string; email: string; displayName: string } | null>(null);
+  const [myRequests,  setMyRequests]  = useState<TimeOffRequest[]>([]);
+  const [allRequests, setAllRequests] = useState<TimeOffRequest[]>([]);
+
+  // Calendar
   const todayDate = new Date();
   const [year,  setYear]  = useState(todayDate.getFullYear());
   const [month, setMonth] = useState(todayDate.getMonth());
@@ -37,7 +37,7 @@ export default function TimeOffPage() {
   const [calLoading, setCalLoading] = useState(false);
   const [token, setToken] = useState("");
 
-  // Request form state
+  // Request form
   const [singleDay, setSingleDay] = useState(true);
   const [startDate, setStartDate] = useState("");
   const [endDate,   setEndDate]   = useState("");
@@ -48,7 +48,6 @@ export default function TimeOffPage() {
 
   const today = new Date().toISOString().split("T")[0];
 
-  // Load user
   useEffect(() => {
     return onAuthStateChanged(auth, async (user) => {
       if (!user) { setCurrentUser(null); return; }
@@ -64,28 +63,35 @@ export default function TimeOffPage() {
 
   useEffect(() => { if (currentUser) loadMyRequests(); }, [currentUser]);
 
-  // Load Outlook token
+  // Listen for all requests (for approvers)
   useEffect(() => {
-    async function loadToken() {
+    if (!canApprove) return;
+    return onSnapshot(query(collection(db, "timeOffRequests")), snap => {
+      setAllRequests(snap.docs.map(d => ({ id: d.id, ...d.data() } as TimeOffRequest))
+        .sort((a, b) => (b.createdAt?.toMillis?.() ?? 0) - (a.createdAt?.toMillis?.() ?? 0)));
+    });
+  }, [canApprove]);
+
+  // Outlook token
+  useEffect(() => {
+    (async () => {
       try {
         const snap = await fsGetDoc(fsDoc(db, "settings", "outlookOnCall"));
-        if (snap.exists() && snap.data().refreshToken) {
-          const r = await fetch(`https://login.microsoftonline.com/${TENANT_ID}/oauth2/v2.0/token`, {
-            method: "POST",
-            body: new URLSearchParams({ client_id: CLIENT_ID, refresh_token: snap.data().refreshToken, grant_type: "refresh_token", scope: "Calendars.ReadWrite offline_access" }),
-          });
-          const d = await r.json();
-          if (d.access_token) {
-            setToken(d.access_token);
-            try { await fsSetDoc(fsDoc(db, "settings", "outlookOnCall"), { refreshToken: d.refresh_token }, { merge: true }); } catch {}
-          }
+        if (!snap.exists() || !snap.data().refreshToken) return;
+        const r = await fetch(`https://login.microsoftonline.com/${TENANT_ID}/oauth2/v2.0/token`, {
+          method: "POST",
+          body: new URLSearchParams({ client_id: CLIENT_ID, refresh_token: snap.data().refreshToken, grant_type: "refresh_token", scope: "Calendars.ReadWrite offline_access" }),
+        });
+        const d = await r.json();
+        if (d.access_token) {
+          setToken(d.access_token);
+          try { await fsSetDoc(fsDoc(db, "settings", "outlookOnCall"), { refreshToken: d.refresh_token }, { merge: true }); } catch {}
         }
       } catch {}
-    }
-    loadToken();
+    })();
   }, []);
 
-  // Fetch calendar events when token/month/year changes
+  // Fetch calendar events
   useEffect(() => {
     if (!token) return;
     setCalLoading(true);
@@ -100,8 +106,7 @@ export default function TimeOffPage() {
           .forEach((e: any) => evs.push({ id: e.id, subject: e.subject, start: e.start?.date || e.start?.dateTime?.slice(0, 10) || "", end: e.end?.date || e.end?.dateTime?.slice(0, 10) || "" }));
         url = d["@odata.nextLink"] || "";
       }
-      setEvents(evs);
-      setCalLoading(false);
+      setEvents(evs); setCalLoading(false);
     })().catch(() => setCalLoading(false));
   }, [token, year, month]);
 
@@ -122,55 +127,51 @@ export default function TimeOffPage() {
 
   async function submitRequest() {
     setError(""); setSuccess("");
-    if (!startDate || (!singleDay && !endDate)) { setError(singleDay ? "Please select a date." : "Please select a start and end date."); return; }
+    if (!startDate || (!singleDay && !endDate)) { setError(singleDay ? "Please select a date." : "Please select start and end dates."); return; }
     const effectiveEnd = singleDay ? startDate : endDate;
     if (effectiveEnd < startDate) { setError("End date cannot be before start date."); return; }
     if (!currentUser) { setError("Not logged in."); return; }
-
     const overlap = myRequests.find(r => r.status !== "DENIED" && startDate <= r.endDate && effectiveEnd >= r.startDate);
-    if (overlap) { setError(`You already have a ${overlap.status.toLowerCase()} request for ${overlap.startDate} – ${overlap.endDate}. Choose different dates.`); return; }
-
+    if (overlap) { setError(`You already have a ${overlap.status.toLowerCase()} request for ${overlap.startDate} – ${overlap.endDate}.`); return; }
     const deniedOverlap = myRequests.find(r => r.status === "DENIED" && startDate <= r.endDate && effectiveEnd >= r.startDate);
-    if (deniedOverlap) {
-      const proceed = await confirm("The time off you are requesting has previously been denied. Are you sure you want to request this time off?");
-      if (!proceed) return;
-    }
-
+    if (deniedOverlap && !await confirm("This time was previously denied. Request anyway?")) return;
     setBusy(true);
     try {
       await addDoc(collection(db, "timeOffRequests"), {
-        uid: currentUser.uid,
-        employeeName: currentUser.displayName,
-        employeeEmail: currentUser.email,
-        startDate,
-        endDate: effectiveEnd,
-        reason: reason.trim(),
-        status: "PENDING",
-        createdAt: new Date(),
+        uid: currentUser.uid, employeeName: currentUser.displayName, employeeEmail: currentUser.email,
+        startDate, endDate: effectiveEnd, reason: reason.trim(), status: "PENDING", createdAt: new Date(),
       });
       try {
         const idToken = await auth.currentUser?.getIdToken() ?? "";
         await fetch("/api/send-email", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ idToken, type: "time-off", payload: { employee_name: currentUser.displayName, employee_email: currentUser.email, start_date: startDate, end_date: effectiveEnd, reason: reason.trim() || "No reason provided" } }) });
       } catch {}
-      setSuccess("Time off request submitted successfully.");
+      setSuccess("Vacation request submitted successfully.");
       setStartDate(""); setEndDate(""); setReason("");
       await loadMyRequests();
-    } catch (e: any) {
-      setError(e?.message ?? "Failed to submit request.");
-    } finally {
-      setBusy(false);
-    }
+    } catch (e: any) { setError(e?.message ?? "Failed to submit."); }
+    finally { setBusy(false); }
   }
 
-  // Calendar grid helpers
-  const todayStr = `${todayDate.getFullYear()}-${String(todayDate.getMonth() + 1).padStart(2, "0")}-${String(todayDate.getDate()).padStart(2, "0")}`;
+  async function approveRequest(r: TimeOffRequest) {
+    await updateDoc(doc(db, "timeOffRequests", r.id), { status: "APPROVED" });
+  }
+  async function denyRequest(r: TimeOffRequest) {
+    await updateDoc(doc(db, "timeOffRequests", r.id), { status: "DENIED" });
+  }
+  async function deleteRequest(r: TimeOffRequest) {
+    if (!await confirm(`Delete this request from ${r.employeeName}?`)) return;
+    await deleteDoc(doc(db, "timeOffRequests", r.id));
+  }
+
+  // Calendar grid
+  const todayStr = `${todayDate.getFullYear()}-${String(todayDate.getMonth()+1).padStart(2,"0")}-${String(todayDate.getDate()).padStart(2,"0")}`;
   const first = new Date(year, month, 1).getDay();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const grid: string[] = [];
   for (let i = 0; i < first; i++) grid.push("");
-  for (let d = 1; d <= daysInMonth; d++) grid.push(`${year}-${String(month + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`);
+  for (let d = 1; d <= daysInMonth; d++) grid.push(`${year}-${String(month+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`);
 
-  // Build vacation map
+  // Vacation map: date → [names]
   const vacMap: Record<string, string[]> = {};
   events.forEach(ev => {
     let cur = new Date(ev.start + "T12:00:00");
@@ -184,69 +185,68 @@ export default function TimeOffPage() {
     }
   });
 
+  const pendingCount = allRequests.filter(r => r.status === "PENDING").length;
+
   const prevMonth = () => { let m = month - 1, y = year; if (m < 0) { m = 11; y--; } setMonth(m); setYear(y); };
   const nextMonth = () => { let m = month + 1, y = year; if (m > 11) { m = 0; y++; } setMonth(m); setYear(y); };
 
   return (
     <div style={{ padding: "0 0 32px" }}>
+      <div style={{ background: "#fff", borderRadius: 12, padding: 20, boxShadow: "0 1px 4px rgba(0,0,0,0.07)" }}>
 
-      {/* ── Full-width calendar card ── */}
-      <div style={{ background: "#fff", borderRadius: 12, padding: 24, boxShadow: "0 1px 4px rgba(0,0,0,0.07)", marginBottom: 24 }}>
-
-        {/* Tab buttons — same style as On-Call page */}
-        <div style={{ display: "flex", alignItems: "center", borderBottom: "2px solid #f0f0f0", marginBottom: 20, gap: 0 }}>
-          <TabBtn label="📅 Month View"       active={view === "month"}       onClick={() => setView("month")} />
-          <TabBtn label="📋 List View"        active={view === "list"}        onClick={() => setView("list")} />
-          <TabBtn label="✏️ Request Time Off" active={view === "request"}     onClick={() => setView("request")} />
-          <TabBtn label="🗂 My Requests"      active={view === "my-requests"} onClick={() => setView("my-requests")} />
+        {/* ── Tab buttons — identical to On-Call ── */}
+        <div style={{ display: "flex", alignItems: "center", borderBottom: "2px solid #f0f0f0", marginBottom: 20 }}>
+          <TabBtn label="📅 Calendar"          active={view==="month"}       onClick={()=>setView("month")} />
+          <TabBtn label="📋 List View"         active={view==="list"}        onClick={()=>setView("list")} />
+          <TabBtn label="✏️ Request Vacation"  active={view==="request"}     onClick={()=>setView("request")} />
+          <TabBtn label="🗂 My Requests"       active={view==="my-requests"} onClick={()=>setView("my-requests")} />
+          {canApprove && (
+            <TabBtn
+              label={`✅ Approvals${pendingCount > 0 ? ` (${pendingCount})` : ""}`}
+              active={view==="approvals"}
+              onClick={()=>setView("approvals")}
+            />
+          )}
         </div>
 
-        {/* Month nav — only show on calendar views */}
+        {/* ── Month nav ── */}
         {(view === "month" || view === "list") && (
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <button onClick={prevMonth} style={styles.navBtn}>◀</button>
-              <span style={{ fontWeight: 700, fontSize: 20, color: "#0d2e5e", minWidth: 180, textAlign: "center" }}>{MONTHS[month]} {year}</span>
-              <button onClick={nextMonth} style={styles.navBtn}>▶</button>
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{ background: "#f97316", color: "#fff", fontSize: 12, fontWeight: 700, padding: "4px 12px", borderRadius: 99 }}>🏖 Vacation</span>
-              {!token && <span style={{ fontSize: 12, color: "#9ca3af" }}>Connect Outlook in On-Call Setup to see vacations</span>}
-            </div>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+            <button onClick={prevMonth} style={navS}>◀</button>
+            <span style={{ fontWeight: 700, fontSize: 18, color: "#0d2e5e" }}>{MONTHS[month]} {year}</span>
+            <button onClick={nextMonth} style={navS}>▶</button>
           </div>
         )}
 
+        {/* ── Legend ── */}
+        {view === "month" && (
+          <div style={{ display: "flex", gap: 16, marginBottom: 14, flexWrap: "wrap", alignItems: "center" }}>
+            <span style={{ background: "#f97316", color: "#fff", fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 99 }}>🏖 Vacation</span>
+            {!token && <span style={{ fontSize: 11, color: "#9ca3af" }}>Connect Outlook in On-Call Setup to see team vacations</span>}
+          </div>
+        )}
 
-        {/* ── Month Grid ── */}
+        {/* ── Calendar grid ── */}
         {view === "month" && (
           <>
-            {calLoading && <div style={{ textAlign: "center", padding: 60, color: "#9ca3af", fontSize: 15 }}>⏳ Loading…</div>}
-            {!calLoading && (
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 4 }}>
-                {DAYS.map(d => (
-                  <div key={d} style={{ textAlign: "center", fontSize: 12, fontWeight: 700, color: "#6b7280", padding: "8px 0", textTransform: "uppercase", letterSpacing: 0.5 }}>{d}</div>
-                ))}
+            {calLoading && <div style={{ textAlign: "center", padding: 40, color: "#9ca3af" }}>⏳ Loading...</div>}
+            {!token && !calLoading && <div style={{ textAlign: "center", padding: 40, color: "#9ca3af" }}>Connect Outlook in On-Call Setup to view vacations.</div>}
+            {token && !calLoading && (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 3 }}>
+                {DAYS.map(d => <div key={d} style={{ textAlign: "center", fontSize: 12, fontWeight: 700, color: "#6b7280", padding: "8px 0", textTransform: "uppercase" }}>{d}</div>)}
                 {grid.map((date, i) => {
                   const names = date ? (vacMap[date] || []) : [];
                   const isToday = date === todayStr;
                   return (
-                    <div key={i} style={{
-                      minHeight: 110,
-                      background: isToday ? "#fff8f0" : names.length ? "#fff7ed" : "#fafafa",
-                      border: isToday ? "2px solid #f97316" : "1px solid #e5e7eb",
-                      borderRadius: 6,
-                      padding: 6,
-                    }}>
+                    <div key={i} style={{ minHeight: 110, background: isToday ? "#fff8f0" : "#fafafa", border: isToday ? "2px solid #f97316" : "1px solid #e5e7eb", borderRadius: 6, padding: 6 }}>
                       {date && <>
-                        <div style={{ fontSize: 13, fontWeight: isToday ? 800 : 500, color: isToday ? "#f97316" : "#374151", marginBottom: 3 }}>
-                          {parseInt(date.slice(8))}
-                        </div>
-                        {names.slice(0, 3).map(n => (
+                        <div style={{ fontSize: 12, fontWeight: isToday ? 800 : 500, color: isToday ? "#f97316" : "#374151", marginBottom: 2 }}>{parseInt(date.slice(8))}</div>
+                        {names.slice(0, 2).map(n => (
                           <div key={n} style={{ fontSize: 11, fontWeight: 600, background: "#f97316", color: "white", borderRadius: 4, padding: "2px 5px", marginBottom: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                             🏖 {n}
                           </div>
                         ))}
-                        {names.length > 3 && <div style={{ fontSize: 10, color: "#9ca3af" }}>+{names.length - 3} more</div>}
+                        {names.length > 2 && <div style={{ fontSize: 9, color: "#9ca3af" }}>+{names.length - 2}</div>}
                       </>}
                     </div>
                   );
@@ -259,12 +259,12 @@ export default function TimeOffPage() {
         {/* ── List View ── */}
         {view === "list" && (
           <div>
-            {calLoading && <div style={{ textAlign: "center", padding: 40, color: "#9ca3af" }}>⏳ Loading…</div>}
-            {!calLoading && events.length === 0 && <p style={{ color: "#9ca3af", fontSize: 14 }}>No vacations this month.</p>}
+            {calLoading && <div style={{ textAlign: "center", padding: 40, color: "#9ca3af" }}>⏳ Loading...</div>}
+            {!calLoading && events.length === 0 && <p style={{ color: "#9ca3af", fontSize: 13 }}>No vacations this month.</p>}
             {!calLoading && events.map(ev => (
               <div key={ev.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 0", borderBottom: "1px solid #f5f5f5" }}>
                 <div>
-                  <div style={{ fontWeight: 600, fontSize: 14 }}>{ev.subject.replace(/vacation\s*[-–]?\s*/i, "").replace(/[-–]\s*vacation/i, "").trim()}</div>
+                  <div style={{ fontWeight: 600, fontSize: 14 }}>{ev.subject.replace(/vacation\s*[-–]?\s*/i,"").replace(/[-–]\s*vacation/i,"").trim()}</div>
                   <div style={{ fontSize: 12, color: "#6b7280", marginTop: 2 }}>{ev.start} → {ev.end}</div>
                 </div>
                 <span style={{ background: "#fff3e0", color: "#e65100", fontSize: 12, fontWeight: 600, padding: "3px 10px", borderRadius: 99 }}>🏖 Vacation</span>
@@ -273,11 +273,10 @@ export default function TimeOffPage() {
           </div>
         )}
 
-        {/* ── Request Time Off Form ── */}
+        {/* ── Request Vacation ── */}
         {view === "request" && (
           <div style={{ maxWidth: 560 }}>
             <h2 style={{ fontSize: 17, fontWeight: 700, marginBottom: 20, color: "#0d2e5e" }}>Request Vacation</h2>
-
             <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20 }}>
               <span style={{ fontSize: 13, fontWeight: 600, color: singleDay ? "#aaa" : "#333" }}>Multiple Days</span>
               <div onClick={() => { setSingleDay(!singleDay); setEndDate(""); }}
@@ -286,62 +285,88 @@ export default function TimeOffPage() {
               </div>
               <span style={{ fontSize: 13, fontWeight: 600, color: singleDay ? "#333" : "#aaa" }}>Single Day</span>
             </div>
-
             <div style={{ display: "flex", gap: 16, marginBottom: 16, flexWrap: "wrap" }}>
               <div style={{ display: "flex", flexDirection: "column", flex: 1, minWidth: 160 }}>
-                <label style={styles.label}>{singleDay ? "Date" : "Start Date"}</label>
-                <input type="date" style={styles.input} min={today} value={startDate} onChange={e => setStartDate(e.target.value)} />
+                <label style={lbl}>{singleDay ? "Date" : "Start Date"}</label>
+                <input type="date" style={inp} min={today} value={startDate} onChange={e => setStartDate(e.target.value)} />
               </div>
               {!singleDay && (
                 <div style={{ display: "flex", flexDirection: "column", flex: 1, minWidth: 160 }}>
-                  <label style={styles.label}>End Date</label>
-                  <input type="date" style={styles.input} min={startDate || today} value={endDate} onChange={e => setEndDate(e.target.value)} />
+                  <label style={lbl}>End Date</label>
+                  <input type="date" style={inp} min={startDate || today} value={endDate} onChange={e => setEndDate(e.target.value)} />
                 </div>
               )}
             </div>
-
             <div style={{ display: "flex", flexDirection: "column", marginBottom: 16 }}>
-              <label style={styles.label}>Reason (optional)</label>
-              <textarea style={{ ...styles.input, resize: "vertical", minHeight: 80, fontFamily: "inherit" }} value={reason} onChange={e => setReason(e.target.value)} placeholder="Any additional details…" />
+              <label style={lbl}>Reason (optional)</label>
+              <textarea style={{ ...inp, resize: "vertical", minHeight: 80, fontFamily: "inherit" }} value={reason} onChange={e => setReason(e.target.value)} placeholder="Any additional details…" />
             </div>
-
             {error   && <p style={{ color: "#cc0000", fontSize: 13, marginBottom: 12 }}>{error}</p>}
             {success && <p style={{ color: "#007700", fontSize: 13, marginBottom: 12 }}>{success}</p>}
-
-            <button style={styles.btn} onClick={submitRequest} disabled={busy}>
-              {busy ? "Submitting…" : "Submit Request"}
-            </button>
+            <button style={btnS("#1565c0")} onClick={submitRequest} disabled={busy}>{busy ? "Submitting…" : "Submit Request"}</button>
           </div>
         )}
 
         {/* ── My Requests ── */}
         {view === "my-requests" && (
           <div>
-            <h2 style={{ fontSize: 17, fontWeight: 700, marginBottom: 20, color: "#0d2e5e" }}>My Requests</h2>
+            <h2 style={{ fontSize: 17, fontWeight: 700, marginBottom: 16, color: "#0d2e5e" }}>My Vacation Requests</h2>
             {myRequests.length === 0 ? (
               <p style={{ color: "#888", fontSize: 14 }}>No requests submitted yet.</p>
             ) : (
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead>
                   <tr>
-                    <th style={styles.th}>Start</th>
-                    <th style={styles.th}>End</th>
-                    <th style={styles.th}>Reason</th>
-                    <th style={styles.th}>Status</th>
-                    <th style={styles.th}>Submitted</th>
+                    <th style={th}>Start</th><th style={th}>End</th><th style={th}>Reason</th><th style={th}>Status</th><th style={th}>Submitted</th>
                   </tr>
                 </thead>
                 <tbody>
                   {myRequests.map(r => (
                     <tr key={r.id} style={{ borderBottom: "1px solid #f5f5f5" }}>
-                      <td style={styles.td}>{fmtISODate(r.startDate)}</td>
-                      <td style={styles.td}>{fmtISODate(r.endDate)}</td>
-                      <td style={styles.td}>{r.reason || "—"}</td>
-                      <td style={styles.td}><span style={timeOffStatusBadge(r.status)}>{r.status}</span></td>
-                      <td style={styles.td}>
-                        {r.createdAt?.toDate
-                          ? r.createdAt.toDate().toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" })
-                          : r.createdAt ? new Date(r.createdAt).toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" }) : "—"}
+                      <td style={td}>{fmtISODate(r.startDate)}</td>
+                      <td style={td}>{fmtISODate(r.endDate)}</td>
+                      <td style={td}>{r.reason || "—"}</td>
+                      <td style={td}><span style={timeOffStatusBadge(r.status)}>{r.status}</span></td>
+                      <td style={td}>{r.createdAt?.toDate ? r.createdAt.toDate().toLocaleDateString("en-US",{month:"short",day:"2-digit",year:"numeric"}) : "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        )}
+
+        {/* ── Approvals (managers/admins only) ── */}
+        {view === "approvals" && canApprove && (
+          <div>
+            <h2 style={{ fontSize: 17, fontWeight: 700, marginBottom: 16, color: "#0d2e5e" }}>Vacation Approvals</h2>
+            {allRequests.length === 0 ? (
+              <p style={{ color: "#888", fontSize: 14 }}>No requests yet.</p>
+            ) : (
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead>
+                  <tr>
+                    <th style={th}>Employee</th><th style={th}>Dates</th><th style={th}>Reason</th><th style={th}>Status</th><th style={th}>Submitted</th><th style={th}></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {allRequests.map(r => (
+                    <tr key={r.id} style={{ borderBottom: "1px solid #f5f5f5" }}>
+                      <td style={td}><div style={{ fontWeight: 600 }}>{r.employeeName}</div><div style={{ fontSize: 11, color: "#9ca3af" }}>{r.employeeEmail}</div></td>
+                      <td style={td}>{fmtISODate(r.startDate)}{r.startDate !== r.endDate ? ` → ${fmtISODate(r.endDate)}` : ""}</td>
+                      <td style={td}>{r.reason || "—"}</td>
+                      <td style={td}><span style={timeOffStatusBadge(r.status)}>{r.status}</span></td>
+                      <td style={td}>{r.createdAt?.toDate ? r.createdAt.toDate().toLocaleDateString("en-US",{month:"short",day:"2-digit",year:"numeric"}) : "—"}</td>
+                      <td style={{ ...td, whiteSpace: "nowrap" }}>
+                        {r.status === "PENDING" && (
+                          <>
+                            <button onClick={() => approveRequest(r)} style={{ ...btnS("#059669"), fontSize: 12, padding: "4px 10px", marginRight: 6 }}>✅ Approve</button>
+                            <button onClick={() => denyRequest(r)}    style={{ ...btnS("#dc2626"), fontSize: 12, padding: "4px 10px" }}>❌ Deny</button>
+                          </>
+                        )}
+                        {r.status !== "PENDING" && (
+                          <button onClick={() => deleteRequest(r)} style={{ background: "transparent", border: "1px solid #fca5a5", color: "#dc2626", borderRadius: 6, padding: "3px 10px", fontSize: 12, cursor: "pointer" }}>Remove</button>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -363,43 +388,14 @@ function TabBtn({ label, active, onClick }: { label: string; active: boolean; on
       background: "none", border: "none",
       borderBottom: active ? "3px solid #1565c0" : "3px solid transparent",
       color: active ? "#1565c0" : "#6b7280",
-      marginBottom: -2,
-      whiteSpace: "nowrap",
+      marginBottom: -2, whiteSpace: "nowrap",
     }}>{label}</button>
   );
 }
 
-const styles: Record<string, React.CSSProperties> = {
-  navBtn: {
-    background: "#f3f4f6",
-    border: "1px solid #d1d5db",
-    borderRadius: 8,
-    padding: "6px 16px",
-    cursor: "pointer",
-    fontWeight: 700,
-    fontSize: 16,
-  },
-  label: { fontSize: 13, fontWeight: 600, marginBottom: 6, color: "#555" },
-  input: { border: "1px solid #ddd", borderRadius: 8, padding: "9px 12px", fontSize: 14 },
-  btn: {
-    backgroundColor: "#1565c0",
-    color: "#fff",
-    border: "none",
-    borderRadius: 8,
-    padding: "10px 24px",
-    fontSize: 14,
-    fontWeight: 600,
-    cursor: "pointer",
-  },
-  th: {
-    textAlign: "left",
-    fontSize: 12,
-    fontWeight: 700,
-    color: "#888",
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-    paddingBottom: 8,
-    borderBottom: "1px solid #eee",
-  },
-  td: { padding: "12px 8px 12px 0", fontSize: 14, color: "#333" },
-};
+const navS: React.CSSProperties = { background: "#f3f4f6", border: "1px solid #d1d5db", borderRadius: 8, padding: "6px 14px", cursor: "pointer", fontWeight: 700, fontSize: 16 };
+const btnS = (bg: string): React.CSSProperties => ({ background: bg, color: "white", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 14, fontWeight: 600, cursor: "pointer" });
+const lbl: React.CSSProperties = { fontSize: 13, fontWeight: 600, marginBottom: 6, color: "#555" };
+const inp: React.CSSProperties = { border: "1px solid #ddd", borderRadius: 8, padding: "9px 12px", fontSize: 14 };
+const th: React.CSSProperties = { textAlign: "left", fontSize: 12, fontWeight: 700, color: "#888", textTransform: "uppercase", letterSpacing: 0.5, paddingBottom: 8, borderBottom: "1px solid #eee" };
+const td: React.CSSProperties = { padding: "12px 8px 12px 0", fontSize: 14, color: "#333" };
