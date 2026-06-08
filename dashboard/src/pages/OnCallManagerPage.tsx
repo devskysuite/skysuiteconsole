@@ -633,16 +633,25 @@ function RotationOrderDisplay({ db, accessToken }: { db: any; accessToken: strin
         }
       }
 
+      // Deduplicate allEvs by date+name (Graph returns Dec-31 event in both year fetches)
+      const dedupKey = new Set<string>();
+      const dedupedEvs = allEvs.filter(e => {
+        const k = `${e.date}|${e.name}`;
+        if (dedupKey.has(k)) return false;
+        dedupKey.add(k);
+        return true;
+      });
+
       // Derive rotation cycle per year (unique names in first-appearance order)
       const newOrders: Record<string, string[]> = {};
       const errs: string[] = [];
       for (const yr of [thisYear, thisYear + 1]) {
-        const yrEvs = allEvs.filter(e => e.date.startsWith(String(yr)));
+        const yrEvs = dedupedEvs.filter(e => e.date.startsWith(String(yr)));
         const seen = new Set<string>(), cycle: string[] = [];
         yrEvs.forEach(e => { if (!seen.has(e.name)) { seen.add(e.name); cycle.push(e.name); } });
         newOrders[String(yr)] = cycle;
 
-        // Check for errors: duplicate on same day, gaps (no events) would show as missing
+        // Check for errors: multiple DIFFERENT people on same day
         const dateCount: Record<string, string[]> = {};
         yrEvs.forEach(e => { if (!dateCount[e.date]) dateCount[e.date] = []; dateCount[e.date].push(e.name); });
         Object.entries(dateCount).forEach(([date, names]) => {
