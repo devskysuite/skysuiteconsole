@@ -534,7 +534,7 @@ export default function OnCallManagerPage() {
         <div style={{background:"white",borderRadius:12,padding:24,boxShadow:"0 1px 4px rgba(0,0,0,0.07)"}}>
           <h2 style={{fontSize:16,fontWeight:700,color:"#0d2e5e",marginBottom:4}}>🎉 Stat Holiday Assignments</h2>
           <p style={{fontSize:12,color:"#6b7280",marginBottom:16}}>Canadian statutory holidays (Federal + Ontario) and who is on-call. Each person is limited to 1 stat per year.</p>
-          <StatHolidaysPanel accessToken={accessToken} calId={CAL_ID}/>
+          <StatHolidaysPanel accessToken={accessToken} calId={CAL_ID} db={db}/>
         </div>
       )}
 
@@ -830,38 +830,87 @@ function RotationOrderDisplay({ db, accessToken }: { db: any; accessToken: strin
 
 // ── Stat Holidays Panel ───────────────────────────────────────────────────────
 const PERSON_COLORS = ["#1565c0","#059669","#7c3aed","#dc2626","#d97706","#0891b2","#be185d","#4f46e5","#15803d","#9a3412"];
-function StatHolidaysPanel({accessToken,calId}:{accessToken:string;calId:string}){
+function StatHolidaysPanel({accessToken,calId,db}:{accessToken:string;calId:string;db:any}){
   const thisYear=new Date().getFullYear();
   const [selYear,setSelYear]=useState(thisYear);
   const [loading,setLoading]=useState(false);
-  const [assignments,setAssignments]=useState<Record<string,string>>({});// date→name
+  // date → {name, confirmed}
+  const [assignments,setAssignments]=useState<Record<string,{name:string;confirmed:boolean}>>({});
   const [loaded,setLoaded]=useState(false);
 
   async function load(year:number){
-    if(!accessToken){setLoaded(true);return;}
     setLoading(true);
     try{
-      const evs:any[]=[];
-      let url=`https://graph.microsoft.com/v1.0/me/calendars/${calId}/calendarView?startDateTime=${year}-01-01T00:00:00&endDateTime=${year}-12-31T23:59:59&$top=999&$select=subject,start`;
-      while(url){const d=await(await fetch(url,{headers:{Authorization:`Bearer ${accessToken}`}})).json();(d.value||[]).forEach((e:any)=>{const s=(e.subject||"").toLowerCase();if((s.includes("on call")||s.includes("oncall"))&&!s.includes("vacation"))evs.push(e);});url=d["@odata.nextLink"]||"";}
-      const map:Record<string,string>={};
-      evs.forEach(e=>{const date=e.start?.date||e.start?.dateTime?.slice(0,10)||"";const name=getName(e.subject||"");if(date)map[date]=name;});
-      setAssignments(map);
+      // 1. Load roster from Firestore
+      const cfgSnap=await getDoc(doc(db,"settings","onCallConfig")).catch(()=>null);
+      const roster:string[]=cfgSnap?.data()?.employees||[];
+
+      // 2. Fetch all on-call events for the selected year from Outlook
+      const confirmedMap:Record<string,string>={};
+      if(accessToken){
+        const evs:any[]=[];
+        let url=`https://graph.microsoft.com/v1.0/me/calendars/${calId}/calendarView?startDateTime=${year}-01-01T00:00:00&endDateTime=${year}-12-31T23:59:59&$top=999&$select=subject,start&$orderby=start/dateTime`;
+        while(url){const d=await(await fetch(url,{headers:{Authorization:`Bearer ${accessToken}`}})).json();(d.value||[]).forEach((e:any)=>{const s=(e.subject||"").toLowerCase();if((s.includes("on call")||s.includes("oncall"))&&!s.includes("vacation"))evs.push(e);});url=d["@odata.nextLink"]||"";}
+        evs.forEach(e=>{const date=e.start?.date||e.start?.dateTime?.slice(0,10)||"";const name=getName(e.subject||"");if(date&&name)confirmedMap[date]=name;});
+      }
+
+      // 3. Build projection: find last confirmed event, continue rotation from there
+      const projectedMap:Record<string,string>={};
+      if(roster.length>0&&accessToken){
+        // Fetch last ~14 days before year start to find rotation position
+        const lookback=new Date(year,0,1); lookback.setDate(lookback.getDate()-roster.length*2+1);
+        const anchors:any[]=[];
+        let aUrl=`https://graph.microsoft.com/v1.0/me/calendars/${calId}/calendarView?startDateTime=${lookback.toISOString().slice(0,10)}T00:00:00&endDateTime=${year+1}-12-31T23:59:59&$top=999&$select=subject,start&$orderby=start/dateTime`;
+        while(aUrl){const d=await(await fetch(aUrl,{headers:{Authorization:`Bearer ${accessToken}`}})).json();(d.value||[]).forEach((e:any)=>{const s=(e.subject||"").toLowerCase();if((s.includes("on call")||s.includes("oncall"))&&!s.includes("vacation"))anchors.push(e);});aUrl=d["@odata.nextLink"]||"";}
+
+        // Find last confirmed date and derive next rotation index
+        if(anchors.length>0){
+          const lastEv=anchors[anchors.length-1];
+          const lastDate=lastEv.start?.date||lastEv.start?.dateTime?.slice(0,10)||"";
+          const lastName=getName(lastEv.subject||"");
+          const lastIdx=roster.findIndex(n=>n.toLowerCase()===lastName.toLowerCase());
+          let nextIdx=(lastIdx>=0?lastIdx+1:0)%roster.length;
+          // Walk forward from the day after the last confirmed date to end of selected year
+          const cur=new Date(lastDate+"T12:00:00"); cur.setDate(cur.getDate()+1);
+          const endOfYear=new Date(year,11,31);
+          while(cur<=endOfYear){
+            const d=cur.toISOString().slice(0,10);
+            if(!confirmedMap[d]){
+              projectedMap[d]=roster[nextIdx%roster.length];
+            }
+            nextIdx++; cur.setDate(cur.getDate()+1);
+          }
+        }
+      }
+
+      // 4. Merge: confirmed takes priority
+      const merged:Record<string,{name:string;confirmed:boolean}>={};
+      Object.entries(confirmedMap).forEach(([d,n])=>merged[d]={name:n,confirmed:true});
+      Object.entries(projectedMap).forEach(([d,n])=>{if(!merged[d])merged[d]={name:n,confirmed:false};});
+      setAssignments(merged);
     }catch(err){console.error(err);}
     setLoading(false);setLoaded(true);
   }
 
-  useEffect(()=>{if(accessToken)load(selYear);},[accessToken,selYear]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(()=>{load(selYear);},[accessToken,selYear]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const stats=getStatHolidays(selYear);
-  // Build person→color map
-  const people=[...new Set(stats.map(s=>assignments[s.date]).filter(Boolean))];
-  const colorMap:Record<string,string>={};
-  people.forEach((p,i)=>colorMap[p]=PERSON_COLORS[i%PERSON_COLORS.length]);
+  const today=new Date().toISOString().slice(0,10);
 
-  // Count stats per person
-  const countByPerson:Record<string,number>={};
-  stats.forEach(s=>{const n=assignments[s.date];if(n){countByPerson[n]=(countByPerson[n]||0)+1;}});
+  // Build person→color map across all assigned names
+  const allNames=[...new Set(stats.map(s=>assignments[s.date]?.name).filter(Boolean) as string[])];
+  const colorMap:Record<string,string>={};
+  allNames.forEach((p,i)=>colorMap[p]=PERSON_COLORS[i%PERSON_COLORS.length]);
+
+  // Count per person (confirmed + projected)
+  const countByPerson:Record<string,{confirmed:number;projected:number}>={};
+  stats.forEach(s=>{
+    const a=assignments[s.date];
+    if(!a)return;
+    if(!countByPerson[a.name])countByPerson[a.name]={confirmed:0,projected:0};
+    if(a.confirmed)countByPerson[a.name].confirmed++;
+    else countByPerson[a.name].projected++;
+  });
 
   return(
     <div>
@@ -871,42 +920,56 @@ function StatHolidaysPanel({accessToken,calId}:{accessToken:string;calId:string}
           <span style={{fontWeight:700,fontSize:16,color:"#0d2e5e",padding:"4px 12px"}}>{selYear}</span>
           <button onClick={()=>setSelYear(v=>v+1)} style={navS}>▶</button>
         </div>
-        {!accessToken&&<span style={{fontSize:13,color:"#f97316",fontWeight:600}}>⚠️ Connect Outlook to see assignments</span>}
+        <div style={{fontSize:11,color:"#9ca3af",display:"flex",gap:12,alignItems:"center"}}>
+          <span style={{display:"flex",alignItems:"center",gap:4}}><span style={{width:10,height:10,borderRadius:"50%",background:"#1565c0",display:"inline-block"}}/>Confirmed in calendar</span>
+          <span style={{display:"flex",alignItems:"center",gap:4}}><span style={{width:10,height:10,borderRadius:"50%",background:"#d1d5db",border:"2px dashed #9ca3af",display:"inline-block"}}/>Projected</span>
+        </div>
+        {!accessToken&&<span style={{fontSize:13,color:"#f97316",fontWeight:600}}>⚠️ Connect Outlook to see projections</span>}
       </div>
 
       {/* Summary chips */}
       {loaded&&Object.keys(countByPerson).length>0&&(
-        <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:16}}>
-          {Object.entries(countByPerson).map(([name,count])=>(
-            <span key={name} style={{fontSize:12,fontWeight:700,padding:"4px 12px",borderRadius:99,background:colorMap[name]||"#e5e7eb",color:"white"}}>
-              {name} — {count} stat{count>1?" 🚨":""}
-            </span>
-          ))}
+        <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:12}}>
+          {Object.entries(countByPerson).map(([name,counts])=>{
+            const total=counts.confirmed+counts.projected;
+            return(
+              <span key={name} style={{fontSize:12,fontWeight:700,padding:"4px 12px",borderRadius:99,background:colorMap[name]||"#e5e7eb",color:"white"}}>
+                {name} — {total} stat{total>1?" 🚨":""}
+                {counts.projected>0&&<span style={{fontWeight:400,opacity:0.85}}> ({counts.projected} projected)</span>}
+              </span>
+            );
+          })}
         </div>
       )}
-      {loaded&&Object.values(countByPerson).some(c=>c>1)&&(
-        <div style={{background:"#fef2f2",border:"1px solid #fecaca",borderRadius:8,padding:"10px 14px",marginBottom:16,fontSize:13,color:"#dc2626",fontWeight:600}}>
-          ⚠️ Someone has more than 1 stat — use Rebalance in the Setup tab to fix the rotation.
+      {loaded&&Object.values(countByPerson).some(c=>c.confirmed+c.projected>1)&&(
+        <div style={{background:"#fef2f2",border:"1px solid #fecaca",borderRadius:8,padding:"10px 14px",marginBottom:12,fontSize:13,color:"#dc2626",fontWeight:600}}>
+          ⚠️ Someone is projected to have more than 1 stat — Rebalance in Setup will fix this.
         </div>
       )}
 
       {loading&&<div style={{textAlign:"center",padding:24,color:"#9ca3af"}}>⏳ Loading…</div>}
 
       {!loading&&(
-        <div style={{display:"grid",gap:8}}>
+        <div style={{display:"grid",gap:6}}>
           {stats.map(s=>{
-            const name=assignments[s.date];
-            const color=name?colorMap[name]:"#e5e7eb";
-            const textColor=name?"white":"#9ca3af";
+            const a=assignments[s.date];
+            const isPast=s.date<today;
+            const isConfirmed=a?.confirmed===true;
+            const name=a?.name;
+            const color=name?(isConfirmed?colorMap[name]:"transparent"):"#f3f4f6";
+            const textColor=name?(isConfirmed?"white":colorMap[name]||"#374151"):"#9ca3af";
+            const border=name?(isConfirmed?"none":`2px dashed ${colorMap[name]||"#9ca3af"}`):"1px solid #e5e7eb";
             return(
-              <div key={s.date} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 14px",borderRadius:8,background:"#f8fafc",border:"1px solid #e2e8f0"}}>
-                <div style={{minWidth:130}}>
-                  <div style={{fontSize:13,fontWeight:700,color:"#0d2e5e"}}>{s.name}</div>
+              <div key={s.date} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",borderRadius:8,background:isPast?"#f9fafb":"#fff",border:"1px solid #e2e8f0",opacity:isPast?0.6:1}}>
+                <div style={{minWidth:140}}>
+                  <div style={{fontSize:13,fontWeight:700,color:isPast?"#9ca3af":"#0d2e5e"}}>{s.name}</div>
                   <div style={{fontSize:11,color:"#9ca3af"}}>{new Date(s.date+"T12:00:00").toLocaleDateString("en-CA",{weekday:"short",month:"short",day:"numeric"})}</div>
                 </div>
-                <span style={{fontSize:13,fontWeight:700,padding:"4px 14px",borderRadius:99,background:color,color:textColor,minWidth:80,textAlign:"center"}}>
+                <span style={{fontSize:12,fontWeight:700,padding:"4px 14px",borderRadius:99,background:color,color:textColor,border,minWidth:90,textAlign:"center",whiteSpace:"nowrap"}}>
                   {name||"—"}
                 </span>
+                {name&&!isConfirmed&&<span style={{fontSize:10,color:"#9ca3af",fontWeight:600}}>projected</span>}
+                {name&&isConfirmed&&<span style={{fontSize:10,color:"#059669",fontWeight:600}}>✓ confirmed</span>}
               </div>
             );
           })}
