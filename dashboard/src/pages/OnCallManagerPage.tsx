@@ -370,10 +370,9 @@ export default function OnCallManagerPage() {
       if(shuffle) startIdx=0;
     }
 
-    tickProgress(`Starting from ${roster[startIdx]} (${startIdx+1}/${roster.length}) — building schedule…`, 0, toAdd.length||365);
-
     // Build schedule — gaps only, continuing rotation from where calendar left off
     const toAdd:any[]=[];
+    tickProgress(`Starting from ${roster[startIdx]} (${startIdx+1}/${roster.length}) — building schedule…`, 0, 365);
     let cur=new Date(startDate), idx=startIdx;
     while(cur.toISOString().slice(0,10)<=endStr){
       const d=cur.toISOString().slice(0,10);
