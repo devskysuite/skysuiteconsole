@@ -7,11 +7,7 @@ import { useIsAdmin } from "../hooks/useIsAdmin";
 import { useRole, canApproveTimeOff } from "../hooks/useRole";
 
 const BASE_LINKS = [
-  { to: "/dashboard", label: "Dashboard" },
-  { to: "/tools", label: "Equipment" },
-  { to: "/vehicles", label: "Vehicles" },
-  { to: "/bookings", label: "Bookings" },
-  { to: "/contacts", label: "Contacts" },
+  { to: "/tools", label: "Tools" },
   { to: "/on-call", label: "On-Call" },
 ];
 
@@ -119,7 +115,7 @@ export default function Nav() {
             to={l.to}
             style={{
               ...styles.link,
-              ...(pathname === l.to || (l.to === "/dashboard" && (pathname === "/" || pathname === "/dashboard")) ? styles.linkActive : {}),
+              ...(pathname === l.to || pathname.startsWith(l.to + "/") || (l.to === "/tools" && (pathname === "/vehicles" || pathname.startsWith("/vehicles/") || pathname === "/bookings" || pathname === "/contacts")) ? styles.linkActive : {}),
             }}
           >
             {l.label}
@@ -199,9 +195,7 @@ export default function Nav() {
     {/* Mobile nav panel */}
     <div className={`mobile-nav-panel${mobileMenuOpen ? " open" : ""}`}>
       {BASE_LINKS.map((l) => (
-        <Link key={l.to} to={l.to} className="mobile-nav-link">
-          {l.label}
-        </Link>
+        <Link key={l.to} to={l.to} className="mobile-nav-link">{l.label}</Link>
       ))}
       <Link to="/time-off" className="mobile-nav-link">Vacation</Link>
       {RESOURCE_ITEMS.map((item) => (

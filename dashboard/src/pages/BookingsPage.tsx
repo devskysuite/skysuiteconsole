@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { collection, collectionGroup, doc, getDoc, onSnapshot, query, updateDoc, where } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
 import { Link } from "react-router-dom";
+import ToolsTabs from "../components/ToolsTabs";
 import { auth, db } from "../firebase";
 import { useIsAdmin } from "../hooks/useIsAdmin";
 import { useToast } from "../components/Toast";
@@ -224,6 +225,7 @@ export default function BookingsPage() {
 
   return (
     <div>
+      <ToolsTabs />
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24, flexWrap: "wrap", gap: 10 }}>
         <h1 style={{ fontSize: 24, fontWeight: 900, color: "#111", margin: 0 }}>
           Upcoming Bookings

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { collection, onSnapshot, updateDoc, doc, addDoc, serverTimestamp } from "firebase/firestore";
 import { Link, useSearchParams } from "react-router-dom";
+import ToolsTabs from "../components/ToolsTabs";
 import { db } from "../firebase";
 import StatusBadge from "../components/StatusBadge";
 import Spinner from "../components/Spinner";
@@ -182,6 +183,7 @@ export default function ToolsPage() {
 
   return (
     <div>
+      <ToolsTabs />
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, flexWrap: "wrap", gap: 10 }}>
         <h1 style={styles.pageTitle}>Equipment</h1>
         <Link to="/tools/new" style={styles.addBtn}>+ Add Equipment</Link>

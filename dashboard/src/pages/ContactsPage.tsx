@@ -1,4 +1,5 @@
 import { useState } from "react";
+import ToolsTabs from "../components/ToolsTabs";
 import { useRepairContacts } from "../hooks/useRepairContacts";
 import { CONTACT_TYPES, type ContactType } from "../hooks/useRepairContacts";
 import Spinner from "../components/Spinner";
@@ -27,6 +28,7 @@ export default function ContactsPage() {
 
   return (
     <div style={{ maxWidth: 680, margin: "0 auto" }}>
+      <ToolsTabs />
       <h1 style={styles.pageTitle}>Contacts</h1>
 
       {/* Type filter */}

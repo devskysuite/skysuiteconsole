@@ -69,7 +69,7 @@ function OAuthRedirect() {
     window.location.replace(`/on-call${window.location.search}`);
     return null;
   }
-  return <Navigate to="/dashboard" replace />;
+  return <Navigate to="/tools" replace />;
 }
 
 export default function App() {
@@ -86,8 +86,8 @@ export default function App() {
               <RequireAuth>
                 <AppLayout>
                     <Routes>
-                      <Route path="/" element={<DashboardPage />} />
-                      <Route path="/dashboard" element={<DashboardPage />} />
+                      <Route path="/" element={<Navigate to="/tools" replace />} />
+                      <Route path="/dashboard" element={<Navigate to="/tools" replace />} />
                       <Route path="/tools" element={<ToolsPage />} />
                       <Route path="/tools/new" element={<AddToolPage />} />
                       <Route path="/tools/:toolId" element={<ToolDetailPage />} />
