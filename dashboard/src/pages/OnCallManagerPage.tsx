@@ -109,6 +109,9 @@ export default function OnCallManagerPage() {
   const [allUsers,setAllUsers]=useState<UserInfo[]>([]);
   const [swapRequests,setSwapRequests]=useState<SwapReq[]>([]);
 
+  // Rebalance modal
+  const [rebalanceModal,setRebalanceModal]=useState(false);
+
   // Swap modal
   const [swapModal,setSwapModal]=useState<{event:CalEvent}|null>(null);
   const [swapTargetUid,setSwapTargetUid]=useState("");
@@ -290,11 +293,10 @@ export default function OnCallManagerPage() {
     if(accept) setEvents(prev=>prev.map(e=>{ if(e.id===swap.myEventId) return {...e,subject:`${swap.targetName.split(" ")[0]} On Call`}; if(e.id===swap.theirEventId) return {...e,subject:`${swap.requesterName.split(" ")[0]} On Call`}; return e; }));
   }
 
-  async function runRotation(action:"preview"|"push"|"rebalance") {
+  async function runRotation(action:"preview"|"push"|"rebalance", rebalanceFrom?:string) {
     const status=document.getElementById("rot-status");
     if(!status||!accessToken) return;
     const rotDays=parseInt((document.getElementById("rot-days") as HTMLSelectElement)?.value||"1");
-    const rebalanceFrom=(document.getElementById("reb-start") as HTMLInputElement)?.value;
     const shuffle=(document.getElementById("rot-shuffle") as HTMLInputElement)?.checked;
 
     // 365-day rolling window from today
@@ -589,7 +591,7 @@ export default function OnCallManagerPage() {
                   <option value="1">1 day</option><option value="2">2 days</option><option value="7">7 days</option><option value="14">14 days</option>
                 </select>
               </div>
-              <div><label style={lbl}>Rebalance from</label><input type="date" id="reb-start" style={{...inp,maxWidth:160}}/></div>
+
               <label style={{display:"flex",alignItems:"center",gap:6,fontSize:13,color:"#374151",paddingBottom:2}}>
                 <input type="checkbox" id="rot-shuffle" style={{width:15,height:15}}/>Shuffle order
               </label>
@@ -598,7 +600,7 @@ export default function OnCallManagerPage() {
             <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
               <button onClick={()=>runRotation("preview")}   disabled={!connected} style={btnS("#6b7280")}>👁 Preview</button>
               <button onClick={()=>runRotation("push")}      disabled={!connected} style={btnS("#1565c0")}>⬆ Fill 365 Days</button>
-              <button onClick={()=>runRotation("rebalance")} disabled={!connected} style={btnS("#f97316")}>⚖ Rebalance from Date</button>
+              <button onClick={()=>setRebalanceModal(true)} disabled={!connected} style={btnS("#f97316")}>⚖ Rebalance</button>
             </div>
             <div id="rot-status" style={{marginTop:10,fontSize:13,color:"#374151"}}></div>
           </div>
@@ -611,6 +613,34 @@ export default function OnCallManagerPage() {
             </div>
             <p style={{fontSize:12,color:"#6b7280",marginBottom:14}}>Auto-saved before every swap, push, or rebalance. Last 10 kept. Click ↩ Restore to roll back.</p>
             <BackupsList db={db} onRestore={restoreBackup} connected={connected}/>
+          </div>
+        </div>
+      )}
+
+      {/* ── REBALANCE MODAL ── */}
+      {rebalanceModal&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.45)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center"}}>
+          <div style={{background:"white",borderRadius:16,padding:32,width:"100%",maxWidth:380,boxShadow:"0 8px 40px rgba(0,0,0,0.2)",textAlign:"center"}}>
+            <div style={{fontSize:32,marginBottom:12}}>⚖️</div>
+            <h2 style={{fontSize:18,fontWeight:800,color:"#0d2e5e",marginBottom:8}}>Rebalance Rotation</h2>
+            <p style={{fontSize:13,color:"#6b7280",marginBottom:24}}>Choose which year to rebalance. This will clear and rebuild the on-call schedule from Jan 1 of the selected year.</p>
+            <div style={{display:"flex",flexDirection:"column",gap:10}}>
+              <button
+                style={{...btnS("#1565c0"),fontSize:15,padding:"12px"}}
+                onClick={()=>{setRebalanceModal(false);runRotation("rebalance",`${today.getFullYear()}-01-01`);}}>
+                📅 Current Year ({today.getFullYear()})
+              </button>
+              <button
+                style={{...btnS("#059669"),fontSize:15,padding:"12px"}}
+                onClick={()=>{setRebalanceModal(false);runRotation("rebalance",`${today.getFullYear()+1}-01-01`);}}>
+                📅 Next Year ({today.getFullYear()+1})
+              </button>
+              <button
+                style={{...btnS("#6b7280"),fontSize:15,padding:"12px"}}
+                onClick={()=>setRebalanceModal(false)}>
+                Cancel
+              </button>
+            </div>
           </div>
         </div>
       )}
