@@ -75,6 +75,7 @@ export default function UsersPage() {
   const [smsLoading, setSmsLoading]       = useState<string | null>(null);
   const [resetLoading, setResetLoading]   = useState<string | null>(null);
   const [icsLoading, setIcsLoading]       = useState<string | null>(null);
+  const [mfaLoading, setMfaLoading]       = useState<string | null>(null);
 
   const [clearing, setClearing]     = useState(false);
   const [clearResult, setClearResult] = useState("");
@@ -243,6 +244,19 @@ export default function UsersPage() {
       toast(e?.message ?? "Failed to send reset email.", "error");
     } finally {
       setResetLoading(null);
+    }
+  }
+
+  async function reset2FA(u: AppUser) {
+    if (!await confirm(`Reset 2FA for ${u.displayName}?\n\nThey will be asked to set up their authenticator app again on next login.`)) return;
+    setMfaLoading(u.id);
+    try {
+      await updateDoc(doc(db, "users", u.id), { totpSecret: "" });
+      toast(`✓ 2FA reset for ${u.displayName}`, "success");
+    } catch (e: any) {
+      toast(e?.message ?? "Failed to reset 2FA.", "error");
+    } finally {
+      setMfaLoading(null);
     }
   }
 
@@ -473,6 +487,18 @@ export default function UsersPage() {
                 title="Download on-call ICS calendar"
               >
                 {icsLoading === u.id ? "…" : "📅 ICS"}
+              </button>
+            )}
+
+            {/* Reset 2FA */}
+            {isOwner && !isSelf && (
+              <button
+                style={{ ...styles.actionBtn, borderColor: "#f97316", color: "#ea580c" }}
+                onClick={() => reset2FA(u)}
+                disabled={mfaLoading === u.id}
+                title="Reset two-factor authentication — user will re-enroll on next login"
+              >
+                {mfaLoading === u.id ? "…" : "🔐 Reset 2FA"}
               </button>
             )}
 
