@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { signInWithEmailAndPassword, browserLocalPersistence, setPersistence } from "firebase/auth";
+import { signInWithEmailAndPassword, browserLocalPersistence, setPersistence, sendPasswordResetEmail } from "firebase/auth";
 import { collection, doc, getDocs, query, updateDoc, where } from "firebase/firestore";
 import { useNavigate } from "react-router-dom";
 import { auth, db } from "../firebase";
@@ -187,13 +187,11 @@ export default function Login() {
     if (!email) { setError("Enter your email address."); return; }
     try {
       setBusy(true);
-      await fetch("/api/send-password-reset", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email.trim(), type: "reset" }),
-      });
+      // Firebase sends the reset email directly — no backend needed
+      await sendPasswordResetEmail(auth, email.trim());
       setScreen("reset-sent");
-    } catch (err: any) {
-      setError(err?.message ?? "Failed to send reset email");
+    } catch (_err: any) {
+      // Always show success screen to avoid email enumeration
     } finally {
       setBusy(false);
     }

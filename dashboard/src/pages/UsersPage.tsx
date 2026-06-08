@@ -66,7 +66,11 @@ export default function UsersPage() {
   const [editingPhoneId, setEditingPhoneId] = useState<string | null>(null);
   const [editPhoneValue, setEditPhoneValue] = useState("");
 
-  // Inline email/account setup
+  // Inline name editing
+  const [editingNameId,  setEditingNameId]  = useState<string | null>(null);
+  const [editNameValue,  setEditNameValue]  = useState("");
+
+  // Inline email editing (add or change)
   const [addingEmailId, setAddingEmailId]   = useState<string | null>(null);
   const [addEmailValue, setAddEmailValue]   = useState("");
   const [addingEmailBusy, setAddingEmailBusy] = useState(false);
@@ -182,6 +186,19 @@ export default function UsersPage() {
       await loadUsers();
     } catch (e: any) {
       toast(`Error saving phone: ${e?.message}`, "error");
+    }
+  }
+
+  async function saveName(u: AppUser) {
+    const trimmed = editNameValue.trim();
+    if (!trimmed) { setEditingNameId(null); return; }
+    if (trimmed === (u.displayName || "")) { setEditingNameId(null); return; }
+    try {
+      await updateDoc(doc(db, "users", u.id), { displayName: trimmed });
+      setEditingNameId(null);
+      await loadUsers();
+    } catch (e: any) {
+      toast(`Error saving name: ${e?.message}`, "error");
     }
   }
 
@@ -412,18 +429,40 @@ export default function UsersPage() {
       <tr key={u.id} style={styles.tr}>
         {/* Name */}
         <td style={styles.td}>
-          <div style={{ fontWeight: 600, fontSize: 13 }}>{u.displayName || "—"}</div>
-          {u.department && <div style={{ fontSize: 11, color: "#999", marginTop: 2 }}>{u.department}</div>}
+          {editingNameId === u.id ? (
+            <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+              <input
+                style={{ ...styles.input, padding: "4px 8px", fontSize: 13, width: 150 }}
+                type="text"
+                value={editNameValue}
+                onChange={(e) => setEditNameValue(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") saveName(u); if (e.key === "Escape") setEditingNameId(null); }}
+                autoFocus
+              />
+              <button style={{ ...styles.actionBtn, borderColor: "#1565c0", color: "#1565c0" }} onClick={() => saveName(u)}>Save</button>
+              <button style={styles.actionBtn} onClick={() => setEditingNameId(null)}>✕</button>
+            </div>
+          ) : (
+            <div>
+              <div
+                style={{ fontWeight: 600, fontSize: 13, cursor: isOwner ? "pointer" : "default" }}
+                onClick={() => { if (!isOwner) return; setEditingNameId(u.id); setEditNameValue(u.displayName || ""); }}
+                title={isOwner ? "Click to edit name" : ""}
+              >
+                {u.displayName || "—"}
+                {isOwner && <span style={{ marginLeft: 4, fontSize: 10, color: "#aaa" }}>✏️</span>}
+              </div>
+              {u.department && <div style={{ fontSize: 11, color: "#999", marginTop: 2 }}>{u.department}</div>}
+            </div>
+          )}
         </td>
 
         {/* Email */}
         <td style={styles.td}>
-          {u.email ? (
-            <span style={{ fontSize: 13 }}>{u.email}</span>
-          ) : addingEmailId === u.id ? (
+          {addingEmailId === u.id ? (
             <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
               <input
-                style={{ ...styles.input, padding: "4px 8px", fontSize: 13, width: 160 }}
+                style={{ ...styles.input, padding: "4px 8px", fontSize: 13, width: 170 }}
                 type="email"
                 value={addEmailValue}
                 onChange={(e) => setAddEmailValue(e.target.value)}
@@ -434,12 +473,23 @@ export default function UsersPage() {
               />
               <button style={{ ...styles.actionBtn, borderColor: "#1565c0", color: "#1565c0" }}
                 onClick={() => addEmailToUser(u)} disabled={addingEmailBusy}>
-                {addingEmailBusy ? "…" : "Go"}
+                {addingEmailBusy ? "…" : "Save"}
               </button>
-              <button style={{ ...styles.actionBtn }}
+              <button style={styles.actionBtn}
                 onClick={() => { setAddingEmailId(null); setAddEmailValue(""); }} disabled={addingEmailBusy}>
                 ✕
               </button>
+            </div>
+          ) : u.email ? (
+            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+              <span style={{ fontSize: 13 }}>{u.email}</span>
+              {isOwner && (
+                <button
+                  style={{ ...styles.actionBtn, fontSize: 10, padding: "2px 6px", borderColor: "#d1d5db", color: "#6b7280" }}
+                  onClick={() => { setAddingEmailId(u.id); setAddEmailValue(u.email || ""); }}
+                  title="Change email"
+                >✏️</button>
+              )}
             </div>
           ) : isOwner ? (
             <button style={{ ...styles.actionBtn, borderColor: "#1565c0", color: "#1565c0", fontSize: 11 }}
