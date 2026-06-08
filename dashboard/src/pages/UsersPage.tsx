@@ -571,8 +571,8 @@ export default function UsersPage() {
               </button>
             )}
 
-            {/* Reset 2FA */}
-            {isOwner && !isSelf && (
+            {/* Reset 2FA — show for all users including self */}
+            {isOwner && (
               <button
                 style={{ ...styles.actionBtn, borderColor: "#f97316", color: "#ea580c" }}
                 onClick={() => reset2FA(u)}
@@ -583,28 +583,28 @@ export default function UsersPage() {
               </button>
             )}
 
-            {/* Role select + Remove */}
-            {isOwner && !isSelf && (
-              <>
-                <select
-                  style={styles.roleSelect}
-                  value={u.role || "user"}
-                  onChange={(e) => changeRole(u, e.target.value)}
-                >
-                  <option value="user">User</option>
-                  <option value="manager">Manager</option>
-                  <option value="admin">Admin</option>
-                  <option value="owner">Owner</option>
-                </select>
-                {!isOwnerRow && (
-                  <button
-                    style={styles.removeBtn}
-                    onClick={() => removeUser(u.id, u.email, u.uid, u.role ?? "")}
-                  >
-                    Remove
-                  </button>
-                )}
-              </>
+            {/* Role select — show for all users including self */}
+            {isOwner && (
+              <select
+                style={styles.roleSelect}
+                value={u.role || "user"}
+                onChange={(e) => changeRole(u, e.target.value)}
+              >
+                <option value="user">User</option>
+                <option value="manager">Manager</option>
+                <option value="admin">Admin</option>
+                <option value="owner">Owner</option>
+              </select>
+            )}
+
+            {/* Remove — only for others, never yourself */}
+            {isOwner && !isSelf && !isOwnerRow && (
+              <button
+                style={styles.removeBtn}
+                onClick={() => removeUser(u.id, u.email, u.uid, u.role ?? "")}
+              >
+                Remove
+              </button>
             )}
           </div>
         </td>
