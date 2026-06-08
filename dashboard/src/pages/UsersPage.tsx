@@ -592,7 +592,7 @@ export default function UsersPage() {
             )}
 
             {/* Export ICS */}
-            {u.onCall && isOwner && (
+            {isOwner && (
               <button
                 style={{ ...styles.actionBtn, borderColor: "#9333ea", color: "#7c3aed" }}
                 onClick={() => exportIcs(u)}
@@ -604,7 +604,7 @@ export default function UsersPage() {
             )}
 
             {/* Send ICS link via SMS */}
-            {u.onCall && u.phone && isOwner && (
+            {u.phone && isOwner && (
               <button
                 style={{ ...styles.actionBtn, borderColor: "#0891b2", color: "#0e7490" }}
                 onClick={() => sendIcsLink(u)}
