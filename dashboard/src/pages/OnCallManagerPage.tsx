@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { createPortal, flushSync } from "react-dom";
 import { doc, getDoc, setDoc, collection, addDoc, onSnapshot, updateDoc, serverTimestamp, query, getDocs, orderBy, limit, deleteDoc } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
 import { db, auth } from "../firebase";
@@ -113,12 +112,36 @@ export default function OnCallManagerPage() {
   // Rebalance modal
   const [rebalanceModal,setRebalanceModal]=useState(false);
 
-  // Floating progress bar
-  type ProgressState = {title:string; message:string; done:number; total:number; finished:boolean};
-  const [progress,setProgress]=useState<ProgressState|null>(null);
-  function startProgress(title:string,message:string,total=0){setProgress({title,message,done:0,total,finished:false});}
-  function tickProgress(message:string,done:number,total:number){setProgress(p=>p?{...p,message,done,total}:null);}
-  function finishProgress(message:string){setProgress(p=>p?{...p,message,done:p.total||1,total:p.total||1,finished:true}:null);}
+  // Floating progress bar — DOM-based so it renders immediately regardless of React batching
+  function startProgress(title:string,message:string,total=0){
+    let el=document.getElementById("__skyprog__");
+    if(!el){el=document.createElement("div");el.id="__skyprog__";document.body.appendChild(el);}
+    el.innerHTML=`<div style="position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:99999;background:white;border:1px solid #e2e8f0;border-radius:14px;box-shadow:0 8px 32px rgba(0,0,0,0.18);padding:16px 24px;min-width:320px;max-width:480px;width:90%;font-family:sans-serif">
+      <div style="font-weight:700;font-size:14px;color:#0d2e5e;margin-bottom:8px">${title}</div>
+      ${total>0?`<div style="height:6px;border-radius:99px;background:#e2e8f0;margin-bottom:8px;overflow:hidden"><div id="__skyprog_fill__" style="height:100%;border-radius:99px;background:#1565c0;width:0%;transition:width 0.3s ease"></div></div>`:""}
+      <div id="__skyprog_msg__" style="font-size:12px;color:#374151">${message}</div>
+    </div>`;
+    (el as any)._total=total;
+  }
+  function tickProgress(message:string,done:number,total:number){
+    const msg=document.getElementById("__skyprog_msg__");
+    const fill=document.getElementById("__skyprog_fill__");
+    if(msg) msg.textContent=message;
+    if(fill) fill.style.width=`${total>0?Math.round((done/total)*100):0}%`;
+  }
+  function finishProgress(message:string){
+    const msg=document.getElementById("__skyprog_msg__");
+    const fill=document.getElementById("__skyprog_fill__");
+    const bar=document.querySelector("#__skyprog__ div") as HTMLElement|null;
+    if(msg){msg.textContent=message;msg.style.color="#059669";}
+    if(fill){fill.style.width="100%";fill.style.background="#059669";}
+    if(bar){
+      const btn=document.createElement("button");
+      btn.textContent="✕";btn.style.cssText="position:absolute;top:12px;right:16px;background:none;border:none;cursor:pointer;font-size:18px;color:#9ca3af";
+      btn.onclick=()=>document.getElementById("__skyprog__")?.remove();
+      bar.style.position="relative";bar.appendChild(btn);
+    }
+  }
 
   // Swap modal
   const [swapModal,setSwapModal]=useState<{event:CalEvent}|null>(null);
@@ -240,8 +263,7 @@ export default function OnCallManagerPage() {
     if (!accessToken) return;
     if (!window.confirm(`Restore ${backup.eventCount} events from backup taken ${new Date(backup.createdAt?.toDate?.()).toLocaleString()}?\n\nThis will delete all current on-call events and restore the backup.`)) return;
 
-    // flushSync forces React to commit this render before any async work starts
-    flushSync(() => startProgress("↩ Restoring backup", "Fetching current events…", backup.eventCount));
+    startProgress("↩ Restoring backup", "Fetching current events…", backup.eventCount);
 
     // Fetch + delete all current on-call events
     const start = new Date().toISOString().slice(0,10);
@@ -333,11 +355,11 @@ export default function OnCallManagerPage() {
     if(!roster.length){ finishProgress("No employees in roster. Go to Setup → On-Call Roster."); return; }
 
     const actionLabel=action==="preview"?"👁 Preview":action==="rebalance"?"⚖ Rebalance":"⬆ Fill 365 Days";
-    flushSync(() => startProgress(actionLabel, `Roster: ${roster.join(", ")}`, 365));
+    startProgress(actionLabel, `Roster: ${roster.join(", ")}`, 365);
 
     if(action!=="preview") await backupCalendar(action);
     // tickProgress after first await so React has committed the startProgress update
-    setProgress(p=>p?{...p,message:action==="preview"?"Building preview…":action==="rebalance"?"Fetching events to rebalance…":"Fetching existing events…"}:p);
+    tickProgress(action==="preview"?"Building preview…":action==="rebalance"?"Fetching events to rebalance…":"Fetching existing events…",0,365);
 
     // Fetch existing on-call events in the window
     const existingEvs:any[]=[];
@@ -642,24 +664,6 @@ export default function OnCallManagerPage() {
         </div>
       )}
 
-      {/* ── FLOATING PROGRESS BAR (portal → renders on body, bypasses parent CSS) ── */}
-      {progress&&createPortal(
-        <div style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",zIndex:99999,background:"white",border:"1px solid #e2e8f0",borderRadius:14,boxShadow:"0 8px 32px rgba(0,0,0,0.18)",padding:"16px 24px",minWidth:320,maxWidth:480,width:"90%"}}>
-          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
-            <span style={{fontWeight:700,fontSize:14,color:"#0d2e5e"}}>{progress.title}</span>
-            {progress.finished&&(
-              <button onClick={()=>setProgress(null)} style={{background:"none",border:"none",cursor:"pointer",fontSize:18,lineHeight:1,color:"#9ca3af",padding:0}}>✕</button>
-            )}
-          </div>
-          {progress.total>0&&(
-            <div style={{height:6,borderRadius:99,background:"#e2e8f0",marginBottom:8,overflow:"hidden"}}>
-              <div style={{height:"100%",borderRadius:99,background:progress.finished?"#059669":"#1565c0",width:`${Math.round((progress.done/progress.total)*100)}%`,transition:"width 0.3s ease"}}/>
-            </div>
-          )}
-          <div style={{fontSize:12,color:progress.finished?"#059669":"#374151"}}>{progress.message}</div>
-        </div>,
-        document.body
-      )}
 
       {/* ── REBALANCE MODAL ── */}
       {rebalanceModal&&(
