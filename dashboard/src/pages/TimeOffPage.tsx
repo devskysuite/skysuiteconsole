@@ -192,6 +192,17 @@ export default function TimeOffPage() {
 
   return (
     <div style={{ padding: "0 0 32px" }}>
+
+      {/* ── Header — matches On-Call Manager ── */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
+        <h1 style={{ fontSize: 24, fontWeight: 800, color: "#0d2e5e", margin: 0 }}>Vacation Management</h1>
+        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+          {token
+            ? <span style={{ fontSize: 13, color: "#059669", fontWeight: 600 }}>✅ Connected</span>
+            : <span style={{ fontSize: 13, color: "#9ca3af", fontWeight: 600 }}>⚠️ Not connected — connect Outlook in On-Call → Setup</span>}
+        </div>
+      </div>
+
       <div style={{ background: "#fff", borderRadius: 12, padding: 20, boxShadow: "0 1px 4px rgba(0,0,0,0.07)" }}>
 
         {/* ── Tab buttons — identical to On-Call ── */}
