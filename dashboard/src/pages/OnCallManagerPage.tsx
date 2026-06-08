@@ -298,9 +298,7 @@ export default function OnCallManagerPage() {
       tickProgress(`Restoring… ${pushed}/${toAdd.length}${failed>0?` (${failed} failed)`:""}`, existing.length+pushed, existing.length+toAdd.length);
       if(i>0&&i%10===0) await new Promise(r=>setTimeout(r,300)); // avoid throttling
     }
-    tickProgress(`Filling any remaining gaps…`, existing.length+pushed, existing.length+toAdd.length+1);
-    // After restore, fill forward gaps the backup may not have covered (backup window vs today's window)
-    await runRotation("push");
+    finishProgress(`✅ Restored ${pushed} events${failed>0?` · ${failed} failed`:""}.`);
     setEvents([]);
   }
 
