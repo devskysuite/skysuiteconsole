@@ -80,6 +80,9 @@ export default function UsersPage() {
   const [clearing, setClearing]     = useState(false);
   const [clearResult, setClearResult] = useState("");
 
+  const [fixingNames, setFixingNames]   = useState(false);
+  const [fixNamesResult, setFixNamesResult] = useState("");
+
   const isOwner = isAdmin === true; // any admin/owner can manage users
 
   // Load current user's role from Firestore
@@ -257,6 +260,34 @@ export default function UsersPage() {
       toast(e?.message ?? "Failed to reset 2FA.", "error");
     } finally {
       setMfaLoading(null);
+    }
+  }
+
+  /** Convert all user displayNames from ALL CAPS → Title Case */
+  async function fixAllDisplayNames() {
+    if (!isOwner) return;
+    if (!await confirm("Convert all user display names from ALL CAPS to Title Case?\n\nExample: JORDAN SIBBICK → Jordan Sibbick\n\nThis only affects how names appear in the app — it will not change login emails or Firebase Auth accounts.")) return;
+    setFixingNames(true);
+    setFixNamesResult("");
+    const toTitle = (s: string) => s.toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+    try {
+      const snap = await getDocs(collection(db, "users"));
+      let updated = 0;
+      for (const d of snap.docs) {
+        const data = d.data();
+        const name: string = data.displayName || "";
+        if (!name) continue;
+        const fixed = toTitle(name);
+        if (fixed === name) continue;
+        await updateDoc(doc(db, "users", d.id), { displayName: fixed });
+        updated++;
+      }
+      setFixNamesResult(`✓ Updated ${updated} user${updated !== 1 ? "s" : ""}.`);
+      await loadUsers();
+    } catch (e: any) {
+      setFixNamesResult(`Error: ${e?.message ?? "Unknown error"}`);
+    } finally {
+      setFixingNames(false);
     }
   }
 
@@ -566,6 +597,23 @@ export default function UsersPage() {
       {isOwner && (
         <div style={{ ...styles.card, borderColor: "#ffcccc" }}>
           <h2 style={{ ...styles.h2, color: "#cc0000" }}>Danger Zone</h2>
+
+          {/* Fix display name casing */}
+          <div style={{ marginBottom: 24 }}>
+            <p style={{ fontSize: 13, color: "#666", marginBottom: 8 }}>
+              Convert all user display names from ALL CAPS to Title Case (e.g. JORDAN SIBBICK → Jordan Sibbick).
+            </p>
+            {fixNamesResult && (
+              <p style={{ fontSize: 13, color: fixNamesResult.startsWith("Error") ? "#cc0000" : "#007700", marginBottom: 8 }}>
+                {fixNamesResult}
+              </p>
+            )}
+            <button style={{ ...styles.btn, backgroundColor: "#7c3aed" }}
+              onClick={fixAllDisplayNames} disabled={fixingNames}>
+              {fixingNames ? "Fixing…" : "Fix Display Name Casing"}
+            </button>
+          </div>
+
           <p style={{ fontSize: 13, color: "#666", marginBottom: 16 }}>
             Permanently delete all equipment history and maintenance logs from every tool. This cannot be undone.
           </p>
