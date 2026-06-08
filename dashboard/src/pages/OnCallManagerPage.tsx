@@ -226,7 +226,7 @@ export default function OnCallManagerPage() {
   async function connectOutlook() {
     const v=genVerifier(), c=await genChallenge(v);
     sessionStorage.setItem("pkce_verifier",v);
-    window.location.href=`https://login.microsoftonline.com/${TENANT_ID}/oauth2/v2.0/authorize?client_id=${CLIENT_ID}&response_type=code&redirect_uri=${encodeURIComponent(REDIRECT)}&scope=${encodeURIComponent("Calendars.ReadWrite offline_access")}&response_mode=query&code_challenge=${c}&code_challenge_method=S256&prompt=select_account`;
+    window.location.href=`https://login.microsoftonline.com/${TENANT_ID}/oauth2/v2.0/authorize?client_id=${CLIENT_ID}&response_type=code&redirect_uri=${encodeURIComponent(REDIRECT)}&scope=${encodeURIComponent("Calendars.ReadWrite offline_access")}&response_mode=query&code_challenge=${c}&code_challenge_method=S256&prompt=login`;
   }
 
   // ── Calendar Backup ──────────────────────────────────────────────────────────
