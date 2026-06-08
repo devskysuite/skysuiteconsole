@@ -265,30 +265,18 @@ export default function OnCallManagerPage() {
     const endDate=new Date(); endDate.setDate(endDate.getDate()+364);
     const endStr=endDate.toISOString().slice(0,10);
 
-    // Get employees — use rotation orders if available
+    // Get roster — this IS the rotation order, single source of truth
     const cfgSnap=await getDoc(doc(db,"settings","onCallConfig")).catch(()=>null);
-    const baseEmployees:string[]=cfgSnap?.data()?.employees||rosterNames;
-    if(!baseEmployees.length){status.textContent="No employees in roster. Go to Setup → On-Call Roster and save employees.";return;}
-    status.textContent=`Using ${baseEmployees.length} employees: ${baseEmployees.join(", ")}`;
-
-    // Load rotation orders per year
-    const ordersSnap=await getDoc(doc(db,"settings","rotationOrders")).catch(()=>null);
-    const rotOrders:Record<string,string[]>=ordersSnap?.data()||{};
-
-    function getOrderForYear(year:number):string[] {
-      if(rotOrders[String(year)]?.length) return rotOrders[String(year)];
-      const shuffled=[...baseEmployees].sort(()=>Math.random()-0.5);
-      rotOrders[String(year)]=shuffled;
-      setDoc(doc(db,"settings","rotationOrders"),rotOrders,{merge:true}).catch(()=>{});
-      return shuffled;
-    }
+    const roster:string[]=cfgSnap?.data()?.employees||rosterNames;
+    if(!roster.length){status.textContent="No employees in roster. Go to Setup → On-Call Roster and save employees.";return;}
+    status.textContent=`Roster (${roster.length}): ${roster.join(", ")}`;
 
     if(action!=="preview") await backupCalendar(action);
     status.textContent=action==="preview"?"Building preview...":action==="rebalance"?"Fetching events to rebalance...":"Fetching existing events...";
 
-    // Fetch existing on-call events
+    // Fetch existing on-call events in the window
     const existingEvs:any[]=[];
-    let url=`https://graph.microsoft.com/v1.0/me/calendars/${CAL_ID}/calendarView?startDateTime=${startDate}T00:00:00&endDateTime=${endStr}T00:00:00&$top=999&$select=id,subject,start`;
+    let url=`https://graph.microsoft.com/v1.0/me/calendars/${CAL_ID}/calendarView?startDateTime=${startDate}T00:00:00&endDateTime=${endStr}T23:59:59&$top=999&$select=id,subject,start&$orderby=start/dateTime`;
     while(url){ const d=await graphFetch(accessToken,url.replace("https://graph.microsoft.com/v1.0","")); (d.value||[]).filter((e:any)=>{const s=(e.subject||"").toLowerCase();return(s.includes("on call")||s.includes("oncall"))&&!s.includes("vacation");}).forEach((e:any)=>existingEvs.push(e)); url=d["@odata.nextLink"]||""; }
 
     const occupied=new Set(existingEvs.map((e:any)=>e.start?.date||e.start?.dateTime?.slice(0,10)));
@@ -302,22 +290,47 @@ export default function OnCallManagerPage() {
       occupied.clear();
     }
 
-    if(action==="preview"){status.textContent=`${existingEvs.length} days assigned, ${364-existingEvs.length} empty. Push to fill gaps.`;return;}
+    if(action==="preview"){status.textContent=`${existingEvs.length} days assigned, ${364-existingEvs.length} gaps. Push to fill.`;return;}
 
-    // Build schedule using year-based rotation orders
-    let currentYear=-1; let yearOrder:string[]=[]; let yearIdx=0;
-    if(shuffle){ const s=[...baseEmployees].sort(()=>Math.random()-0.5); const yr=new Date(startDate).getFullYear(); rotOrders[String(yr)]=s; setDoc(doc(db,"settings","rotationOrders"),rotOrders,{merge:true}).catch(()=>{}); }
+    // Find the last scheduled person BEFORE the start date to continue the rotation
+    // This is the key: we derive where we are in the rotation from the calendar itself
+    let startIdx=0;
+    if(action==="push"&&existingEvs.length>0){
+      // Find last person before or at the first gap
+      const lastEv=existingEvs[existingEvs.length-1];
+      const lastName=getName(lastEv.subject);
+      const lastIdx=roster.findIndex(n=>n.toLowerCase()===lastName.toLowerCase());
+      if(lastIdx>=0) startIdx=(lastIdx+1)%roster.length;
+    } else if(action==="rebalance"){
+      // For rebalance: look at the event just before rebalanceFrom in the full calendar
+      const prevEvs:any[]=[];
+      const prevStart=new Date(startDate); prevStart.setDate(prevStart.getDate()-(rotDays*roster.length+5));
+      let pUrl=`https://graph.microsoft.com/v1.0/me/calendars/${CAL_ID}/calendarView?startDateTime=${prevStart.toISOString().slice(0,10)}T00:00:00&endDateTime=${startDate}T00:00:00&$top=999&$select=id,subject,start&$orderby=start/dateTime`;
+      while(pUrl){ const d=await graphFetch(accessToken,pUrl.replace("https://graph.microsoft.com/v1.0","")); (d.value||[]).filter((e:any)=>{const s=(e.subject||"").toLowerCase();return(s.includes("on call")||s.includes("oncall"))&&!s.includes("vacation");}).forEach((e:any)=>prevEvs.push(e)); pUrl=d["@odata.nextLink"]||""; }
+      if(prevEvs.length>0){
+        const lastName=getName(prevEvs[prevEvs.length-1].subject);
+        const lastIdx=roster.findIndex(n=>n.toLowerCase()===lastName.toLowerCase());
+        if(lastIdx>=0) startIdx=(lastIdx+1)%roster.length;
+      }
+      if(shuffle) startIdx=0;
+    }
+
+    status.textContent=`Starting from: ${roster[startIdx]} (position ${startIdx+1}/${roster.length})`;
+
+    // Build schedule — gaps only, continuing rotation from where calendar left off
     const toAdd:any[]=[];
-    let cur=new Date(startDate),idx=0;
+    let cur=new Date(startDate), idx=startIdx;
     while(cur.toISOString().slice(0,10)<=endStr){
       const d=cur.toISOString().slice(0,10);
-      const yr=cur.getFullYear();
-      if(yr!==currentYear){ currentYear=yr; yearOrder=getOrderForYear(yr); if(cur.getMonth()===0&&cur.getDate()===1) yearIdx=0; }
       if(!occupied.has(d)){
         const end2=new Date(cur); end2.setDate(end2.getDate()+rotDays);
-        toAdd.push({subject:`${yearOrder[idx%yearOrder.length]} On Call`,start:{dateTime:`${d}T00:00:00`,timeZone:"America/Toronto"},end:{dateTime:`${end2.toISOString().slice(0,10)}T00:00:00`,timeZone:"America/Toronto"},isAllDay:true});
+        toAdd.push({subject:`${roster[idx%roster.length]} On Call`,start:{dateTime:`${d}T00:00:00`,timeZone:"America/Toronto"},end:{dateTime:`${end2.toISOString().slice(0,10)}T00:00:00`,timeZone:"America/Toronto"},isAllDay:true});
+        idx++;
+      } else {
+        // Still advance rotation index for occupied days
+        idx++;
       }
-      idx++; cur.setDate(cur.getDate()+rotDays);
+      cur.setDate(cur.getDate()+rotDays);
     }
 
     status.textContent=`Pushing ${toAdd.length} events...`;
@@ -584,123 +597,55 @@ const inp:React.CSSProperties={width:"100%",padding:"8px 12px",border:"1px solid
 
 // ── Rotation Order Display ───────────────────────────────────────────────────
 function RotationOrderDisplay({ db, accessToken }: { db: any; accessToken: string }) {
-  const [orders,  setOrders]  = useState<Record<string, string[]>>({});
   const [roster,  setRoster]  = useState<string[]>([]);
   const [loaded,  setLoaded]  = useState(false);
-  const [syncing, setSyncing] = useState(false);
-  const thisYear = new Date().getFullYear();
+  const [saving,  setSaving]  = useState(false);
+  const [saved,   setSaved]   = useState(false);
 
   useEffect(() => {
-    Promise.all([
-      getDoc(doc(db, "settings", "rotationOrders")),
-      getDoc(doc(db, "settings", "onCallConfig")),
-    ]).then(([ordSnap, cfgSnap]) => {
-      const employees: string[] = cfgSnap.exists() ? (cfgSnap.data().employees || []) : [];
-      const loadedOrders: Record<string, string[]> = ordSnap.exists() ? (ordSnap.data() as Record<string, string[]>) : {};
-      if (employees.length) setRoster(employees);
-      setOrders(loadedOrders);
+    getDoc(doc(db, "settings", "onCallConfig")).then(snap => {
+      if (snap.exists() && snap.data().employees) setRoster(snap.data().employees);
       setLoaded(true);
     }).catch(() => setLoaded(true));
   }, []);
 
-  async function shuffleYear(year: number) {
-    if (!roster.length) return;
-    const shuffled = [...roster].sort(() => Math.random() - 0.5);
-    const newOrders = { ...orders, [String(year)]: shuffled };
-    await setDoc(doc(db, "settings", "rotationOrders"), newOrders, { merge: true });
-    setOrders(newOrders);
+  function move(i: number, dir: -1 | 1) {
+    const j = i + dir;
+    if (j < 0 || j >= roster.length) return;
+    const r = [...roster];
+    [r[i], r[j]] = [r[j], r[i]];
+    setRoster(r);
+    setSaved(false);
   }
 
-  // Read the actual calendar to derive the real rotation order for the current year
-  async function syncFromCalendar() {
-    if (!accessToken) { alert("Connect Outlook first."); return; }
-    setSyncing(true);
-    try {
-      // Fetch Jan 1 → Dec 31 of this year
-      const start = `${thisYear}-01-01`;
-      const end   = `${thisYear}-12-31`;
-      const evs: {date: string; name: string}[] = [];
-      let url = `https://graph.microsoft.com/v1.0/me/calendars/${CAL_ID}/calendarView?startDateTime=${start}T00:00:00&endDateTime=${end}T23:59:59&$top=999&$select=subject,start&$orderby=start/dateTime`;
-      while (url) {
-        const d = await (await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } })).json();
-        (d.value || []).forEach((e: any) => {
-          const s = (e.subject || "").toLowerCase();
-          if ((s.includes("on call") || s.includes("oncall")) && !s.includes("vacation")) {
-            const date = e.start?.date || e.start?.dateTime?.slice(0, 10);
-            const skip = new Set(["on","call","oncall","-","–"]);
-            const name = e.subject.split(/\s+/).find((w: string) => w.length > 1 && !skip.has(w.toLowerCase())) || "";
-            if (date && name) evs.push({ date, name });
-          }
-        });
-        url = d["@odata.nextLink"] || "";
-      }
-
-      // Derive rotation order: unique names in the order they first appear
-      const seen = new Set<string>();
-      const order: string[] = [];
-      for (const e of evs) {
-        const n = e.name.charAt(0).toUpperCase() + e.name.slice(1).toLowerCase();
-        if (!seen.has(n)) { seen.add(n); order.push(n); }
-      }
-
-      if (!order.length) { alert("No on-call events found for " + thisYear); setSyncing(false); return; }
-
-      const newOrders = { ...orders, [String(thisYear)]: order };
-      await setDoc(doc(db, "settings", "rotationOrders"), newOrders, { merge: true });
-      setOrders(newOrders);
-      alert(`✅ Synced! ${order.length} people in order: ${order.join(" → ")}`);
-    } catch (e) {
-      alert("Sync failed: " + e);
-    }
-    setSyncing(false);
+  async function saveOrder() {
+    setSaving(true);
+    await setDoc(doc(db, "settings", "onCallConfig"), { employees: roster }, { merge: true });
+    setSaving(false); setSaved(true);
   }
 
-  if (!loaded) return <p style={{ fontSize: 12, color: "#9ca3af" }}>Loading rotation…</p>;
-  if (!roster.length) return <p style={{ fontSize: 12, color: "#9ca3af" }}>Save the roster above first to generate a rotation.</p>;
+  if (!loaded) return <p style={{ fontSize: 12, color: "#9ca3af" }}>Loading…</p>;
+  if (!roster.length) return <p style={{ fontSize: 12, color: "#9ca3af" }}>Save the roster above first.</p>;
 
   return (
     <div>
-      {/* Sync from calendar button */}
-      <div style={{ marginBottom: 16 }}>
-        <button onClick={syncFromCalendar} disabled={syncing || !accessToken} style={{ fontSize: 12, padding: "5px 14px", borderRadius: 8, background: "#f0fdf4", border: "1px solid #86efac", cursor: "pointer", fontWeight: 600, color: "#15803d" }}>
-          {syncing ? "Syncing…" : "🔄 Sync 2026 Order from Calendar"}
-        </button>
-        <span style={{ fontSize: 11, color: "#9ca3af", marginLeft: 8 }}>Reads the actual calendar to set the correct rotation order</span>
-      </div>
-
-      {[thisYear, thisYear + 1].map(y => {
-        const order = orders[String(y)] || [];
-        const isCurrent = y === thisYear;
-        return (
-          <div key={y} style={{ marginBottom: 16, background: "#f8fafc", borderRadius: 10, padding: "14px 16px", border: "1px solid #e2e8f0" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
-              <span style={{ fontSize: 14, fontWeight: 700, color: "#0d2e5e" }}>📅 {y} {isCurrent ? "(Current Year)" : "(Next Year)"}</span>
-              {!isCurrent && (
-                <button onClick={() => shuffleYear(y)} style={{ fontSize: 11, padding: "3px 12px", borderRadius: 99, background: "#eff6ff", border: "1px solid #bfdbfe", cursor: "pointer", fontWeight: 600, color: "#1565c0" }}>
-                  🔀 {order.length ? "Reshuffle" : "Generate"} {y}
-                </button>
-              )}
-              {isCurrent && order.length > 0 && <span style={{ fontSize: 11, color: "#9ca3af", fontWeight: 600 }}>🔒 Locked</span>}
-              {isCurrent && order.length === 0 && (
-                <button onClick={() => shuffleYear(y)} style={{ fontSize: 11, padding: "3px 12px", borderRadius: 99, background: "#eff6ff", border: "1px solid #bfdbfe", cursor: "pointer", fontWeight: 600, color: "#1565c0" }}>
-                  🔀 Generate {y}
-                </button>
-              )}
-            </div>
-            {order.length > 0 ? (
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                {order.map((name, i) => (
-                  <span key={name} style={{ fontSize: 12, fontWeight: 600, background: "#eff6ff", color: "#1565c0", border: "1px solid #bfdbfe", borderRadius: 99, padding: "3px 10px" }}>
-                    {i + 1}. {name}
-                  </span>
-                ))}
-              </div>
-            ) : (
-              <span style={{ fontSize: 12, color: "#9ca3af" }}>No rotation set — click Generate to create one</span>
-            )}
+      <p style={{ fontSize: 12, color: "#6b7280", marginBottom: 12 }}>
+        This order is the single source of truth. The fill function reads who was last on call in the calendar and continues from the next person here. Add/remove people in the roster above — the order auto-adjusts.
+      </p>
+      <div style={{ marginBottom: 12 }}>
+        {roster.map((name, i) => (
+          <div key={name} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 0", borderBottom: "1px solid #f3f4f6" }}>
+            <span style={{ fontSize: 12, color: "#9ca3af", width: 24, textAlign: "right" }}>{i + 1}.</span>
+            <span style={{ fontSize: 13, fontWeight: 600, flex: 1, color: "#0d2e5e" }}>{name}</span>
+            <button onClick={() => move(i, -1)} disabled={i === 0} style={{ fontSize: 11, padding: "1px 7px", borderRadius: 4, border: "1px solid #e5e7eb", background: "#f9fafb", cursor: "pointer", color: "#374151" }}>▲</button>
+            <button onClick={() => move(i, 1)} disabled={i === roster.length - 1} style={{ fontSize: 11, padding: "1px 7px", borderRadius: 4, border: "1px solid #e5e7eb", background: "#f9fafb", cursor: "pointer", color: "#374151" }}>▼</button>
           </div>
-        );
-      })}
+        ))}
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <button onClick={saveOrder} disabled={saving} style={btnS("#059669")}>{saving ? "Saving…" : "💾 Save Order"}</button>
+        {saved && <span style={{ fontSize: 12, color: "#059669", fontWeight: 600 }}>✅ Saved!</span>}
+      </div>
     </div>
   );
 }
