@@ -112,6 +112,13 @@ export default function OnCallManagerPage() {
   // Rebalance modal
   const [rebalanceModal,setRebalanceModal]=useState(false);
 
+  // Floating progress bar
+  type ProgressState = {title:string; message:string; done:number; total:number; finished:boolean};
+  const [progress,setProgress]=useState<ProgressState|null>(null);
+  function startProgress(title:string,message:string,total=0){setProgress({title,message,done:0,total,finished:false});}
+  function tickProgress(message:string,done:number,total:number){setProgress(p=>p?{...p,message,done,total}:null);}
+  function finishProgress(message:string){setProgress(p=>p?{...p,message,done:p.total||1,total:p.total||1,finished:true}:null);}
+
   // Swap modal
   const [swapModal,setSwapModal]=useState<{event:CalEvent}|null>(null);
   const [swapTargetUid,setSwapTargetUid]=useState("");
@@ -231,8 +238,8 @@ export default function OnCallManagerPage() {
   async function restoreBackup(backup: any) {
     if (!accessToken) return;
     if (!window.confirm(`Restore ${backup.eventCount} events from backup taken ${new Date(backup.createdAt?.toDate?.()).toLocaleString()}?\n\nThis will delete all current on-call events and restore the backup.`)) return;
-    const status = document.getElementById("rot-status");
-    if (status) status.textContent = "Restoring backup...";
+
+    startProgress("↩ Restoring backup", "Fetching current events…", backup.eventCount);
 
     // Fetch + delete all current on-call events
     const start = new Date().toISOString().slice(0,10);
@@ -245,9 +252,13 @@ export default function OnCallManagerPage() {
       (d.value||[]).filter((e:any)=>{const s=(e.subject||"").toLowerCase();return(s.includes("on call")||s.includes("oncall"))&&!s.includes("vacation");}).forEach((e:any)=>existing.push(e));
       url = d["@odata.nextLink"]||"";
     }
+
+    let deleted=0;
     for (let i=0;i<existing.length;i+=20) {
       const chunk=existing.slice(i,i+20);
       await graphFetch(accessToken,"/$batch","POST",{requests:chunk.map((e:any,j:number)=>({id:String(j+1),method:"DELETE",url:`/me/events/${e.id}`}))}).catch(()=>{});
+      deleted+=chunk.length;
+      tickProgress(`Clearing old events… ${deleted}/${existing.length}`, deleted, existing.length+backup.eventCount);
     }
 
     // Recreate from backup
@@ -257,9 +268,9 @@ export default function OnCallManagerPage() {
       const chunk=toAdd.slice(i,i+4);
       await graphFetch(accessToken,"/$batch","POST",{requests:chunk.map((e:any,j:number)=>({id:String(j+1),method:"POST",url:`/me/calendars/${CAL_ID}/events`,headers:{"Content-Type":"application/json"},body:{subject:e.subject,start:{dateTime:`${e.start}T00:00:00`,timeZone:"America/Toronto"},end:{dateTime:`${e.end}T00:00:00`,timeZone:"America/Toronto"},isAllDay:true}}))}).catch(()=>{});
       pushed+=chunk.length;
+      tickProgress(`Restoring events… ${pushed}/${toAdd.length}`, existing.length+pushed, existing.length+toAdd.length);
     }
-    if (status) status.textContent = `✅ Restored ${pushed} events from backup.`;
-    // Reload events for current month
+    finishProgress(`✅ Restored ${pushed} events from backup`);
     setEvents([]);
   }
 
@@ -294,8 +305,7 @@ export default function OnCallManagerPage() {
   }
 
   async function runRotation(action:"preview"|"push"|"rebalance", rebalanceFrom?:string) {
-    const status=document.getElementById("rot-status");
-    if(!status||!accessToken) return;
+    if(!accessToken) return;
     const rotDays=parseInt((document.getElementById("rot-days") as HTMLSelectElement)?.value||"1");
     const shuffle=(document.getElementById("rot-shuffle") as HTMLInputElement)?.checked;
 
@@ -308,11 +318,13 @@ export default function OnCallManagerPage() {
     // Get roster — this IS the rotation order, single source of truth
     const cfgSnap=await getDoc(doc(db,"settings","onCallConfig")).catch(()=>null);
     const roster:string[]=cfgSnap?.data()?.employees||rosterNames;
-    if(!roster.length){status.textContent="No employees in roster. Go to Setup → On-Call Roster and save employees.";return;}
-    status.textContent=`Roster (${roster.length}): ${roster.join(", ")}`;
+    if(!roster.length){ finishProgress("No employees in roster. Go to Setup → On-Call Roster."); return; }
+
+    const actionLabel=action==="preview"?"👁 Preview":action==="rebalance"?"⚖ Rebalance":"⬆ Fill 365 Days";
+    startProgress(actionLabel, `Roster: ${roster.join(", ")}`, 365);
 
     if(action!=="preview") await backupCalendar(action);
-    status.textContent=action==="preview"?"Building preview...":action==="rebalance"?"Fetching events to rebalance...":"Fetching existing events...";
+    tickProgress(action==="preview"?"Building preview…":action==="rebalance"?"Fetching events to rebalance…":"Fetching existing events…", 0, 365);
 
     // Fetch existing on-call events in the window
     const existingEvs:any[]=[];
@@ -322,15 +334,17 @@ export default function OnCallManagerPage() {
     const occupied=new Set(existingEvs.map((e:any)=>e.start?.date||e.start?.dateTime?.slice(0,10)));
 
     if(action==="rebalance"){
-      status.textContent=`Deleting ${existingEvs.length} events...`;
+      let deleted=0;
       for(let i=0;i<existingEvs.length;i+=20){
         const chunk=existingEvs.slice(i,i+20);
         await graphFetch(accessToken,"/$batch","POST",{requests:chunk.map((e:any,j:number)=>({id:String(j+1),method:"DELETE",url:`/me/events/${e.id}`}))}).catch(()=>{});
+        deleted+=chunk.length;
+        tickProgress(`Clearing old events… ${deleted}/${existingEvs.length}`, deleted, existingEvs.length+365);
       }
       occupied.clear();
     }
 
-    if(action==="preview"){status.textContent=`${existingEvs.length} days assigned, ${364-existingEvs.length} gaps. Push to fill.`;return;}
+    if(action==="preview"){finishProgress(`${existingEvs.length} days assigned, ${364-existingEvs.length} gaps. Push to fill.`);return;}
 
     // Find the last scheduled person BEFORE the start date to continue the rotation
     // This is the key: we derive where we are in the rotation from the calendar itself
@@ -355,7 +369,7 @@ export default function OnCallManagerPage() {
       if(shuffle) startIdx=0;
     }
 
-    status.textContent=`Starting from: ${roster[startIdx]} (position ${startIdx+1}/${roster.length})`;
+    tickProgress(`Starting from ${roster[startIdx]} (${startIdx+1}/${roster.length}) — building schedule…`, 0, toAdd.length||365);
 
     // Build schedule — gaps only, continuing rotation from where calendar left off
     const toAdd:any[]=[];
@@ -404,16 +418,16 @@ export default function OnCallManagerPage() {
       if(!swapped)break;
     }
 
-    status.textContent=`Pushing ${toAdd.length} events...`;
+    tickProgress(`Pushing ${toAdd.length} events…`, 0, toAdd.length);
     let pushed=0;
     for(let i=0;i<toAdd.length;i+=4){
       const chunk=toAdd.slice(i,i+4);
       await graphFetch(accessToken,"/$batch","POST",{requests:chunk.map((e:any,j:number)=>({id:String(j+1),method:"POST",url:`/me/calendars/${CAL_ID}/events`,headers:{"Content-Type":"application/json"},body:e}))}).catch(()=>{});
       pushed+=chunk.length;
-      status.textContent=`Pushed ${pushed}/${toAdd.length}...`;
+      tickProgress(`Pushing events… ${pushed}/${toAdd.length}`, pushed, toAdd.length);
       await new Promise(r=>setTimeout(r,200));
     }
-    status.textContent=`✅ Done! ${pushed} events created.`;
+    finishProgress(`✅ Done! ${pushed} events created.`);
   }
 
   const eventMap:Record<string,CalEvent[]>={};
@@ -602,7 +616,6 @@ export default function OnCallManagerPage() {
               <button onClick={()=>runRotation("push")}      disabled={!connected} style={btnS("#1565c0")}>⬆ Fill 365 Days</button>
               <button onClick={()=>setRebalanceModal(true)} disabled={!connected} style={btnS("#f97316")}>⚖ Rebalance</button>
             </div>
-            <div id="rot-status" style={{marginTop:10,fontSize:13,color:"#374151"}}></div>
           </div>
 
           {/* Backups */}
@@ -614,6 +627,24 @@ export default function OnCallManagerPage() {
             <p style={{fontSize:12,color:"#6b7280",marginBottom:14}}>Auto-saved before every swap, push, or rebalance. Last 10 kept. Click ↩ Restore to roll back.</p>
             <BackupsList db={db} onRestore={restoreBackup} connected={connected}/>
           </div>
+        </div>
+      )}
+
+      {/* ── FLOATING PROGRESS BAR ── */}
+      {progress&&(
+        <div style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",zIndex:2000,background:"white",border:"1px solid #e2e8f0",borderRadius:14,boxShadow:"0 8px 32px rgba(0,0,0,0.18)",padding:"16px 24px",minWidth:320,maxWidth:480,width:"90%"}}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+            <span style={{fontWeight:700,fontSize:14,color:"#0d2e5e"}}>{progress.title}</span>
+            {progress.finished&&(
+              <button onClick={()=>setProgress(null)} style={{background:"none",border:"none",cursor:"pointer",fontSize:18,lineHeight:1,color:"#9ca3af",padding:0}}>✕</button>
+            )}
+          </div>
+          {progress.total>0&&(
+            <div style={{height:6,borderRadius:99,background:"#e2e8f0",marginBottom:8,overflow:"hidden"}}>
+              <div style={{height:"100%",borderRadius:99,background:progress.finished?"#059669":"#1565c0",width:`${Math.round((progress.done/progress.total)*100)}%`,transition:"width 0.3s ease"}}/>
+            </div>
+          )}
+          <div style={{fontSize:12,color:progress.finished?"#059669":"#374151"}}>{progress.message}</div>
         </div>
       )}
 
