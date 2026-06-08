@@ -29,4 +29,4 @@ jobs:
         run: npm ci
 
       - name: Deploy hosting + functions to Firebase Dev
-        run: npx firebase-tools deploy --only hosting,functions:sendTestSms,functions:sendPasswordResetEmail,functions:exportUserIcs,functions:getUidByEmail,functions:dailyOnCallFill --project sky-suite-d14ff --token "${{ secrets.FIREBASE_TOKEN }}" --non-interactive
+        run: npx firebase-tools deploy --only hosting,functions --project sky-suite-d14ff --token "${{ secrets.FIREBASE_TOKEN }}" --non-interactive
