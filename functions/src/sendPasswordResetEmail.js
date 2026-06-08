@@ -14,10 +14,14 @@ export const sendPasswordResetEmail = onCall(
     const resendKey = secretSnap.data()?.resendApiKey;
     if (!resendKey) throw new HttpsError("failed-precondition", "Resend API key not configured.");
 
-    // Generate Firebase password reset link — continue URL brings them back to skysuite.ca
+    // Generate Firebase password reset link, then rewrite domain to skysuite.ca
+    // so the link in the email says skysuite.ca instead of firebaseapp.com
     const actionCodeSettings = { url: "https://skysuite.ca" };
-    const link = await getAuth().generatePasswordResetLink(email, actionCodeSettings).catch(() => null);
-    if (!link) throw new HttpsError("not-found", "No account found for that email.");
+    const rawLink = await getAuth().generatePasswordResetLink(email, actionCodeSettings).catch(() => null);
+    if (!rawLink) throw new HttpsError("not-found", "No account found for that email.");
+    const link = rawLink
+      .replace("https://sky-suite-d14ff.firebaseapp.com", "https://skysuite.ca")
+      .replace("https://sky-suite-d14ff.web.app", "https://skysuite.ca");
 
     const name = displayName || email.split("@")[0];
     const isReset = mode === "reset";
