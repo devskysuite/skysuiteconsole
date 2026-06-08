@@ -2,7 +2,10 @@
   "hosting": {
     "public": "dashboard/dist",
     "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
-    "rewrites": [{ "source": "**", "destination": "/index.html" }]
+    "rewrites": [
+      { "source": "/api/ics", "function": "serveIcs" },
+      { "source": "**", "destination": "/index.html" }
+    ]
   },
   "functions": [
     {

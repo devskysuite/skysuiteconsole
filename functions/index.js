@@ -6,3 +6,4 @@ export { getUidByEmail } from "./src/getUidByEmail.js";
 export { dailyOnCallFill } from "./src/dailyOnCallFill.js";
 export { sendScheduleText } from "./src/sendScheduleText.js";
 export { sendIcsLink } from "./src/sendIcsLink.js";
+export { serveIcs } from "./src/serveIcs.js";
