@@ -116,12 +116,8 @@ export default function OnCallManagerPage() {
   function startProgress(title:string,message:string,total=0){
     let el=document.getElementById("__skyprog__");
     if(!el){el=document.createElement("div");el.id="__skyprog__";document.body.appendChild(el);}
-    el.innerHTML=`<div style="position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:99999;background:white;border:1px solid #e2e8f0;border-radius:14px;box-shadow:0 8px 32px rgba(0,0,0,0.18);padding:16px 24px;min-width:320px;max-width:480px;width:90%;font-family:sans-serif">
-      <div style="font-weight:700;font-size:14px;color:#0d2e5e;margin-bottom:8px">${title}</div>
-      ${total>0?`<div style="height:6px;border-radius:99px;background:#e2e8f0;margin-bottom:8px;overflow:hidden"><div id="__skyprog_fill__" style="height:100%;border-radius:99px;background:#1565c0;width:0%;transition:width 0.3s ease"></div></div>`:""}
-      <div id="__skyprog_msg__" style="font-size:12px;color:#374151">${message}</div>
-    </div>`;
-    (el as any)._total=total;
+    const fillBar=total>0?'<div style="height:6px;border-radius:99px;background:#e2e8f0;margin-bottom:8px;overflow:hidden"><div id="__skyprog_fill__" style="height:100%;border-radius:99px;background:#1565c0;width:0%;transition:width 0.3s ease"></div></div>':"";
+    (el as HTMLElement).innerHTML='<div style="position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:99999;background:white;border:1px solid #e2e8f0;border-radius:14px;box-shadow:0 8px 32px rgba(0,0,0,0.18);padding:16px 24px;min-width:320px;max-width:480px;width:90%;font-family:sans-serif"><div style="font-weight:700;font-size:14px;color:#0d2e5e;margin-bottom:8px">'+title+'</div>'+fillBar+'<div id="__skyprog_msg__" style="font-size:12px;color:#374151">'+message+'</div></div>';
   }
   function tickProgress(message:string,done:number,total:number){
     const msg=document.getElementById("__skyprog_msg__");
