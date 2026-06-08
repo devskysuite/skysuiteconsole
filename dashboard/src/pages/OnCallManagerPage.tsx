@@ -242,7 +242,13 @@ export default function OnCallManagerPage() {
       while (url) {
         const d = await graphFetch(accessToken, url.replace("https://graph.microsoft.com/v1.0",""));
         (d.value||[]).filter((e:any)=>{const s=(e.subject||"").toLowerCase();return(s.includes("on call")||s.includes("oncall"))&&!s.includes("vacation");})
-          .forEach((e:any)=>evs.push({id:e.id,subject:e.subject,start:e.start?.date||e.start?.dateTime?.slice(0,10),end:e.end?.date||e.end?.dateTime?.slice(0,10),isAllDay:e.isAllDay}));
+          .forEach((e:any)=>{
+            const s=e.start?.date||e.start?.dateTime?.slice(0,10)||"";
+            let en=e.end?.date||e.end?.dateTime?.slice(0,10)||"";
+            // Fallback: if end missing or same as start, set end = start + 1 day
+            if(!en||en===s){const d=new Date(s);d.setDate(d.getDate()+1);en=d.toISOString().slice(0,10);}
+            evs.push({id:e.id,subject:e.subject,start:s,end:en,isAllDay:e.isAllDay});
+          });
         url = d["@odata.nextLink"]||"";
       }
       await addDoc(collection(db,"calendarBackups"),{
@@ -259,7 +265,7 @@ export default function OnCallManagerPage() {
     if (!accessToken) return;
     if (!window.confirm(`Restore ${backup.eventCount} events from backup taken ${new Date(backup.createdAt?.toDate?.()).toLocaleString()}?\n\nThis will delete all current on-call events and restore the backup.`)) return;
 
-    startProgress("↩ Restoring backup", "Fetching current events…", backup.eventCount);
+    startProgress("↩ Restoring backup", "Fetching current events…", 0);
 
     // Fetch + delete all current on-call events
     const start = new Date().toISOString().slice(0,10);
@@ -282,8 +288,16 @@ export default function OnCallManagerPage() {
     }
 
     // Recreate from backup — with exponential backoff on throttle
-    // Filter by end date so mid-rotation events that started before today are still restored
-    const toAdd = backup.events.filter((e:any)=>e.end>start&&e.start&&e.end&&e.start!==e.end);
+    // Only restore future events (past events were never deleted so they're still in the calendar)
+    // Normalise events: compute end if missing
+    const normalised = backup.events.map((e:any)=>{
+      let en=e.end||"";
+      if((!en||en===e.start)&&e.start){const d=new Date(e.start);d.setDate(d.getDate()+1);en=d.toISOString().slice(0,10);}
+      return {...e,end:en};
+    });
+    const past = normalised.filter((e:any)=>e.end<=start).length;
+    const toAdd = normalised.filter((e:any)=>e.end>start&&e.start);
+    tickProgress(`Restoring ${toAdd.length} future events (${past} past events already in calendar)…`, 0, toAdd.length);
     let pushed=0;
     async function createEvent(e:any):Promise<boolean>{
       for(let attempt=0;attempt<4;attempt++){
@@ -301,7 +315,7 @@ export default function OnCallManagerPage() {
     for(let i=0;i<toAdd.length;i++){
       const ok=await createEvent(toAdd[i]);
       if(ok) pushed++;
-      tickProgress(`Restoring… ${pushed}/${toAdd.length}`,existing.length+pushed,existing.length+toAdd.length);
+      tickProgress(`Restoring… ${pushed}/${toAdd.length}`, pushed, toAdd.length);
       await new Promise(r=>setTimeout(r,300)); // base delay between events
     }
     const failed=toAdd.length-pushed;
