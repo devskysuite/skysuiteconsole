@@ -24,5 +24,12 @@ jobs:
         working-directory: dashboard
         run: npm run build
 
-      - name: Deploy to Firebase Production
+      - name: Install functions dependencies
+        working-directory: functions
+        run: npm ci
+
+      - name: Deploy functions
+        run: npx firebase-tools deploy --only functions --project sky-suite-d14ff --token "${{ secrets.FIREBASE_TOKEN }}" --non-interactive --force
+
+      - name: Deploy hosting to production
         run: npx firebase-tools deploy --only hosting --project sky-suite-d14ff --token "${{ secrets.FIREBASE_TOKEN }}" --non-interactive
