@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { doc, getDoc, setDoc, collection, addDoc, onSnapshot, updateDoc, serverTimestamp, query, getDocs, orderBy, limit, deleteDoc } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
 import { db, auth } from "../firebase";
@@ -325,7 +326,8 @@ export default function OnCallManagerPage() {
     startProgress(actionLabel, `Roster: ${roster.join(", ")}`, 365);
 
     if(action!=="preview") await backupCalendar(action);
-    tickProgress(action==="preview"?"Building preview…":action==="rebalance"?"Fetching events to rebalance…":"Fetching existing events…", 0, 365);
+    // tickProgress after first await so React has committed the startProgress update
+    setProgress(p=>p?{...p,message:action==="preview"?"Building preview…":action==="rebalance"?"Fetching events to rebalance…":"Fetching existing events…"}:p);
 
     // Fetch existing on-call events in the window
     const existingEvs:any[]=[];
@@ -630,9 +632,9 @@ export default function OnCallManagerPage() {
         </div>
       )}
 
-      {/* ── FLOATING PROGRESS BAR ── */}
-      {progress&&(
-        <div style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",zIndex:2000,background:"white",border:"1px solid #e2e8f0",borderRadius:14,boxShadow:"0 8px 32px rgba(0,0,0,0.18)",padding:"16px 24px",minWidth:320,maxWidth:480,width:"90%"}}>
+      {/* ── FLOATING PROGRESS BAR (portal → renders on body, bypasses parent CSS) ── */}
+      {progress&&createPortal(
+        <div style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",zIndex:99999,background:"white",border:"1px solid #e2e8f0",borderRadius:14,boxShadow:"0 8px 32px rgba(0,0,0,0.18)",padding:"16px 24px",minWidth:320,maxWidth:480,width:"90%"}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
             <span style={{fontWeight:700,fontSize:14,color:"#0d2e5e"}}>{progress.title}</span>
             {progress.finished&&(
@@ -645,7 +647,8 @@ export default function OnCallManagerPage() {
             </div>
           )}
           <div style={{fontSize:12,color:progress.finished?"#059669":"#374151"}}>{progress.message}</div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* ── REBALANCE MODAL ── */}
