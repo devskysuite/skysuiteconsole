@@ -7,7 +7,7 @@ import { useIsAdmin } from "../hooks/useIsAdmin";
 import { useRole, canApproveTimeOff } from "../hooks/useRole";
 
 const BASE_LINKS = [
-  { to: "/", label: "Dashboard" },
+  { to: "/dashboard", label: "Dashboard" },
   { to: "/tools", label: "Equipment" },
   { to: "/vehicles", label: "Vehicles" },
   { to: "/bookings", label: "Bookings" },
@@ -119,7 +119,7 @@ export default function Nav() {
             to={l.to}
             style={{
               ...styles.link,
-              ...(pathname === l.to ? styles.linkActive : {}),
+              ...(pathname === l.to || (l.to === "/dashboard" && (pathname === "/" || pathname === "/dashboard")) ? styles.linkActive : {}),
             }}
           >
             {l.label}
