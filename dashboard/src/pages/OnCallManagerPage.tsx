@@ -281,37 +281,41 @@ export default function OnCallManagerPage() {
       tickProgress(`Clearing old events… ${deleted}/${existing.length}`, deleted, existing.length+backup.eventCount);
     }
 
-    // Recreate from backup — use date format (not dateTime) for all-day events per Graph API docs
+    // Recreate from backup — same dateTime+timezone format as runRotation (known to work)
     // Filter by end date (not start) so mid-rotation events that started before today are still restored
     const toAdd = backup.events.filter((e:any)=>e.end>start);
-    let pushed=0, failed=0;
+    let pushed=0;
     const failedEvents:any[]=[];
     for (let i=0;i<toAdd.length;i++) {
       const e=toAdd[i];
-      if(!e.start||!e.end||e.start===e.end){ failed++; continue; } // skip malformed
+      if(!e.start||!e.end||e.start===e.end) continue; // skip malformed
       const res = await graphFetch(accessToken,`/me/calendars/${CAL_ID}/events`,"POST",{
         subject: e.subject,
-        start: { date: e.start },
-        end:   { date: e.end },
+        start: { dateTime: `${e.start}T00:00:00`, timeZone: "America/Toronto" },
+        end:   { dateTime: `${e.end}T00:00:00`,   timeZone: "America/Toronto" },
         isAllDay: true
       }).catch(()=>null);
       if(res?.id) pushed++; else failedEvents.push(e);
-      tickProgress(`Restoring… ${pushed}/${toAdd.length}${failedEvents.length>0?` (${failedEvents.length} retrying)`:""}`, existing.length+pushed, existing.length+toAdd.length);
-      if(i>0&&i%5===0) await new Promise(r=>setTimeout(r,400)); // throttle pause every 5
+      tickProgress(`Restoring… ${pushed}/${toAdd.length}${failedEvents.length>0?` (${failedEvents.length} queued for retry)`:""}`, existing.length+pushed, existing.length+toAdd.length);
+      if(i>0&&i%5===0) await new Promise(r=>setTimeout(r,400));
     }
-    // Retry failed events once with a longer delay
+    // Retry failed events after a 3s cooldown
     if(failedEvents.length>0){
-      tickProgress(`Retrying ${failedEvents.length} failed events…`, existing.length+pushed, existing.length+toAdd.length);
-      await new Promise(r=>setTimeout(r,2000));
+      tickProgress(`Retrying ${failedEvents.length} events…`, existing.length+pushed, existing.length+toAdd.length);
+      await new Promise(r=>setTimeout(r,3000));
       for(const e of failedEvents){
         const res=await graphFetch(accessToken,`/me/calendars/${CAL_ID}/events`,"POST",{
-          subject:e.subject, start:{date:e.start}, end:{date:e.end}, isAllDay:true
+          subject:e.subject,
+          start:{dateTime:`${e.start}T00:00:00`,timeZone:"America/Toronto"},
+          end:{dateTime:`${e.end}T00:00:00`,timeZone:"America/Toronto"},
+          isAllDay:true
         }).catch(()=>null);
-        if(res?.id){pushed++;failed--;}else failed++;
-        await new Promise(r=>setTimeout(r,500));
+        if(res?.id) pushed++;
+        await new Promise(r=>setTimeout(r,600));
       }
     }
-    finishProgress(`✅ Restored ${pushed} events${failed>0?` · ${failed} failed`:""}. ${failed>0?"Run Fill 365 Days to patch remaining gaps.":""}`);
+    const stillFailed=toAdd.length-pushed-(toAdd.filter((e:any)=>!e.start||!e.end||e.start===e.end).length);
+    finishProgress(`✅ Restored ${pushed} events${stillFailed>0?` · ${stillFailed} failed — run Fill 365 Days to patch`:""}`);
     setEvents([]);
   }
 
