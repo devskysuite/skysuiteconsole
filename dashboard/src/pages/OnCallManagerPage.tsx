@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { doc, getDoc, setDoc, collection, addDoc, onSnapshot, updateDoc, serverTimestamp, query, getDocs, orderBy, limit, deleteDoc } from "firebase/firestore";
+import { doc, getDoc, setDoc, collection, addDoc, onSnapshot, updateDoc, serverTimestamp, query, getDocs, orderBy, limit, deleteDoc, where } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
 import { db, auth } from "../firebase";
 import { useRole, isAdminRole } from "../hooks/useRole";
@@ -96,6 +96,8 @@ export default function OnCallManagerPage() {
   const [year,setYear]=useState(today.getFullYear());
   const [month,setMonth]=useState(today.getMonth());
   const [tab,setTab]=useState<"calendar"|"swaps"|"stats"|"setup">("calendar");
+  const [refreshKey,setRefreshKey]=useState(0);
+  function switchTab(t:"calendar"|"swaps"|"stats"|"setup"){setTab(t);setRefreshKey(k=>k+1);}
   const [statVisMinRole,setStatVisMinRole]=useState("manager");
 
   const [accessToken,setAccessToken]=useState("");
@@ -220,7 +222,7 @@ export default function OnCallManagerPage() {
       while(url){ const d=await(await fetch(url,{headers:{Authorization:`Bearer ${accessToken}`}})).json(); (d.value||[]).forEach((e:any)=>evs.push({id:e.id,subject:e.subject||"",start:e.start?.date||e.start?.dateTime?.slice(0,10)||"",end:e.end?.date||e.end?.dateTime?.slice(0,10)||""})); url=d["@odata.nextLink"]||""; }
       setEvents(evs); setLoading(false);
     })().catch(()=>setLoading(false));
-  },[accessToken,year,month]);
+  },[accessToken,year,month,refreshKey]);
 
   async function connectOutlook() {
     const v=genVerifier(), c=await genChallenge(v);
@@ -479,10 +481,10 @@ export default function OnCallManagerPage() {
 
       {/* Tabs */}
       <div style={{display:"flex",gap:4,marginBottom:20,borderBottom:"2px solid #e5e7eb"}}>
-        <TabBtn label="📅 Calendar" active={tab==="calendar"} onClick={()=>setTab("calendar")}/>
-        <TabBtn label={`🔄 Swaps${pendingCount>0?` (${pendingCount})`:""}`} active={tab==="swaps"} onClick={()=>setTab("swaps")}/>
-        {roleAtLeast(role||"user",statVisMinRole)&&<TabBtn label="🎉 Stat Holidays" active={tab==="stats"} onClick={()=>setTab("stats")}/>}
-        {isAdmin&&<TabBtn label="⚙ Setup" active={tab==="setup"} onClick={()=>setTab("setup")}/>}
+        <TabBtn label="📅 Calendar" active={tab==="calendar"} onClick={()=>switchTab("calendar")}/>
+        <TabBtn label={`🔄 Swaps${pendingCount>0?` (${pendingCount})`:""}`} active={tab==="swaps"} onClick={()=>switchTab("swaps")}/>
+        {roleAtLeast(role||"user",statVisMinRole)&&<TabBtn label="🎉 Stat Holidays" active={tab==="stats"} onClick={()=>switchTab("stats")}/>}
+        {isAdmin&&<TabBtn label="⚙ Setup" active={tab==="setup"} onClick={()=>switchTab("setup")}/>}
       </div>
 
       {/* ── CALENDAR TAB ── */}
@@ -644,6 +646,9 @@ export default function OnCallManagerPage() {
             </div>
           </div>
 
+          {/* ICS Calendars */}
+          {connected&&<IcsExportPanel accessToken={accessToken} calId={CAL_ID} db={db}/>}
+
           {/* Locked Years */}
           <LockedYearsPanel db={db}/>
 
@@ -735,6 +740,70 @@ export default function OnCallManagerPage() {
 
 function TabBtn({label,active,onClick}:{label:string;active:boolean;onClick:()=>void}) {
   return <button onClick={onClick} style={{padding:"8px 20px",fontWeight:600,fontSize:14,cursor:"pointer",background:"none",border:"none",borderBottom:active?"3px solid #1565c0":"3px solid transparent",color:active?"#1565c0":"#6b7280",marginBottom:-2}}>{label}</button>;
+}
+
+function IcsExportPanel({ accessToken, calId, db }: { accessToken:string; calId:string; db:any }) {
+  const [roster,setRoster]=useState<string[]>([]);
+  const [busy,setBusy]=useState<string|null>(null);
+  useEffect(()=>{
+    getDoc(doc(db,"settings","onCallConfig")).then(s=>setRoster(s.data()?.employees||[])).catch(()=>{});
+  },[]);
+
+  async function downloadIcs(name:string){
+    setBusy(name);
+    try{
+      // Fetch on-call events for this person (next 400 days)
+      const start=new Date().toISOString().slice(0,10);
+      const endD=new Date();endD.setDate(endD.getDate()+400);
+      const end=endD.toISOString().slice(0,10);
+      const onCallEvents:any[]=[];
+      let url=`https://graph.microsoft.com/v1.0/me/calendars/${calId}/calendarView?startDateTime=${start}T00:00:00&endDateTime=${end}T00:00:00&$top=999&$select=subject,start,end`;
+      while(url){
+        const d=await graphFetch(accessToken,url.replace("https://graph.microsoft.com/v1.0",""));
+        (d.value||[]).filter((e:any)=>getName(e.subject||"").toLowerCase()===name.toLowerCase()).forEach((e:any)=>onCallEvents.push(e));
+        url=d["@odata.nextLink"]||"";
+      }
+      // Fetch approved vacation for this person from Firestore
+      const vSnap=await getDocs(query(collection(db,"timeOffRequests"),where("status","==","APPROVED")));
+      const vacations=vSnap.docs.map(d=>d.data()).filter((r:any)=>r.employeeName?.toLowerCase()===name.toLowerCase()||(r.employeeName||"").split(" ")[0]?.toLowerCase()===name.toLowerCase());
+
+      // Build ICS
+      const lines=["BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//SkySuite//On-Call Calendar//EN","CALSCALE:GREGORIAN","METHOD:PUBLISH"];
+      const stamp=new Date().toISOString().replace(/[-:]/g,"").slice(0,15)+"Z";
+      onCallEvents.forEach((e:any,i:number)=>{
+        const s=(e.start?.date||e.start?.dateTime?.slice(0,10)||"").replace(/-/g,"");
+        const en=(e.end?.date||e.end?.dateTime?.slice(0,10)||"").replace(/-/g,"");
+        if(!s)return;
+        lines.push("BEGIN:VEVENT",`UID:oncall-${name}-${s}-${i}@skysuite.ca`,`DTSTAMP:${stamp}`,`DTSTART;VALUE=DATE:${s}`,`DTEND;VALUE=DATE:${en||s}`,`SUMMARY:${name} On Call`,"END:VEVENT");
+      });
+      vacations.forEach((r:any,i:number)=>{
+        const s=(r.startDate||"").replace(/-/g,"");
+        const enD=new Date(r.endDate||r.startDate);enD.setDate(enD.getDate()+1);
+        const en=enD.toISOString().slice(0,10).replace(/-/g,"");
+        if(!s)return;
+        lines.push("BEGIN:VEVENT",`UID:vacation-${name}-${s}-${i}@skysuite.ca`,`DTSTAMP:${stamp}`,`DTSTART;VALUE=DATE:${s}`,`DTEND;VALUE=DATE:${en}`,`SUMMARY:${name} Vacation`,"END:VEVENT");
+      });
+      lines.push("END:VCALENDAR");
+      const blob=new Blob([lines.join("\r\n")],{type:"text/calendar"});
+      const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`${name.replace(/\s+/g,"_")}_oncall.ics`;a.click();
+    }catch(e){console.error(e);}
+    setBusy(null);
+  }
+
+  if(!roster.length)return null;
+  return(
+    <div style={{background:"white",borderRadius:12,padding:20,boxShadow:"0 1px 4px rgba(0,0,0,0.07)",marginTop:16}}>
+      <h2 style={{fontSize:15,fontWeight:700,color:"#0d2e5e",margin:"0 0 4px"}}>📅 ICS Calendars</h2>
+      <p style={{fontSize:12,color:"#6b7280",marginBottom:14}}>Download a personal .ics file for each person — includes their on-call days and approved vacation. Import into any calendar app.</p>
+      <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+        {roster.map(name=>(
+          <button key={name} onClick={()=>downloadIcs(name)} disabled={busy===name} style={{...btnS(busy===name?"#9ca3af":"#1565c0"),fontSize:13,padding:"7px 14px"}}>
+            {busy===name?"⏳ Building…":`⬇ ${name}`}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function LockedYearsPanel({ db }: { db:any }) {
@@ -1040,11 +1109,6 @@ function StatHolidaysPanel({accessToken,calId,db}:{accessToken:string;calId:stri
               </span>
             );
           })}
-        </div>
-      )}
-      {loaded&&Object.values(countByPerson).some(c=>c.confirmed+c.projected>1)&&(
-        <div style={{background:"#fef2f2",border:"1px solid #fecaca",borderRadius:8,padding:"10px 14px",marginBottom:12,fontSize:13,color:"#dc2626",fontWeight:600}}>
-          ⚠️ Someone is projected to have more than 1 stat — Rebalance in Setup will fix this.
         </div>
       )}
 
