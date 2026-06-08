@@ -281,41 +281,31 @@ export default function OnCallManagerPage() {
       tickProgress(`Clearing old events… ${deleted}/${existing.length}`, deleted, existing.length+backup.eventCount);
     }
 
-    // Recreate from backup — same dateTime+timezone format as runRotation (known to work)
-    // Filter by end date (not start) so mid-rotation events that started before today are still restored
-    const toAdd = backup.events.filter((e:any)=>e.end>start);
+    // Recreate from backup — with exponential backoff on throttle
+    // Filter by end date so mid-rotation events that started before today are still restored
+    const toAdd = backup.events.filter((e:any)=>e.end>start&&e.start&&e.end&&e.start!==e.end);
     let pushed=0;
-    const failedEvents:any[]=[];
-    for (let i=0;i<toAdd.length;i++) {
-      const e=toAdd[i];
-      if(!e.start||!e.end||e.start===e.end) continue; // skip malformed
-      const res = await graphFetch(accessToken,`/me/calendars/${CAL_ID}/events`,"POST",{
-        subject: e.subject,
-        start: { dateTime: `${e.start}T00:00:00`, timeZone: "America/Toronto" },
-        end:   { dateTime: `${e.end}T00:00:00`,   timeZone: "America/Toronto" },
-        isAllDay: true
-      }).catch(()=>null);
-      if(res?.id) pushed++; else failedEvents.push(e);
-      tickProgress(`Restoring… ${pushed}/${toAdd.length}${failedEvents.length>0?` (${failedEvents.length} queued for retry)`:""}`, existing.length+pushed, existing.length+toAdd.length);
-      if(i>0&&i%5===0) await new Promise(r=>setTimeout(r,400));
-    }
-    // Retry failed events after a 3s cooldown
-    if(failedEvents.length>0){
-      tickProgress(`Retrying ${failedEvents.length} events…`, existing.length+pushed, existing.length+toAdd.length);
-      await new Promise(r=>setTimeout(r,3000));
-      for(const e of failedEvents){
+    async function createEvent(e:any):Promise<boolean>{
+      for(let attempt=0;attempt<4;attempt++){
+        if(attempt>0) await new Promise(r=>setTimeout(r,1000*Math.pow(2,attempt))); // 2s, 4s, 8s
         const res=await graphFetch(accessToken,`/me/calendars/${CAL_ID}/events`,"POST",{
           subject:e.subject,
           start:{dateTime:`${e.start}T00:00:00`,timeZone:"America/Toronto"},
           end:{dateTime:`${e.end}T00:00:00`,timeZone:"America/Toronto"},
           isAllDay:true
         }).catch(()=>null);
-        if(res?.id) pushed++;
-        await new Promise(r=>setTimeout(r,600));
+        if(res?.id) return true;
       }
+      return false;
     }
-    const stillFailed=toAdd.length-pushed-(toAdd.filter((e:any)=>!e.start||!e.end||e.start===e.end).length);
-    finishProgress(`✅ Restored ${pushed} events${stillFailed>0?` · ${stillFailed} failed — run Fill 365 Days to patch`:""}`);
+    for(let i=0;i<toAdd.length;i++){
+      const ok=await createEvent(toAdd[i]);
+      if(ok) pushed++;
+      tickProgress(`Restoring… ${pushed}/${toAdd.length}`,existing.length+pushed,existing.length+toAdd.length);
+      await new Promise(r=>setTimeout(r,300)); // base delay between events
+    }
+    const failed=toAdd.length-pushed;
+    finishProgress(`✅ Restored ${pushed}/${toAdd.length} events${failed>0?` · ${failed} failed — run Fill 365 Days to patch`:""}`);
     setEvents([]);
   }
 
