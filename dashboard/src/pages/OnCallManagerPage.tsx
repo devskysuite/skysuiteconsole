@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { createPortal } from "react-dom";
+import { createPortal, flushSync } from "react-dom";
 import { doc, getDoc, setDoc, collection, addDoc, onSnapshot, updateDoc, serverTimestamp, query, getDocs, orderBy, limit, deleteDoc } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
 import { db, auth } from "../firebase";
@@ -240,7 +240,8 @@ export default function OnCallManagerPage() {
     if (!accessToken) return;
     if (!window.confirm(`Restore ${backup.eventCount} events from backup taken ${new Date(backup.createdAt?.toDate?.()).toLocaleString()}?\n\nThis will delete all current on-call events and restore the backup.`)) return;
 
-    startProgress("↩ Restoring backup", "Fetching current events…", backup.eventCount);
+    // flushSync forces React to commit this render before any async work starts
+    flushSync(() => startProgress("↩ Restoring backup", "Fetching current events…", backup.eventCount));
 
     // Fetch + delete all current on-call events
     const start = new Date().toISOString().slice(0,10);
@@ -279,7 +280,9 @@ export default function OnCallManagerPage() {
       tickProgress(`Restoring… ${pushed}/${toAdd.length}${failed>0?` (${failed} failed)`:""}`, existing.length+pushed, existing.length+toAdd.length);
       if(i>0&&i%10===0) await new Promise(r=>setTimeout(r,300)); // avoid throttling
     }
-    finishProgress(`✅ Restored ${pushed} events${failed>0?` · ${failed} failed`:""}.`);
+    tickProgress(`Filling any remaining gaps…`, existing.length+pushed, existing.length+toAdd.length+1);
+    // After restore, fill forward gaps the backup may not have covered (backup window vs today's window)
+    await runRotation("push");
     setEvents([]);
   }
 
@@ -330,7 +333,7 @@ export default function OnCallManagerPage() {
     if(!roster.length){ finishProgress("No employees in roster. Go to Setup → On-Call Roster."); return; }
 
     const actionLabel=action==="preview"?"👁 Preview":action==="rebalance"?"⚖ Rebalance":"⬆ Fill 365 Days";
-    startProgress(actionLabel, `Roster: ${roster.join(", ")}`, 365);
+    flushSync(() => startProgress(actionLabel, `Roster: ${roster.join(", ")}`, 365));
 
     if(action!=="preview") await backupCalendar(action);
     // tickProgress after first await so React has committed the startProgress update
