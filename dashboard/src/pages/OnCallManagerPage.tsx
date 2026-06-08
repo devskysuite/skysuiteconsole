@@ -600,55 +600,124 @@ const inp:React.CSSProperties={width:"100%",padding:"8px 12px",border:"1px solid
 
 // ── Rotation Order Display ───────────────────────────────────────────────────
 function RotationOrderDisplay({ db, accessToken }: { db: any; accessToken: string }) {
-  const [roster,  setRoster]  = useState<string[]>([]);
-  const [loaded,  setLoaded]  = useState(false);
-  const [saving,  setSaving]  = useState(false);
-  const [saved,   setSaved]   = useState(false);
+  const [orders,   setOrders]   = useState<Record<string, string[]>>({});
+  const [errors,   setErrors]   = useState<string[]>([]);
+  const [loading,  setLoading]  = useState(false);
+  const [loaded,   setLoaded]   = useState(false);
+  const thisYear = new Date().getFullYear();
 
-  useEffect(() => {
-    getDoc(doc(db, "settings", "onCallConfig")).then(snap => {
-      if (snap.exists() && snap.data().employees) setRoster(snap.data().employees);
-      setLoaded(true);
-    }).catch(() => setLoaded(true));
-  }, []);
+  async function loadFromCalendar() {
+    if (!accessToken) return;
+    setLoading(true);
+    try {
+      // Fetch all on-call events for this year and next
+      const allEvs: {date: string; name: string}[] = [];
+      for (const yr of [thisYear, thisYear + 1]) {
+        let url = `https://graph.microsoft.com/v1.0/me/calendars/${CAL_ID}/calendarView?startDateTime=${yr}-01-01T00:00:00&endDateTime=${yr}-12-31T23:59:59&$top=999&$select=subject,start&$orderby=start/dateTime`;
+        while (url) {
+          const d = await (await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } })).json();
+          (d.value || []).forEach((e: any) => {
+            const s = (e.subject || "").toLowerCase();
+            if ((s.includes("on call") || s.includes("oncall")) && !s.includes("vacation")) {
+              const skip = new Set(["on","call","oncall","-","–"]);
+              const name = e.subject.split(/\s+/).find((w: string) => w.length > 1 && !skip.has(w.toLowerCase())) || "";
+              const date = e.start?.date || e.start?.dateTime?.slice(0, 10) || "";
+              if (name && date) allEvs.push({ date, name: name.charAt(0).toUpperCase() + name.slice(1).toLowerCase() });
+            }
+          });
+          url = d["@odata.nextLink"] || "";
+        }
+      }
 
-  function move(i: number, dir: -1 | 1) {
-    const j = i + dir;
-    if (j < 0 || j >= roster.length) return;
-    const r = [...roster];
-    [r[i], r[j]] = [r[j], r[i]];
-    setRoster(r);
-    setSaved(false);
+      // Derive rotation cycle per year (unique names in first-appearance order)
+      const newOrders: Record<string, string[]> = {};
+      const errs: string[] = [];
+      for (const yr of [thisYear, thisYear + 1]) {
+        const yrEvs = allEvs.filter(e => e.date.startsWith(String(yr)));
+        const seen = new Set<string>(), cycle: string[] = [];
+        yrEvs.forEach(e => { if (!seen.has(e.name)) { seen.add(e.name); cycle.push(e.name); } });
+        newOrders[String(yr)] = cycle;
+
+        // Check for errors: duplicate on same day, gaps (no events) would show as missing
+        const dateCount: Record<string, string[]> = {};
+        yrEvs.forEach(e => { if (!dateCount[e.date]) dateCount[e.date] = []; dateCount[e.date].push(e.name); });
+        Object.entries(dateCount).forEach(([date, names]) => {
+          if (names.length > 1) errs.push(`⚠️ ${date}: multiple people on call — ${names.join(", ")}`);
+        });
+      }
+
+      setOrders(newOrders);
+      setErrors(errs);
+    } catch(e) { console.error(e); }
+    setLoading(false);
+    setLoaded(true);
   }
 
-  async function saveOrder() {
-    setSaving(true);
-    await setDoc(doc(db, "settings", "onCallConfig"), { employees: roster }, { merge: true });
-    setSaving(false); setSaved(true);
+  async function shuffleYear(year: number) {
+    const current = orders[String(year)] || [];
+    if (!current.length) return;
+    const shuffled = [...current].sort(() => Math.random() - 0.5);
+    const updated = { ...orders, [String(year)]: shuffled };
+    await setDoc(doc(db, "settings", "rotationOrders"), updated, { merge: true });
+    setOrders(updated);
   }
 
-  if (!loaded) return <p style={{ fontSize: 12, color: "#9ca3af" }}>Loading…</p>;
-  if (!roster.length) return <p style={{ fontSize: 12, color: "#9ca3af" }}>Save the roster above first.</p>;
+  if (!accessToken) return <p style={{ fontSize: 12, color: "#9ca3af" }}>Connect Outlook above to view rotation.</p>;
+
+  if (!loaded) return (
+    <button onClick={loadFromCalendar} disabled={loading} style={{ ...btnS("#1565c0"), fontSize: 12, padding: "6px 16px" }}>
+      {loading ? "Loading…" : "📅 Load Rotation from Calendar"}
+    </button>
+  );
 
   return (
     <div>
-      <p style={{ fontSize: 12, color: "#6b7280", marginBottom: 12 }}>
-        This order is the single source of truth. The fill function reads who was last on call in the calendar and continues from the next person here. Add/remove people in the roster above — the order auto-adjusts.
-      </p>
-      <div style={{ marginBottom: 12 }}>
-        {roster.map((name, i) => (
-          <div key={name} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 0", borderBottom: "1px solid #f3f4f6" }}>
-            <span style={{ fontSize: 12, color: "#9ca3af", width: 24, textAlign: "right" }}>{i + 1}.</span>
-            <span style={{ fontSize: 13, fontWeight: 600, flex: 1, color: "#0d2e5e" }}>{name}</span>
-            <button onClick={() => move(i, -1)} disabled={i === 0} style={{ fontSize: 11, padding: "1px 7px", borderRadius: 4, border: "1px solid #e5e7eb", background: "#f9fafb", cursor: "pointer", color: "#374151" }}>▲</button>
-            <button onClick={() => move(i, 1)} disabled={i === roster.length - 1} style={{ fontSize: 11, padding: "1px 7px", borderRadius: 4, border: "1px solid #e5e7eb", background: "#f9fafb", cursor: "pointer", color: "#374151" }}>▼</button>
+      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+        <button onClick={loadFromCalendar} disabled={loading} style={{ ...btnS("#6b7280"), fontSize: 12, padding: "5px 14px" }}>
+          {loading ? "Refreshing…" : "🔄 Refresh"}
+        </button>
+      </div>
+
+      {/* Error banner */}
+      {errors.length > 0 && (
+        <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, padding: "10px 14px", marginBottom: 16 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "#dc2626", marginBottom: 6 }}>⚠️ {errors.length} Error{errors.length > 1 ? "s" : ""} Found</div>
+          {errors.map((e, i) => <div key={i} style={{ fontSize: 12, color: "#dc2626" }}>{e}</div>)}
+        </div>
+      )}
+      {errors.length === 0 && loaded && (
+        <div style={{ fontSize: 12, color: "#059669", fontWeight: 600, marginBottom: 12 }}>✅ No errors found</div>
+      )}
+
+      {/* Year cards */}
+      {[thisYear, thisYear + 1].map(y => {
+        const cycle = orders[String(y)] || [];
+        const isCurrent = y === thisYear;
+        return (
+          <div key={y} style={{ marginBottom: 16, background: "#f8fafc", borderRadius: 10, padding: "14px 16px", border: "1px solid #e2e8f0" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+              <span style={{ fontSize: 14, fontWeight: 700, color: "#0d2e5e" }}>📅 {y} {isCurrent ? "(Current Year)" : "(Next Year)"}</span>
+              {isCurrent && <span style={{ fontSize: 11, color: "#9ca3af", fontWeight: 600 }}>🔒 Locked — read from calendar</span>}
+              {!isCurrent && cycle.length > 0 && (
+                <button onClick={() => shuffleYear(y)} style={{ fontSize: 11, padding: "3px 12px", borderRadius: 99, background: "#eff6ff", border: "1px solid #bfdbfe", cursor: "pointer", fontWeight: 600, color: "#1565c0" }}>
+                  🔀 Shuffle {y}
+                </button>
+              )}
+            </div>
+            {cycle.length > 0 ? (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {cycle.map((name, i) => (
+                  <span key={name} style={{ fontSize: 12, fontWeight: 600, background: isCurrent ? "#eff6ff" : "#f0fdf4", color: isCurrent ? "#1565c0" : "#15803d", border: `1px solid ${isCurrent ? "#bfdbfe" : "#86efac"}`, borderRadius: 99, padding: "3px 10px" }}>
+                    {i + 1}. {name}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <span style={{ fontSize: 12, color: "#9ca3af" }}>No events found for {y}</span>
+            )}
           </div>
-        ))}
-      </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <button onClick={saveOrder} disabled={saving} style={btnS("#059669")}>{saving ? "Saving…" : "💾 Save Order"}</button>
-        {saved && <span style={{ fontSize: 12, color: "#059669", fontWeight: 600 }}>✅ Saved!</span>}
-      </div>
+        );
+      })}
     </div>
   );
 }
