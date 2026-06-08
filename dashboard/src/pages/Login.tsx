@@ -38,10 +38,15 @@ export default function Login() {
       const cred = await signInWithEmailAndPassword(auth, email.trim(), password);
 
       // Check if MFA is enrolled — if not, start enrollment
-      const factors = multiFactor(cred.user).enrolledFactors;
-      if (factors.length === 0) {
-        await startEnrollment(cred.user);
-      } else {
+      try {
+        const factors = multiFactor(cred.user).enrolledFactors;
+        if (factors.length === 0) {
+          await startEnrollment(cred.user);
+        } else {
+          navigate("/");
+        }
+      } catch {
+        // MFA not available or not enabled — just log in
         navigate("/");
       }
     } catch (err: any) {
@@ -50,7 +55,7 @@ export default function Login() {
         setMfaResolver(resolver);
         setScreen("mfa-verify");
       } else {
-        setError(friendlyError(err.code));
+        setError(friendlyError(err.code) + (err.code ? ` (${err.code})` : ""));
       }
     } finally {
       setBusy(false);
