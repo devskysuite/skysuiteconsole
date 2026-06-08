@@ -81,7 +81,6 @@ function getStatHolidays(year: number): { name: string; date: string }[] {
     {name:"Civic Holiday",   date:fmt(nthMon(7,1))},
     {name:"Labour Day",      date:fmt(nthMon(8,1))},
     {name:"Thanksgiving",    date:fmt(nthMon(9,2))},
-    {name:"Remembrance Day", date:`${year}-11-11`},
     {name:"Christmas Day",   date:`${year}-12-25`},
     {name:"Boxing Day",      date:`${year}-12-26`},
   ];
@@ -384,6 +383,14 @@ export default function OnCallManagerPage() {
     const occupied=new Set(existingEvs.map((e:any)=>e.start?.date||e.start?.dateTime?.slice(0,10)));
 
     if(action==="rebalance"){
+      // Check if the target year is locked
+      const rebalYear=parseInt((rebalanceFrom||startDate).slice(0,4));
+      const lockSnap=await getDoc(doc(db,"settings","lockedYears")).catch(()=>null);
+      const lockedYears:number[]=lockSnap?.data()?.years||[];
+      if(lockedYears.includes(rebalYear)){
+        finishProgress(`🔒 ${rebalYear} is locked and cannot be rebalanced.`);
+        return;
+      }
       let deleted=0;
       for(let i=0;i<existingEvs.length;i+=20){
         const chunk=existingEvs.slice(i,i+20);
@@ -436,36 +443,6 @@ export default function OnCallManagerPage() {
       cur.setDate(cur.getDate()+rotDays);
     }
 
-    // ── Enforce max 1 stat holiday per person per year ──────────────────────
-    const schedYears=new Set(toAdd.map((ev:any)=>ev.start.dateTime.slice(0,4)));
-    const allStatDates=new Set<string>();
-    (schedYears as Set<string>).forEach(yr=>getStatHolidays(parseInt(yr)).forEach(s=>allStatDates.add(s.date)));
-    for(let pass=0;pass<roster.length*2;pass++){
-      const statsByPerson:Record<string,number[]>={};
-      toAdd.forEach((ev:any,i:number)=>{
-        const date=ev.start.dateTime.slice(0,10);
-        if(allStatDates.has(date)){
-          const name=ev.subject.replace(" On Call","");
-          if(!statsByPerson[name])statsByPerson[name]=[];
-          statsByPerson[name].push(i);
-        }
-      });
-      let swapped=false;
-      for(const[name,idxs]of Object.entries(statsByPerson)){
-        if(idxs.length<=1)continue;
-        const extraIdx=idxs[idxs.length-1];
-        for(let j=0;j<toAdd.length;j++){
-          const jDate=toAdd[j].start.dateTime.slice(0,10);
-          if(allStatDates.has(jDate))continue;
-          const jName=toAdd[j].subject.replace(" On Call","");
-          if((statsByPerson[jName]||[]).length>0)continue;
-          const tmp=toAdd[extraIdx].subject;toAdd[extraIdx].subject=toAdd[j].subject;toAdd[j].subject=tmp;
-          swapped=true;break;
-        }
-        if(swapped)break;
-      }
-      if(!swapped)break;
-    }
 
     tickProgress(`Pushing ${toAdd.length} events…`, 0, toAdd.length);
     let pushed=0;
@@ -667,6 +644,9 @@ export default function OnCallManagerPage() {
             </div>
           </div>
 
+          {/* Locked Years */}
+          <LockedYearsPanel db={db}/>
+
           {/* Backups */}
           <div style={{background:"white",borderRadius:12,padding:20,boxShadow:"0 1px 4px rgba(0,0,0,0.07)",marginTop:16}}>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:4}}>
@@ -755,6 +735,34 @@ export default function OnCallManagerPage() {
 
 function TabBtn({label,active,onClick}:{label:string;active:boolean;onClick:()=>void}) {
   return <button onClick={onClick} style={{padding:"8px 20px",fontWeight:600,fontSize:14,cursor:"pointer",background:"none",border:"none",borderBottom:active?"3px solid #1565c0":"3px solid transparent",color:active?"#1565c0":"#6b7280",marginBottom:-2}}>{label}</button>;
+}
+
+function LockedYearsPanel({ db }: { db:any }) {
+  const thisYear = new Date().getFullYear();
+  const years = [thisYear-1, thisYear, thisYear+1, thisYear+2];
+  const [locked, setLocked] = useState<number[]>([]);
+  useEffect(()=>{
+    getDoc(doc(db,"settings","lockedYears")).then(s=>setLocked(s.data()?.years||[])).catch(()=>{});
+  },[]);
+  async function toggle(y:number){
+    const next=locked.includes(y)?locked.filter(x=>x!==y):[...locked,y];
+    await setDoc(doc(db,"settings","lockedYears"),{years:next},{merge:true});
+    setLocked(next);
+  }
+  return(
+    <div style={{background:"white",borderRadius:12,padding:20,boxShadow:"0 1px 4px rgba(0,0,0,0.07)",marginTop:16}}>
+      <h2 style={{fontSize:15,fontWeight:700,color:"#0d2e5e",margin:"0 0 4px"}}>🔒 Lock Rotation Years</h2>
+      <p style={{fontSize:12,color:"#6b7280",marginBottom:14}}>Locked years cannot be rebalanced. Lock a year once you're happy with it.</p>
+      <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+        {years.map(y=>{
+          const isLocked=locked.includes(y);
+          return <button key={y} onClick={()=>toggle(y)} style={{padding:"8px 18px",borderRadius:8,fontWeight:700,fontSize:14,cursor:"pointer",border:`2px solid ${isLocked?"#dc2626":"#d1d5db"}`,background:isLocked?"#fef2f2":"#f9fafb",color:isLocked?"#dc2626":"#374151"}}>
+            {isLocked?"🔒":"🔓"} {y}
+          </button>;
+        })}
+      </div>
+    </div>
+  );
 }
 
 function BackupsList({ db, onRestore, connected }: { db:any; onRestore:(b:any)=>void; connected:boolean }) {
