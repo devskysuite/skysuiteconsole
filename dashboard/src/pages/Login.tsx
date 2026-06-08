@@ -1,33 +1,98 @@
 import { useState } from "react";
-import {
-  signInWithEmailAndPassword,
-  multiFactor,
-  TotpMultiFactorGenerator,
-  getMultiFactorResolver,
-  browserLocalPersistence,
-  setPersistence,
-} from "firebase/auth";
+import { signInWithEmailAndPassword, browserLocalPersistence, setPersistence } from "firebase/auth";
+import { collection, doc, getDocs, query, updateDoc, where } from "firebase/firestore";
 import { useNavigate } from "react-router-dom";
-import { auth } from "../firebase";
+import { auth, db } from "../firebase";
 
 type Screen = "login" | "mfa-verify" | "mfa-enroll" | "reset" | "reset-sent";
 
+// ── TOTP (RFC 6238) — pure browser crypto, no library needed ─────────────────
+const B32_ALPHA = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+
+function base32decode(s: string): Uint8Array {
+  let bits = 0, val = 0;
+  const out: number[] = [];
+  for (const c of s.toUpperCase().replace(/=+$/, "")) {
+    val = (val << 5) | B32_ALPHA.indexOf(c);
+    bits += 5;
+    if (bits >= 8) { out.push((val >>> (bits - 8)) & 255); bits -= 8; }
+  }
+  return new Uint8Array(out);
+}
+
+function generateSecret(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(20));
+  let out = "";
+  for (let i = 0; i < bytes.length; i += 5) {
+    const b = Array.from(bytes.slice(i, i + 5));
+    while (b.length < 5) b.push(0);
+    out += B32_ALPHA[(b[0] >> 3) & 31];
+    out += B32_ALPHA[((b[0] << 2) | (b[1] >> 6)) & 31];
+    out += B32_ALPHA[(b[1] >> 1) & 31];
+    out += B32_ALPHA[((b[1] << 4) | (b[2] >> 4)) & 31];
+    out += B32_ALPHA[((b[2] << 1) | (b[3] >> 7)) & 31];
+    out += B32_ALPHA[(b[3] >> 2) & 31];
+    out += B32_ALPHA[((b[3] << 3) | (b[4] >> 5)) & 31];
+    out += B32_ALPHA[b[4] & 31];
+  }
+  return out;
+}
+
+async function totpCode(secret: string, offset = 0): Promise<string> {
+  const counter = Math.floor(Date.now() / 1000 / 30) + offset;
+  const buf = new ArrayBuffer(8);
+  const view = new DataView(buf);
+  view.setUint32(4, counter, false);
+  const key = await crypto.subtle.importKey("raw", base32decode(secret), { name: "HMAC", hash: "SHA-1" }, false, ["sign"]);
+  const sig = new Uint8Array(await crypto.subtle.sign("HMAC", key, buf));
+  const off = sig[19] & 0xf;
+  const code = ((sig[off] & 0x7f) << 24 | sig[off+1] << 16 | sig[off+2] << 8 | sig[off+3]) % 1000000;
+  return code.toString().padStart(6, "0");
+}
+
+async function verifyTOTP(secret: string, code: string): Promise<boolean> {
+  for (const offset of [0, -1, 1]) {
+    if (await totpCode(secret, offset) === code) return true;
+  }
+  return false;
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+function rememberKey(uid: string) { return `skysuite_2fa_${uid}`; }
+
+function isRemembered(uid: string) {
+  return localStorage.getItem(rememberKey(uid)) === "true";
+}
+
+function rememberDevice(uid: string) {
+  localStorage.setItem(rememberKey(uid), "true");
+}
+
+function friendlyError(code: string) {
+  if (code === "auth/invalid-credential" || code === "auth/wrong-password") return "Incorrect email or password.";
+  if (code === "auth/user-not-found")    return "No account found for that email.";
+  if (code === "auth/too-many-requests") return "Too many attempts — try again later.";
+  return "Login failed.";
+}
+
+// ── Component ─────────────────────────────────────────────────────────────────
 export default function Login() {
   const navigate = useNavigate();
-  const [screen, setScreen] = useState<Screen>("login");
-
+  const [screen,   setScreen]   = useState<Screen>("login");
   const [email,    setEmail]    = useState("");
   const [password, setPassword] = useState("");
   const [code,     setCode]     = useState("");
   const [error,    setError]    = useState("");
   const [busy,     setBusy]     = useState(false);
+  const [remember, setRemember] = useState(true);
 
-  // MFA state
-  const [mfaResolver,  setMfaResolver]  = useState<any>(null);
-  const [totpSecret,   setTotpSecret]   = useState<any>(null);
-  const [qrCodeUrl,    setQrCodeUrl]    = useState("");
+  // Set during login flow
+  const [firestoreDocId, setFirestoreDocId] = useState("");
+  const [totpSecret,     setTotpSecret]     = useState("");
+  const [newSecret,      setNewSecret]      = useState("");
+  const [qrUrl,          setQrUrl]          = useState("");
 
-  // ── Login ────────────────────────────────────────────────────────────────────
+  // ── Step 1: email + password ─────────────────────────────────────────────
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
     setError("");
@@ -36,78 +101,79 @@ export default function Login() {
       setBusy(true);
       await setPersistence(auth, browserLocalPersistence);
       const cred = await signInWithEmailAndPassword(auth, email.trim(), password);
+      const uid  = cred.user.uid;
 
-      // Check if MFA is enrolled — if not, start enrollment
-      try {
-        const factors = multiFactor(cred.user).enrolledFactors;
-        if (factors.length === 0) {
-          await startEnrollment(cred.user);
-        } else {
-          navigate("/");
-        }
-      } catch {
-        // MFA not available or not enabled — just log in
+      // Look up Firestore user doc
+      const snap = await getDocs(query(collection(db, "users"), where("uid", "==", uid)));
+      const userDoc = snap.empty ? null : snap.docs[0];
+      const docId   = userDoc?.id ?? "";
+      const secret  = userDoc?.data()?.totpSecret ?? "";
+
+      setFirestoreDocId(docId);
+
+      if (!secret) {
+        // First time — set up 2FA
+        const s = generateSecret();
+        const uri = `otpauth://totp/SkySuite%20Console:${encodeURIComponent(cred.user.email || "")}?secret=${s}&issuer=SkySuite`;
+        setNewSecret(s);
+        setQrUrl(`https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(uri)}&size=200x200&margin=10`);
+        setScreen("mfa-enroll");
+      } else if (isRemembered(uid)) {
+        // Device remembered — skip 2FA
         navigate("/");
+      } else {
+        // Has 2FA — verify
+        setTotpSecret(secret);
+        setScreen("mfa-verify");
       }
     } catch (err: any) {
-      if (err.code === "auth/multi-factor-auth-required") {
-        const resolver = getMultiFactorResolver(auth, err);
-        setMfaResolver(resolver);
-        setScreen("mfa-verify");
-      } else {
-        setError(friendlyError(err.code) + (err.code ? ` (${err.code})` : ""));
-      }
+      setError(friendlyError(err.code));
     } finally {
       setBusy(false);
     }
   }
 
-  // ── Start MFA enrollment ─────────────────────────────────────────────────────
-  async function startEnrollment(user: any) {
-    const session = await multiFactor(user).getSession();
-    const secret  = await TotpMultiFactorGenerator.generateSecret(session);
-    const url     = secret.generateQrCodeUrl(user.email || "user", "SkySuite Console");
-    setTotpSecret(secret);
-    setQrCodeUrl(url);
-    setScreen("mfa-enroll");
+  // ── Step 2a: verify existing TOTP ────────────────────────────────────────
+  async function handleVerify(e: React.FormEvent) {
+    e.preventDefault();
+    setError("");
+    if (code.length !== 6) { setError("Enter the 6-digit code."); return; }
+    try {
+      setBusy(true);
+      const ok = await verifyTOTP(totpSecret, code);
+      if (!ok) { setError("Invalid code — try again."); return; }
+      if (remember) rememberDevice(auth.currentUser!.uid);
+      navigate("/");
+    } catch {
+      setError("Verification failed — try again.");
+    } finally {
+      setBusy(false);
+    }
   }
 
-  // ── Verify enrollment code ───────────────────────────────────────────────────
+  // ── Step 2b: enroll new TOTP ─────────────────────────────────────────────
   async function handleEnroll(e: React.FormEvent) {
     e.preventDefault();
     setError("");
-    if (!code || code.length !== 6) { setError("Enter the 6-digit code from your authenticator app."); return; }
+    if (code.length !== 6) { setError("Enter the 6-digit code from your app."); return; }
     try {
       setBusy(true);
-      const assertion = TotpMultiFactorGenerator.assertionForEnrollment(totpSecret, code);
-      await multiFactor(auth.currentUser!).enroll(assertion, "Authenticator App");
+      const ok = await verifyTOTP(newSecret, code);
+      if (!ok) { setError("Invalid code — make sure you scanned the QR code and try again."); return; }
+      // Save secret to Firestore
+      if (firestoreDocId) {
+        await updateDoc(doc(db, "users", firestoreDocId), { totpSecret: newSecret });
+      }
+      if (remember) rememberDevice(auth.currentUser!.uid);
       navigate("/");
-    } catch (err: any) {
-      setError("Invalid code — try again.");
+    } catch {
+      setError("Setup failed — try again.");
     } finally {
       setBusy(false);
     }
   }
 
-  // ── Verify MFA on login ──────────────────────────────────────────────────────
-  async function handleMfaVerify(e: React.FormEvent) {
-    e.preventDefault();
-    setError("");
-    if (!code || code.length !== 6) { setError("Enter the 6-digit code."); return; }
-    try {
-      setBusy(true);
-      const hint      = mfaResolver.hints[0];
-      const assertion = TotpMultiFactorGenerator.assertionForSignIn(hint.uid, code);
-      await mfaResolver.resolveSignIn(assertion);
-      navigate("/");
-    } catch (err: any) {
-      setError("Invalid code — try again.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  // ── Password reset ───────────────────────────────────────────────────────────
+  // ── Forgot password ──────────────────────────────────────────────────────
   async function handleReset(e: React.FormEvent) {
     e.preventDefault();
     setError("");
@@ -115,8 +181,7 @@ export default function Login() {
     try {
       setBusy(true);
       await fetch("/api/send-password-reset", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+        method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: email.trim(), type: "reset" }),
       });
       setScreen("reset-sent");
@@ -126,18 +191,6 @@ export default function Login() {
       setBusy(false);
     }
   }
-
-  function friendlyError(code: string) {
-    if (code === "auth/invalid-credential" || code === "auth/wrong-password") return "Incorrect email or password.";
-    if (code === "auth/user-not-found")   return "No account found for that email.";
-    if (code === "auth/too-many-requests") return "Too many attempts — try again later.";
-    return "Login failed. Try again.";
-  }
-
-  // ── QR code image via Google Charts ─────────────────────────────────────────
-  const qrImgUrl = qrCodeUrl
-    ? `https://chart.googleapis.com/chart?chs=200x200&cht=qr&chl=${encodeURIComponent(qrCodeUrl)}`
-    : "";
 
   return (
     <div style={S.page}>
@@ -163,13 +216,16 @@ export default function Login() {
 
         {/* ── MFA Verify ── */}
         {screen === "mfa-verify" && (
-          <form onSubmit={handleMfaVerify} style={{ marginTop: 28 }}>
+          <form onSubmit={handleVerify} style={{ marginTop: 28 }}>
             <div style={S.infoBox}>🔐 Enter the 6-digit code from your authenticator app.</div>
             <label style={S.label}>Authentication Code</label>
             <input style={{ ...S.input, textAlign: "center", fontSize: 22, letterSpacing: 8, fontWeight: 700 }}
               type="text" inputMode="numeric" maxLength={6} autoFocus
-              value={code} onChange={e => setCode(e.target.value.replace(/\D/g, ""))}
-              placeholder="000000" />
+              value={code} onChange={e => setCode(e.target.value.replace(/\D/g, ""))} placeholder="000000" />
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12 }}>
+              <input type="checkbox" id="remember" checked={remember} onChange={e => setRemember(e.target.checked)} style={{ width: 16, height: 16, cursor: "pointer" }} />
+              <label htmlFor="remember" style={{ fontSize: 13, color: "#555", cursor: "pointer" }}>Remember this device</label>
+            </div>
             {error && <p style={S.error}>{error}</p>}
             <button style={S.btn} type="submit" disabled={busy || code.length !== 6}>{busy ? "Verifying…" : "Verify"}</button>
             <button type="button" style={S.backLink} onClick={() => { setScreen("login"); setCode(""); setError(""); }}>← Back</button>
@@ -181,20 +237,26 @@ export default function Login() {
           <form onSubmit={handleEnroll} style={{ marginTop: 20 }}>
             <div style={S.infoBox}>
               🔐 <strong>Set up two-factor authentication</strong><br />
-              <span style={{ fontSize: 12, fontWeight: 400 }}>Scan this QR code with Google Authenticator, Authy, or any authenticator app.</span>
+              <span style={{ fontSize: 12, fontWeight: 400 }}>Scan with Google Authenticator, Authy, or any authenticator app.</span>
             </div>
-            {qrImgUrl && (
+            {qrUrl && (
               <div style={{ display: "flex", justifyContent: "center", margin: "16px 0" }}>
-                <img src={qrImgUrl} alt="QR Code" style={{ width: 180, height: 180, border: "1px solid #e5e7eb", borderRadius: 8 }} />
+                <img src={qrUrl} alt="QR Code" style={{ width: 180, height: 180, border: "1px solid #e5e7eb", borderRadius: 8 }} />
               </div>
             )}
+            <p style={{ fontSize: 11, color: "#9ca3af", textAlign: "center", marginBottom: 12 }}>
+              Manual key: <span style={{ fontFamily: "monospace", color: "#374151" }}>{newSecret}</span>
+            </p>
             <label style={S.label}>Enter the 6-digit code to confirm</label>
             <input style={{ ...S.input, textAlign: "center", fontSize: 22, letterSpacing: 8, fontWeight: 700 }}
               type="text" inputMode="numeric" maxLength={6} autoFocus
-              value={code} onChange={e => setCode(e.target.value.replace(/\D/g, ""))}
-              placeholder="000000" />
+              value={code} onChange={e => setCode(e.target.value.replace(/\D/g, ""))} placeholder="000000" />
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12 }}>
+              <input type="checkbox" id="remember2" checked={remember} onChange={e => setRemember(e.target.checked)} style={{ width: 16, height: 16, cursor: "pointer" }} />
+              <label htmlFor="remember2" style={{ fontSize: 13, color: "#555", cursor: "pointer" }}>Remember this device</label>
+            </div>
             {error && <p style={S.error}>{error}</p>}
-            <button style={S.btn} type="submit" disabled={busy || code.length !== 6}>{busy ? "Setting up…" : "Activate 2FA"}</button>
+            <button style={S.btn} type="submit" disabled={busy || code.length !== 6}>{busy ? "Activating…" : "Activate 2FA"}</button>
           </form>
         )}
 
