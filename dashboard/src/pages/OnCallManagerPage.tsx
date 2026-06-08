@@ -262,7 +262,8 @@ export default function OnCallManagerPage() {
     }
 
     // Recreate from backup
-    const toAdd = backup.events.filter((e:any)=>e.start>=start);
+    // Filter by end date (not start) so mid-rotation events that started before today are still restored
+    const toAdd = backup.events.filter((e:any)=>e.end>start);
     let pushed=0;
     for (let i=0;i<toAdd.length;i+=4) {
       const chunk=toAdd.slice(i,i+4);
