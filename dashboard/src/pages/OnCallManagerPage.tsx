@@ -509,8 +509,11 @@ export default function OnCallManagerPage() {
 
           {/* Backups */}
           <div style={{background:"white",borderRadius:12,padding:20,boxShadow:"0 1px 4px rgba(0,0,0,0.07)",marginTop:16}}>
-            <h2 style={{fontSize:15,fontWeight:700,color:"#0d2e5e",marginBottom:4}}>🗄 Calendar Backups</h2>
-            <p style={{fontSize:12,color:"#6b7280",marginBottom:14}}>A backup is automatically saved before every swap, push, or rebalance. Last 10 kept.</p>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:4}}>
+              <h2 style={{fontSize:15,fontWeight:700,color:"#0d2e5e",margin:0}}>🗄 Calendar Backups</h2>
+              <button onClick={async()=>{await backupCalendar("manual");window.location.reload();}} disabled={!connected} style={{...btnS("#6b7280"),fontSize:12,padding:"5px 14px"}}>📸 Backup Now</button>
+            </div>
+            <p style={{fontSize:12,color:"#6b7280",marginBottom:14}}>Auto-saved before every swap, push, or rebalance. Last 10 kept. Click ↩ Restore to roll back.</p>
             <BackupsList db={db} onRestore={restoreBackup} connected={connected}/>
           </div>
         </div>
