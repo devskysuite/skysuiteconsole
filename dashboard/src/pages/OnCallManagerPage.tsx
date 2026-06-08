@@ -5,7 +5,7 @@ import { db, auth } from "../firebase";
 import { useRole, isAdminRole } from "../hooks/useRole";
 
 // ── Graph API config ────────────────────────────────────────────────────────
-const TENANT_ID = "common"; // "common" accepts any Microsoft work/school account across tenants
+const TENANT_ID = "1c1d62e8-f392-4caa-a8a6-0ce98e0913d9"; // skysuite ca tenant
 const CLIENT_ID = "9a1a21f1-40a3-4872-a4d6-888bd51d116d";
 const CAL_ID    = "AAMkADgyOGUwMDUyLTNiZjMtNGQzNi1hNTgwLTQ2M2IzYzE2YmQ5MgBGAAAAAACGxuDePTlOQawDDU8UfW0gBwBxt6lSDH0kQY0tk4wDjNk8AAAAAAEGAABxt6lSDH0kQY0tk4wDjNk8AAALmQObAAA=";
 const REDIRECT  = "https://sky-suite-d14ff.web.app/";
@@ -226,7 +226,7 @@ export default function OnCallManagerPage() {
   async function connectOutlook() {
     const v=genVerifier(), c=await genChallenge(v);
     sessionStorage.setItem("pkce_verifier",v);
-    window.location.href=`https://login.microsoftonline.com/${TENANT_ID}/oauth2/v2.0/authorize?client_id=${CLIENT_ID}&response_type=code&redirect_uri=${encodeURIComponent(REDIRECT)}&scope=${encodeURIComponent("Calendars.ReadWrite offline_access")}&response_mode=query&code_challenge=${c}&code_challenge_method=S256`;
+    window.location.href=`https://login.microsoftonline.com/${TENANT_ID}/oauth2/v2.0/authorize?client_id=${CLIENT_ID}&response_type=code&redirect_uri=${encodeURIComponent(REDIRECT)}&scope=${encodeURIComponent("Calendars.ReadWrite offline_access")}&response_mode=query&code_challenge=${c}&code_challenge_method=S256&prompt=select_account`;
   }
 
   // ── Calendar Backup ──────────────────────────────────────────────────────────
