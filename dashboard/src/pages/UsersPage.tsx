@@ -48,6 +48,7 @@ const callPasswordReset     = httpsCallable(fns, "sendPasswordResetEmail");
 const callExportIcs         = httpsCallable(fns, "exportUserIcs");
 const callGetUidByEmail     = httpsCallable(fns, "getUidByEmail");
 const callSendScheduleText  = httpsCallable(fns, "sendScheduleText");
+const callSendIcsLink       = httpsCallable(fns, "sendIcsLink");
 
 export default function UsersPage() {
   const isAdmin = useIsAdmin();
@@ -81,7 +82,8 @@ export default function UsersPage() {
   const [resetLoading, setResetLoading]       = useState<string | null>(null);
   const [icsLoading, setIcsLoading]           = useState<string | null>(null);
   const [mfaLoading, setMfaLoading]           = useState<string | null>(null);
-  const [scheduleLoading, setScheduleLoading] = useState<string | null>(null);
+  const [scheduleLoading, setScheduleLoading]   = useState<string | null>(null);
+  const [icsLinkLoading, setIcsLinkLoading]     = useState<string | null>(null);
 
   const [clearing, setClearing]     = useState(false);
   const [clearResult, setClearResult] = useState("");
@@ -346,6 +348,20 @@ export default function UsersPage() {
     }
   }
 
+  async function sendIcsLink(u: AppUser) {
+    if (!u.phone) { toast("No phone number set for this user.", "error"); return; }
+    if (!u.displayName) { toast("No name set for this user.", "error"); return; }
+    setIcsLinkLoading(u.id);
+    try {
+      const result: any = await callSendIcsLink({ personName: u.displayName, phone: u.phone });
+      toast(`✓ ICS sent to ${fmtPhone(u.phone)} (${result?.data?.count || 0} events)`, "success");
+    } catch (e: any) {
+      toast(e?.message ?? "Failed to send ICS.", "error");
+    } finally {
+      setIcsLinkLoading(null);
+    }
+  }
+
   async function sendSchedule(u: AppUser) {
     if (!u.phone) { toast("No phone number set for this user.", "error"); return; }
     if (!u.displayName) { toast("No name set for this user.", "error"); return; }
@@ -587,15 +603,15 @@ export default function UsersPage() {
               </button>
             )}
 
-            {/* Send Schedule via SMS */}
+            {/* Send ICS link via SMS */}
             {u.onCall && u.phone && isOwner && (
               <button
                 style={{ ...styles.actionBtn, borderColor: "#0891b2", color: "#0e7490" }}
-                onClick={() => sendSchedule(u)}
-                disabled={scheduleLoading === u.id}
-                title="Text on-call schedule to this person"
+                onClick={() => sendIcsLink(u)}
+                disabled={icsLinkLoading === u.id}
+                title="Text ICS calendar download link to this person"
               >
-                {scheduleLoading === u.id ? "…" : "📆 Text Schedule"}
+                {icsLinkLoading === u.id ? "…" : "📅 Text ICS"}
               </button>
             )}
 
