@@ -10,7 +10,7 @@ export const getUidByEmail = onCall({ cors: true }, async (request) => {
   try {
     const user = await getAuth().getUserByEmail(email);
     return { uid: user.uid };
-  } catch (e: any) {
+  } catch (e) {
     if (e.code === "auth/user-not-found") throw new HttpsError("not-found", "No account found for that email.");
     throw new HttpsError("internal", e.message || "Lookup failed.");
   }
