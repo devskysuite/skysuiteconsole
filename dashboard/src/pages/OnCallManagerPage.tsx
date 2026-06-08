@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { doc, getDoc, setDoc, collection, addDoc, onSnapshot, updateDoc, serverTimestamp, query, getDocs } from "firebase/firestore";
+import { doc, getDoc, setDoc, collection, addDoc, onSnapshot, updateDoc, serverTimestamp, query, getDocs, orderBy, limit, deleteDoc } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
 import { db, auth } from "../firebase";
 import { useRole, isAdminRole } from "../hooks/useRole";
@@ -161,6 +161,66 @@ export default function OnCallManagerPage() {
     window.location.href=`https://login.microsoftonline.com/${TENANT_ID}/oauth2/v2.0/authorize?client_id=${CLIENT_ID}&response_type=code&redirect_uri=${encodeURIComponent(REDIRECT)}&scope=${encodeURIComponent("Calendars.ReadWrite offline_access")}&response_mode=query&code_challenge=${c}&code_challenge_method=S256`;
   }
 
+  // ── Calendar Backup ──────────────────────────────────────────────────────────
+  async function backupCalendar(trigger: string) {
+    if (!accessToken) return;
+    try {
+      // Fetch all on-call events for the next 400 days
+      const start = new Date().toISOString().slice(0,10);
+      const endD  = new Date(); endD.setDate(endD.getDate()+400);
+      const end   = endD.toISOString().slice(0,10);
+      const evs: any[] = [];
+      let url = `https://graph.microsoft.com/v1.0/me/calendars/${CAL_ID}/calendarView?startDateTime=${start}T00:00:00&endDateTime=${end}T00:00:00&$top=999&$select=id,subject,start,end,isAllDay`;
+      while (url) {
+        const d = await graphFetch(accessToken, url.replace("https://graph.microsoft.com/v1.0",""));
+        (d.value||[]).filter((e:any)=>{const s=(e.subject||"").toLowerCase();return(s.includes("on call")||s.includes("oncall"))&&!s.includes("vacation");})
+          .forEach((e:any)=>evs.push({id:e.id,subject:e.subject,start:e.start?.date||e.start?.dateTime?.slice(0,10),end:e.end?.date||e.end?.dateTime?.slice(0,10),isAllDay:e.isAllDay}));
+        url = d["@odata.nextLink"]||"";
+      }
+      await addDoc(collection(db,"calendarBackups"),{
+        trigger, eventCount: evs.length, events: evs, createdAt: serverTimestamp()
+      });
+      // Keep only last 10 backups
+      const bSnap = await getDocs(query(collection(db,"calendarBackups"), orderBy("createdAt","desc"), limit(20)));
+      const toDelete = bSnap.docs.slice(10);
+      for (const d of toDelete) await deleteDoc(doc(db,"calendarBackups",d.id));
+    } catch(e) { console.warn("Backup failed silently:", e); }
+  }
+
+  async function restoreBackup(backup: any) {
+    if (!accessToken) return;
+    if (!window.confirm(`Restore ${backup.eventCount} events from backup taken ${new Date(backup.createdAt?.toDate?.()).toLocaleString()}?\n\nThis will delete all current on-call events and restore the backup.`)) return;
+    const status = document.getElementById("rot-status");
+    if (status) status.textContent = "Restoring backup...";
+
+    // Fetch + delete all current on-call events
+    const start = new Date().toISOString().slice(0,10);
+    const endD = new Date(); endD.setDate(endD.getDate()+400);
+    const end = endD.toISOString().slice(0,10);
+    const existing: any[] = [];
+    let url = `https://graph.microsoft.com/v1.0/me/calendars/${CAL_ID}/calendarView?startDateTime=${start}T00:00:00&endDateTime=${end}T00:00:00&$top=999&$select=id,subject`;
+    while (url) {
+      const d = await graphFetch(accessToken, url.replace("https://graph.microsoft.com/v1.0",""));
+      (d.value||[]).filter((e:any)=>{const s=(e.subject||"").toLowerCase();return(s.includes("on call")||s.includes("oncall"))&&!s.includes("vacation");}).forEach((e:any)=>existing.push(e));
+      url = d["@odata.nextLink"]||"";
+    }
+    for (let i=0;i<existing.length;i+=20) {
+      const chunk=existing.slice(i,i+20);
+      await graphFetch(accessToken,"/$batch","POST",{requests:chunk.map((e:any,j:number)=>({id:String(j+1),method:"DELETE",url:`/me/events/${e.id}`}))}).catch(()=>{});
+    }
+
+    // Recreate from backup
+    const toAdd = backup.events.filter((e:any)=>e.start>=start);
+    let pushed=0;
+    for (let i=0;i<toAdd.length;i+=4) {
+      const chunk=toAdd.slice(i,i+4);
+      await graphFetch(accessToken,"/$batch","POST",{requests:chunk.map((e:any,j:number)=>({id:String(j+1),method:"POST",url:`/me/calendars/${CAL_ID}/events`,headers:{"Content-Type":"application/json"},body:{subject:e.subject,start:{dateTime:`${e.start}T00:00:00`,timeZone:"America/Toronto"},end:{dateTime:`${e.end}T00:00:00`,timeZone:"America/Toronto"},isAllDay:true}}))}).catch(()=>{});
+      pushed+=chunk.length;
+    }
+    if (status) status.textContent = `✅ Restored ${pushed} events from backup.`;
+    fetchEvents();
+  }
+
   // Swap actions
   async function submitSwap() {
     if(!swapModal||!swapTargetName||!swapTheirDate||!currentUser) return;
@@ -182,6 +242,7 @@ export default function OnCallManagerPage() {
 
   async function resolveSwap(swap:SwapReq, accept:boolean) {
     if(accept&&accessToken) {
+      await backupCalendar(`swap:${swap.requesterName}↔${swap.targetName}:${swap.myDate}`);
       // Update both calendar events
       await graphFetch(accessToken,`/me/events/${swap.myEventId}`,"PATCH",{subject:`${swap.targetName.split(" ")[0]} On Call`}).catch(()=>{});
       await graphFetch(accessToken,`/me/events/${swap.theirEventId}`,"PATCH",{subject:`${swap.requesterName.split(" ")[0]} On Call`}).catch(()=>{});
@@ -221,6 +282,7 @@ export default function OnCallManagerPage() {
       return shuffled;
     }
 
+    if(action!=="preview") await backupCalendar(action);
     status.textContent=action==="preview"?"Building preview...":action==="rebalance"?"Fetching events to rebalance...":"Fetching existing events...";
 
     // Fetch existing on-call events
@@ -430,6 +492,13 @@ export default function OnCallManagerPage() {
             </div>
             <div id="rot-status" style={{marginTop:10,fontSize:13,color:"#374151"}}></div>
           </div>
+
+          {/* Backups */}
+          <div style={{background:"white",borderRadius:12,padding:20,boxShadow:"0 1px 4px rgba(0,0,0,0.07)",marginTop:16}}>
+            <h2 style={{fontSize:15,fontWeight:700,color:"#0d2e5e",marginBottom:4}}>🗄 Calendar Backups</h2>
+            <p style={{fontSize:12,color:"#6b7280",marginBottom:14}}>A backup is automatically saved before every swap, push, or rebalance. Last 10 kept.</p>
+            <BackupsList db={db} onRestore={restoreBackup} connected={connected}/>
+          </div>
         </div>
       )}
 
@@ -480,6 +549,31 @@ export default function OnCallManagerPage() {
 
 function TabBtn({label,active,onClick}:{label:string;active:boolean;onClick:()=>void}) {
   return <button onClick={onClick} style={{padding:"8px 20px",fontWeight:600,fontSize:14,cursor:"pointer",background:"none",border:"none",borderBottom:active?"3px solid #1565c0":"3px solid transparent",color:active?"#1565c0":"#6b7280",marginBottom:-2}}>{label}</button>;
+}
+
+function BackupsList({ db, onRestore, connected }: { db:any; onRestore:(b:any)=>void; connected:boolean }) {
+  const [backups, setBackups] = useState<any[]>([]);
+  useEffect(()=>{
+    getDocs(query(collection(db,"calendarBackups"),orderBy("createdAt","desc"),limit(10)))
+      .then(s=>setBackups(s.docs.map(d=>({id:d.id,...d.data()}))))
+      .catch(()=>{});
+  },[]);
+  if(!backups.length) return <p style={{fontSize:12,color:"#9ca3af"}}>No backups yet — one will be created automatically before your next change.</p>;
+  return(
+    <div>
+      {backups.map(b=>(
+        <div key={b.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 0",borderBottom:"1px solid #f5f5f5"}}>
+          <div>
+            <div style={{fontSize:13,fontWeight:600,color:"#0d2e5e"}}>{b.eventCount} events</div>
+            <div style={{fontSize:11,color:"#9ca3af"}}>{b.createdAt?.toDate?.().toLocaleString()} · {b.trigger}</div>
+          </div>
+          <button onClick={()=>onRestore(b)} disabled={!connected} style={{fontSize:12,padding:"4px 12px",borderRadius:6,background:"transparent",border:"1px solid #f97316",color:"#ea580c",cursor:"pointer",fontWeight:600}}>
+            ↩ Restore
+          </button>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 const btnS=(bg:string):React.CSSProperties=>({background:bg,color:"white",border:"none",borderRadius:8,padding:"8px 16px",fontSize:14,fontWeight:600,cursor:"pointer"});
