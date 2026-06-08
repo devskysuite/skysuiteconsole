@@ -89,6 +89,7 @@ export default function Login() {
   const [error,    setError]    = useState("");
   const [busy,     setBusy]     = useState(false);
   const [remember, setRemember] = useState(true);
+  const [showPassword, setShowPassword] = useState(false);
 
   // Set during login flow
   const [firestoreDocId, setFirestoreDocId] = useState("");
@@ -217,7 +218,14 @@ export default function Login() {
             <label style={S.label}>Email</label>
             <input style={S.input} type="email" autoComplete="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@company.com" autoFocus />
             <label style={S.label}>Password</label>
-            <input style={S.input} type="password" autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Password" />
+            <div style={{ position: "relative" }}>
+              <input style={{ ...S.input, paddingRight: 40 }} type={showPassword ? "text" : "password"} autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Password" />
+              <button type="button" onClick={() => setShowPassword(v => !v)}
+                style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", fontSize: 16, color: "#888", padding: 0, lineHeight: 1 }}
+                tabIndex={-1} aria-label={showPassword ? "Hide password" : "Show password"}>
+                {showPassword ? "🙈" : "👁️"}
+              </button>
+            </div>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 10 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                 <input type="checkbox" id="rememberLogin" checked={rememberLogin} onChange={e => setRememberLogin(e.target.checked)} style={{ width: 15, height: 15, cursor: "pointer" }} />
