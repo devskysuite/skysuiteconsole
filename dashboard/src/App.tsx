@@ -62,14 +62,14 @@ function AppLayout({ children }: { children: React.ReactNode }) {
   );
 }
 
-// Redirect OAuth callback code to the On-Call page
+// Redirect OAuth callback code to the On-Call page; otherwise go to dashboard
 function OAuthRedirect() {
   const params = new URLSearchParams(window.location.search);
   if (params.get("code")) {
     window.location.replace(`/on-call${window.location.search}`);
     return null;
   }
-  return <Navigate to="/on-call" replace />;
+  return <Navigate to="/dashboard" replace />;
 }
 
 export default function App() {
@@ -87,6 +87,7 @@ export default function App() {
                 <AppLayout>
                     <Routes>
                       <Route path="/" element={<DashboardPage />} />
+                      <Route path="/dashboard" element={<DashboardPage />} />
                       <Route path="/tools" element={<ToolsPage />} />
                       <Route path="/tools/new" element={<AddToolPage />} />
                       <Route path="/tools/:toolId" element={<ToolDetailPage />} />
