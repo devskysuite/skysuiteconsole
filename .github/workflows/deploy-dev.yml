@@ -1,4 +1,4 @@
-name: Deploy to Firebase Dev Preview
+name: Deploy to Firebase Dev
 
 on:
   push:
@@ -24,5 +24,9 @@ jobs:
         working-directory: dashboard
         run: npm run build
 
-      - name: Deploy to Firebase Dev Preview Channel
-        run: npx firebase-tools hosting:channel:deploy dev --project sky-suite-d14ff --token "${{ secrets.FIREBASE_TOKEN }}" --non-interactive
+      - name: Install functions dependencies
+        working-directory: functions
+        run: npm ci
+
+      - name: Deploy hosting + functions to Firebase Dev
+        run: npx firebase-tools deploy --only hosting,functions --project sky-suite-d14ff --token "${{ secrets.FIREBASE_TOKEN }}" --non-interactive
