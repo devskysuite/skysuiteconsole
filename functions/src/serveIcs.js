@@ -23,7 +23,7 @@ function escapeIcs(str) {
   return (str || "").replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\n/g, "\\n");
 }
 
-export const serveIcs = onRequest({ cors: false }, async (req, res) => {
+export const serveIcs = onRequest({ cors: false, invoker: "public" }, async (req, res) => {
   const personName = req.query.name;
   if (!personName) { res.status(400).send("Missing ?name= parameter"); return; }
 

@@ -3,7 +3,7 @@
     "public": "dashboard/dist",
     "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
     "rewrites": [
-      { "source": "/api/ics", "function": "serveIcs" },
+      { "source": "/api/ics", "function": "serveIcs", "region": "us-central1" },
       { "source": "**", "destination": "/index.html" }
     ]
   },
