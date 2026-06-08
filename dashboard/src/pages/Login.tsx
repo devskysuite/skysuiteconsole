@@ -43,7 +43,7 @@ async function totpCode(secret: string, offset = 0): Promise<string> {
   const buf = new ArrayBuffer(8);
   const view = new DataView(buf);
   view.setUint32(4, counter, false);
-  const key = await crypto.subtle.importKey("raw", base32decode(secret), { name: "HMAC", hash: "SHA-1" }, false, ["sign"]);
+  const key = await crypto.subtle.importKey("raw", base32decode(secret).buffer as ArrayBuffer, { name: "HMAC", hash: "SHA-1" }, false, ["sign"]);
   const sig = new Uint8Array(await crypto.subtle.sign("HMAC", key, buf));
   const off = sig[19] & 0xf;
   const code = ((sig[off] & 0x7f) << 24 | sig[off+1] << 16 | sig[off+2] << 8 | sig[off+3]) % 1000000;
