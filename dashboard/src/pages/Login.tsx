@@ -76,11 +76,14 @@ function friendlyError(code: string) {
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
+const REMEMBER_EMAIL_KEY = "skysuite_remember_email";
+
 export default function Login() {
   const navigate = useNavigate();
-  const [screen,   setScreen]   = useState<Screen>("login");
-  const [email,    setEmail]    = useState("");
-  const [password, setPassword] = useState("");
+  const [screen,       setScreen]       = useState<Screen>("login");
+  const [email,        setEmail]        = useState(() => localStorage.getItem(REMEMBER_EMAIL_KEY) || "");
+  const [password,     setPassword]     = useState("");
+  const [rememberLogin, setRememberLogin] = useState(() => !!localStorage.getItem(REMEMBER_EMAIL_KEY));
   const [code,     setCode]     = useState("");
   const [error,    setError]    = useState("");
   const [busy,     setBusy]     = useState(false);
@@ -108,6 +111,10 @@ export default function Login() {
       const userDoc = snap.empty ? null : snap.docs[0];
       const docId   = userDoc?.id ?? "";
       const secret  = userDoc?.data()?.totpSecret ?? "";
+
+      // Save or clear remembered email
+      if (rememberLogin) localStorage.setItem(REMEMBER_EMAIL_KEY, email.trim());
+      else localStorage.removeItem(REMEMBER_EMAIL_KEY);
 
       setFirestoreDocId(docId);
 
@@ -206,7 +213,11 @@ export default function Login() {
             <input style={S.input} type="email" autoComplete="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@company.com" autoFocus />
             <label style={S.label}>Password</label>
             <input style={S.input} type="password" autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Password" />
-            <div style={{ textAlign: "right", marginTop: 6 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 10 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <input type="checkbox" id="rememberLogin" checked={rememberLogin} onChange={e => setRememberLogin(e.target.checked)} style={{ width: 15, height: 15, cursor: "pointer" }} />
+                <label htmlFor="rememberLogin" style={{ fontSize: 13, color: "#555", cursor: "pointer" }}>Remember me</label>
+              </div>
               <button type="button" style={S.forgotLink} onClick={() => { setScreen("reset"); setError(""); }}>Forgot password?</button>
             </div>
             {error && <p style={S.error}>{error}</p>}

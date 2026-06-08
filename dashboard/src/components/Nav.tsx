@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { onAuthStateChanged, signOut } from "firebase/auth";
+import { onAuthStateChanged, signOut, getAuth } from "firebase/auth";
 import { collection, getDocs, onSnapshot, query, where } from "firebase/firestore";
 import { Link, useLocation } from "react-router-dom";
 import { auth, db } from "../firebase";
@@ -186,7 +186,7 @@ export default function Nav() {
           </div>
         )}
 
-        <button style={styles.logoutBtn} onClick={() => signOut(auth)}>
+        <button style={styles.logoutBtn} onClick={() => { const uid = getAuth().currentUser?.uid; if (uid) localStorage.removeItem(`skysuite_2fa_${uid}`); signOut(auth); }}>
           Log Out
         </button>
       </div>
@@ -211,7 +211,7 @@ export default function Nav() {
       <button
         className="mobile-nav-link"
         style={{ background: "none", border: "none", textAlign: "left", cursor: "pointer", fontFamily: "inherit", width: "100%" }}
-        onClick={() => signOut(auth)}
+        onClick={() => { const uid = getAuth().currentUser?.uid; if (uid) localStorage.removeItem(`skysuite_2fa_${uid}`); signOut(auth); }}
       >
         Log Out
       </button>
