@@ -47,6 +47,7 @@ const callSendSms           = httpsCallable(fns, "sendTestSms");
 const callPasswordReset     = httpsCallable(fns, "sendPasswordResetEmail");
 const callExportIcs         = httpsCallable(fns, "exportUserIcs");
 const callGetUidByEmail     = httpsCallable(fns, "getUidByEmail");
+const callSendScheduleText  = httpsCallable(fns, "sendScheduleText");
 
 export default function UsersPage() {
   const isAdmin = useIsAdmin();
@@ -76,10 +77,11 @@ export default function UsersPage() {
   const [addingEmailBusy, setAddingEmailBusy] = useState(false);
 
   // Action button states
-  const [smsLoading, setSmsLoading]       = useState<string | null>(null);
-  const [resetLoading, setResetLoading]   = useState<string | null>(null);
-  const [icsLoading, setIcsLoading]       = useState<string | null>(null);
-  const [mfaLoading, setMfaLoading]       = useState<string | null>(null);
+  const [smsLoading, setSmsLoading]           = useState<string | null>(null);
+  const [resetLoading, setResetLoading]       = useState<string | null>(null);
+  const [icsLoading, setIcsLoading]           = useState<string | null>(null);
+  const [mfaLoading, setMfaLoading]           = useState<string | null>(null);
+  const [scheduleLoading, setScheduleLoading] = useState<string | null>(null);
 
   const [clearing, setClearing]     = useState(false);
   const [clearResult, setClearResult] = useState("");
@@ -344,6 +346,20 @@ export default function UsersPage() {
     }
   }
 
+  async function sendSchedule(u: AppUser) {
+    if (!u.phone) { toast("No phone number set for this user.", "error"); return; }
+    if (!u.displayName) { toast("No name set for this user.", "error"); return; }
+    setScheduleLoading(u.id);
+    try {
+      const result: any = await callSendScheduleText({ personName: u.displayName, phone: u.phone });
+      toast(`✓ Schedule sent to ${fmtPhone(u.phone)} (${result?.data?.count || 0} on-call days)`, "success");
+    } catch (e: any) {
+      toast(e?.message ?? "Failed to send schedule.", "error");
+    } finally {
+      setScheduleLoading(null);
+    }
+  }
+
   async function changeRole(u: AppUser, newRole: string) {
     if (!isOwner || newRole === (u.role || "user")) return;
     const roleLabels: Record<string, string> = { owner: "Owner", admin: "Admin", manager: "Manager", user: "User" };
@@ -568,6 +584,18 @@ export default function UsersPage() {
                 title="Download on-call ICS calendar"
               >
                 {icsLoading === u.id ? "…" : "📅 ICS"}
+              </button>
+            )}
+
+            {/* Send Schedule via SMS */}
+            {u.onCall && u.phone && isOwner && (
+              <button
+                style={{ ...styles.actionBtn, borderColor: "#0891b2", color: "#0e7490" }}
+                onClick={() => sendSchedule(u)}
+                disabled={scheduleLoading === u.id}
+                title="Text on-call schedule to this person"
+              >
+                {scheduleLoading === u.id ? "…" : "📆 Text Schedule"}
               </button>
             )}
 
