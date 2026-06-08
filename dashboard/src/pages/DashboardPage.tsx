@@ -8,6 +8,7 @@ import { getCategoryBadgeStyle, categoryBadgeBase } from "../utils/categoryColor
 import { fmtDateLong } from "../utils/formatting";
 import { downloadCSV } from "../utils/export";
 import type { Tool, Booking } from "../types";
+import ToolsTabs from "../components/ToolsTabs";
 
 const REPAIR_STATUSES: Record<string, { label: string; color: string; bg: string }> = {
   WAITING:        { label: "Waiting for Repair", color: "#d97706", bg: "#fffbeb" },
@@ -191,6 +192,7 @@ export default function DashboardPage() {
 
   return (
     <div>
+      <ToolsTabs />
       <h1 style={styles.pageTitle}>Dashboard</h1>
 
       {/* Stats */}

@@ -7,8 +7,8 @@ import { useIsAdmin } from "../hooks/useIsAdmin";
 import { useRole, canApproveTimeOff } from "../hooks/useRole";
 
 const BASE_LINKS = [
-  { to: "/tools", label: "Tools" },
-  { to: "/on-call", label: "On-Call" },
+  { to: "/dashboard", label: "Tools" },
+  { to: "/on-call",   label: "On-Call" },
 ];
 
 const RESOURCE_ITEMS = [
@@ -115,7 +115,7 @@ export default function Nav() {
             to={l.to}
             style={{
               ...styles.link,
-              ...(pathname === l.to || pathname.startsWith(l.to + "/") || (l.to === "/tools" && (pathname === "/vehicles" || pathname.startsWith("/vehicles/") || pathname === "/bookings" || pathname === "/contacts")) ? styles.linkActive : {}),
+              ...(pathname === l.to || pathname.startsWith(l.to + "/") || (l.to === "/dashboard" && (pathname === "/tools" || pathname.startsWith("/tools/") || pathname === "/vehicles" || pathname.startsWith("/vehicles/") || pathname === "/bookings" || pathname === "/contacts")) ? styles.linkActive : {}),
             }}
           >
             {l.label}

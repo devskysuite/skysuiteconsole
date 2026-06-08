@@ -1,10 +1,11 @@
 import { Link, useLocation } from "react-router-dom";
 
 const TABS = [
-  { to: "/tools",    label: "🔧 Equipment" },
-  { to: "/vehicles", label: "🚗 Vehicles"  },
-  { to: "/bookings", label: "📅 Bookings"  },
-  { to: "/contacts", label: "👥 Contacts"  },
+  { to: "/dashboard", label: "📊 Dashboard" },
+  { to: "/tools",     label: "🔧 Equipment" },
+  { to: "/vehicles",  label: "🚗 Vehicles"  },
+  { to: "/bookings",  label: "📅 Bookings"  },
+  { to: "/contacts",  label: "👥 Contacts"  },
 ];
 
 export default function ToolsTabs() {
@@ -13,7 +14,7 @@ export default function ToolsTabs() {
   return (
     <div style={{ display: "flex", gap: 4, marginBottom: 24, borderBottom: "2px solid #e5e7eb" }}>
       {TABS.map(t => {
-        const active = pathname === t.to || pathname.startsWith(t.to + "/");
+        const active = pathname === t.to || (t.to !== "/dashboard" && pathname.startsWith(t.to + "/"));
         return (
           <Link
             key={t.to}
