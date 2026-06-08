@@ -1,8 +1,11 @@
 import { useState } from "react";
-import { signInWithEmailAndPassword, browserLocalPersistence, setPersistence, sendPasswordResetEmail } from "firebase/auth";
+import { signInWithEmailAndPassword, browserLocalPersistence, setPersistence } from "firebase/auth";
 import { collection, doc, getDocs, query, updateDoc, where } from "firebase/firestore";
+import { getFunctions, httpsCallable } from "firebase/functions";
 import { useNavigate } from "react-router-dom";
 import { auth, db } from "../firebase";
+
+const callPasswordReset = httpsCallable(getFunctions(), "sendPasswordResetEmail");
 
 type Screen = "login" | "mfa-verify" | "mfa-enroll" | "reset" | "reset-sent";
 
@@ -187,8 +190,8 @@ export default function Login() {
     if (!email) { setError("Enter your email address."); return; }
     try {
       setBusy(true);
-      // Firebase sends the reset email directly — no backend needed
-      await sendPasswordResetEmail(auth, email.trim());
+      // Use Cloud Function so email is sent via Resend (no-reply@skysuite.ca) — avoids junk
+      await callPasswordReset({ email: email.trim(), mode: "reset" });
       setScreen("reset-sent");
     } catch (_err: any) {
       // Always show success screen to avoid email enumeration
