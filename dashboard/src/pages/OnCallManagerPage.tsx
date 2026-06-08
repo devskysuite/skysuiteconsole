@@ -605,6 +605,11 @@ function RotationOrderDisplay({ db, accessToken }: { db: any; accessToken: strin
   const [loaded,   setLoaded]   = useState(false);
   const thisYear = new Date().getFullYear();
 
+  // Auto-load when token becomes available
+  useEffect(() => {
+    if (accessToken && !loaded && !loading) loadFromCalendar();
+  }, [accessToken]); // eslint-disable-line react-hooks/exhaustive-deps
+
   async function loadFromCalendar() {
     if (!accessToken) return;
     setLoading(true);
@@ -663,11 +668,7 @@ function RotationOrderDisplay({ db, accessToken }: { db: any; accessToken: strin
 
   if (!accessToken) return <p style={{ fontSize: 12, color: "#9ca3af" }}>Connect Outlook above to view rotation.</p>;
 
-  if (!loaded) return (
-    <button onClick={loadFromCalendar} disabled={loading} style={{ ...btnS("#1565c0"), fontSize: 12, padding: "6px 16px" }}>
-      {loading ? "Loading…" : "📅 Load Rotation from Calendar"}
-    </button>
-  );
+  if (loading && !loaded) return <p style={{ fontSize: 12, color: "#9ca3af" }}>⏳ Loading rotation from calendar…</p>;
 
   return (
     <div>
