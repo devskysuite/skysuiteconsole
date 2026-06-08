@@ -218,7 +218,8 @@ export default function OnCallManagerPage() {
       pushed+=chunk.length;
     }
     if (status) status.textContent = `✅ Restored ${pushed} events from backup.`;
-    fetchEvents();
+    // Reload events for current month
+    setEvents([]);
   }
 
   // Swap actions
