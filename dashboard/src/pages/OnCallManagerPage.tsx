@@ -57,13 +57,47 @@ function getName(subject:string) {
   return subject.split(/\s+/).find(w=>w.length>1&&!skip.has(w.toLowerCase()))||subject;
 }
 
+// ── Canadian Statutory Holidays (Federal + Ontario) ──────────────────────────
+function getStatHolidays(year: number): { name: string; date: string }[] {
+  const fmt = (d: Date) => d.toISOString().slice(0, 10);
+  // Easter (Anonymous Gregorian algorithm)
+  const a=year%19,b=Math.floor(year/100),c=year%100,d2=Math.floor(b/4),e=b%4,
+    f=Math.floor((b+8)/25),g=Math.floor((b-f+1)/3),h=(19*a+b-d2-g+15)%30,
+    ii=Math.floor(c/4),k=c%4,l=(32+2*e+2*ii-h-k)%7,m2=Math.floor((a+11*h+22*l)/451),
+    mo=Math.floor((h+l-7*m2+114)/31),dy=((h+l-7*m2+114)%31)+1;
+  const easter=new Date(year,mo-1,dy);
+  const goodFriday=new Date(easter); goodFriday.setDate(goodFriday.getDate()-2);
+  // nth Monday of a 0-indexed month
+  const nthMon=(mo2:number,n:number)=>{const d=new Date(year,mo2,1);const skip2=(1-d.getDay()+7)%7;d.setDate(1+skip2+(n-1)*7);return d;};
+  // Monday before May 25 (Victoria Day)
+  const may25=new Date(year,4,25);const vd=may25.getDay();
+  const victoria=new Date(may25);victoria.setDate(may25.getDate()-(vd===1?7:vd===0?6:vd-1));
+  return [
+    {name:"New Year's Day",  date:`${year}-01-01`},
+    {name:"Family Day",      date:fmt(nthMon(1,3))},
+    {name:"Good Friday",     date:fmt(goodFriday)},
+    {name:"Victoria Day",    date:fmt(victoria)},
+    {name:"Canada Day",      date:`${year}-07-01`},
+    {name:"Civic Holiday",   date:fmt(nthMon(7,1))},
+    {name:"Labour Day",      date:fmt(nthMon(8,1))},
+    {name:"Thanksgiving",    date:fmt(nthMon(9,2))},
+    {name:"Remembrance Day", date:`${year}-11-11`},
+    {name:"Christmas Day",   date:`${year}-12-25`},
+    {name:"Boxing Day",      date:`${year}-12-26`},
+  ];
+}
+
+const ROLE_LEVELS: Record<string,number>={user:0,manager:1,admin:2,owner:3};
+function roleAtLeast(userRole:string,minRole:string){return(ROLE_LEVELS[userRole]||0)>=(ROLE_LEVELS[minRole]||0);}
+
 // ── Main ─────────────────────────────────────────────────────────────────────
 export default function OnCallManagerPage() {
   const role=useRole(), isAdmin=isAdminRole(role);
   const today=new Date();
   const [year,setYear]=useState(today.getFullYear());
   const [month,setMonth]=useState(today.getMonth());
-  const [tab,setTab]=useState<"calendar"|"swaps"|"setup">("calendar");
+  const [tab,setTab]=useState<"calendar"|"swaps"|"stats"|"setup">("calendar");
+  const [statVisMinRole,setStatVisMinRole]=useState("manager");
 
   const [accessToken,setAccessToken]=useState("");
   const [connected,setConnected]=useState(false);
@@ -116,6 +150,10 @@ export default function OnCallManagerPage() {
           const t=await refreshToken(snap.data().refreshToken);
           if(t){ setAccessToken(t.access); setConnected(true); try{await setDoc(doc(db,"settings","outlookOnCall"),{refreshToken:t.refresh},{merge:true});}catch{} }
         }
+      } catch {}
+      try {
+        const cfg=await getDoc(doc(db,"settings","oncallConfig"));
+        if(cfg.exists()&&cfg.data().statVisMinRole) setStatVisMinRole(cfg.data().statVisMinRole);
       } catch {}
     }
     load();
@@ -333,6 +371,37 @@ export default function OnCallManagerPage() {
       cur.setDate(cur.getDate()+rotDays);
     }
 
+    // ── Enforce max 1 stat holiday per person per year ──────────────────────
+    const schedYears=new Set(toAdd.map((ev:any)=>ev.start.dateTime.slice(0,4)));
+    const allStatDates=new Set<string>();
+    (schedYears as Set<string>).forEach(yr=>getStatHolidays(parseInt(yr)).forEach(s=>allStatDates.add(s.date)));
+    for(let pass=0;pass<roster.length*2;pass++){
+      const statsByPerson:Record<string,number[]>={};
+      toAdd.forEach((ev:any,i:number)=>{
+        const date=ev.start.dateTime.slice(0,10);
+        if(allStatDates.has(date)){
+          const name=ev.subject.replace(" On Call","");
+          if(!statsByPerson[name])statsByPerson[name]=[];
+          statsByPerson[name].push(i);
+        }
+      });
+      let swapped=false;
+      for(const[name,idxs]of Object.entries(statsByPerson)){
+        if(idxs.length<=1)continue;
+        const extraIdx=idxs[idxs.length-1];
+        for(let j=0;j<toAdd.length;j++){
+          const jDate=toAdd[j].start.dateTime.slice(0,10);
+          if(allStatDates.has(jDate))continue;
+          const jName=toAdd[j].subject.replace(" On Call","");
+          if((statsByPerson[jName]||[]).length>0)continue;
+          const tmp=toAdd[extraIdx].subject;toAdd[extraIdx].subject=toAdd[j].subject;toAdd[j].subject=tmp;
+          swapped=true;break;
+        }
+        if(swapped)break;
+      }
+      if(!swapped)break;
+    }
+
     status.textContent=`Pushing ${toAdd.length} events...`;
     let pushed=0;
     for(let i=0;i<toAdd.length;i+=4){
@@ -370,6 +439,7 @@ export default function OnCallManagerPage() {
       <div style={{display:"flex",gap:4,marginBottom:20,borderBottom:"2px solid #e5e7eb"}}>
         <TabBtn label="📅 Calendar" active={tab==="calendar"} onClick={()=>setTab("calendar")}/>
         <TabBtn label={`🔄 Swaps${pendingCount>0?` (${pendingCount})`:""}`} active={tab==="swaps"} onClick={()=>setTab("swaps")}/>
+        {roleAtLeast(role||"user",statVisMinRole)&&<TabBtn label="🎉 Stat Holidays" active={tab==="stats"} onClick={()=>setTab("stats")}/>}
         {isAdmin&&<TabBtn label="⚙ Setup" active={tab==="setup"} onClick={()=>setTab("setup")}/>}
       </div>
 
@@ -459,6 +529,15 @@ export default function OnCallManagerPage() {
         </div>
       )}
 
+      {/* ── STATS TAB ── */}
+      {tab==="stats"&&roleAtLeast(role||"user",statVisMinRole)&&(
+        <div style={{background:"white",borderRadius:12,padding:24,boxShadow:"0 1px 4px rgba(0,0,0,0.07)"}}>
+          <h2 style={{fontSize:16,fontWeight:700,color:"#0d2e5e",marginBottom:4}}>🎉 Stat Holiday Assignments</h2>
+          <p style={{fontSize:12,color:"#6b7280",marginBottom:16}}>Canadian statutory holidays (Federal + Ontario) and who is on-call. Each person is limited to 1 stat per year.</p>
+          <StatHolidaysPanel accessToken={accessToken} calId={CAL_ID}/>
+        </div>
+      )}
+
       {/* ── SETUP TAB ── */}
       {tab==="setup"&&isAdmin&&(
         <div>
@@ -475,6 +554,24 @@ export default function OnCallManagerPage() {
             <h2 style={{fontSize:15,fontWeight:700,color:"#0d2e5e",marginBottom:4}}>👥 On-Call Roster</h2>
             <p style={{fontSize:12,color:"#6b7280",marginBottom:14}}>Select which employees are in the on-call rotation. Reads from all user accounts.</p>
             <OnCallRoster db={db} allUsers={allUsers} onSaved={r => setRosterNames(r)}/>
+          </div>
+
+          {/* Stat Holiday Visibility */}
+          <div style={{background:"white",borderRadius:12,padding:20,boxShadow:"0 1px 4px rgba(0,0,0,0.07)",marginBottom:16}}>
+            <h2 style={{fontSize:15,fontWeight:700,color:"#0d2e5e",marginBottom:4}}>🎉 Stat Holiday Visibility</h2>
+            <p style={{fontSize:12,color:"#6b7280",marginBottom:12}}>Choose the minimum role that can see the Stat Holidays tab.</p>
+            <div style={{display:"flex",alignItems:"center",gap:12}}>
+              <select value={statVisMinRole} onChange={async e=>{
+                const v=e.target.value; setStatVisMinRole(v);
+                await setDoc(doc(db,"settings","oncallConfig"),{statVisMinRole:v},{merge:true});
+              }} style={{...inp,maxWidth:160}}>
+                <option value="user">All Users</option>
+                <option value="manager">Manager +</option>
+                <option value="admin">Admin +</option>
+                <option value="owner">Owner only</option>
+              </select>
+              <span style={{fontSize:12,color:"#059669",fontWeight:600}}>✅ Saved automatically</span>
+            </div>
           </div>
 
           {/* Rotation Planner */}
@@ -727,6 +824,94 @@ function RotationOrderDisplay({ db, accessToken }: { db: any; accessToken: strin
           </div>
         );
       })}
+    </div>
+  );
+}
+
+// ── Stat Holidays Panel ───────────────────────────────────────────────────────
+const PERSON_COLORS = ["#1565c0","#059669","#7c3aed","#dc2626","#d97706","#0891b2","#be185d","#4f46e5","#15803d","#9a3412"];
+function StatHolidaysPanel({accessToken,calId}:{accessToken:string;calId:string}){
+  const thisYear=new Date().getFullYear();
+  const [selYear,setSelYear]=useState(thisYear);
+  const [loading,setLoading]=useState(false);
+  const [assignments,setAssignments]=useState<Record<string,string>>({});// date→name
+  const [loaded,setLoaded]=useState(false);
+
+  async function load(year:number){
+    if(!accessToken){setLoaded(true);return;}
+    setLoading(true);
+    try{
+      const evs:any[]=[];
+      let url=`https://graph.microsoft.com/v1.0/me/calendars/${calId}/calendarView?startDateTime=${year}-01-01T00:00:00&endDateTime=${year}-12-31T23:59:59&$top=999&$select=subject,start`;
+      while(url){const d=await(await fetch(url,{headers:{Authorization:`Bearer ${accessToken}`}})).json();(d.value||[]).forEach((e:any)=>{const s=(e.subject||"").toLowerCase();if((s.includes("on call")||s.includes("oncall"))&&!s.includes("vacation"))evs.push(e);});url=d["@odata.nextLink"]||"";}
+      const map:Record<string,string>={};
+      evs.forEach(e=>{const date=e.start?.date||e.start?.dateTime?.slice(0,10)||"";const name=getName(e.subject||"");if(date)map[date]=name;});
+      setAssignments(map);
+    }catch(err){console.error(err);}
+    setLoading(false);setLoaded(true);
+  }
+
+  useEffect(()=>{if(accessToken)load(selYear);},[accessToken,selYear]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const stats=getStatHolidays(selYear);
+  // Build person→color map
+  const people=[...new Set(stats.map(s=>assignments[s.date]).filter(Boolean))];
+  const colorMap:Record<string,string>={};
+  people.forEach((p,i)=>colorMap[p]=PERSON_COLORS[i%PERSON_COLORS.length]);
+
+  // Count stats per person
+  const countByPerson:Record<string,number>={};
+  stats.forEach(s=>{const n=assignments[s.date];if(n){countByPerson[n]=(countByPerson[n]||0)+1;}});
+
+  return(
+    <div>
+      <div style={{display:"flex",gap:12,alignItems:"center",marginBottom:16,flexWrap:"wrap"}}>
+        <div style={{display:"flex",gap:4}}>
+          <button onClick={()=>setSelYear(v=>v-1)} style={navS}>◀</button>
+          <span style={{fontWeight:700,fontSize:16,color:"#0d2e5e",padding:"4px 12px"}}>{selYear}</span>
+          <button onClick={()=>setSelYear(v=>v+1)} style={navS}>▶</button>
+        </div>
+        {!accessToken&&<span style={{fontSize:13,color:"#f97316",fontWeight:600}}>⚠️ Connect Outlook to see assignments</span>}
+      </div>
+
+      {/* Summary chips */}
+      {loaded&&Object.keys(countByPerson).length>0&&(
+        <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:16}}>
+          {Object.entries(countByPerson).map(([name,count])=>(
+            <span key={name} style={{fontSize:12,fontWeight:700,padding:"4px 12px",borderRadius:99,background:colorMap[name]||"#e5e7eb",color:"white"}}>
+              {name} — {count} stat{count>1?" 🚨":""}
+            </span>
+          ))}
+        </div>
+      )}
+      {loaded&&Object.values(countByPerson).some(c=>c>1)&&(
+        <div style={{background:"#fef2f2",border:"1px solid #fecaca",borderRadius:8,padding:"10px 14px",marginBottom:16,fontSize:13,color:"#dc2626",fontWeight:600}}>
+          ⚠️ Someone has more than 1 stat — use Rebalance in the Setup tab to fix the rotation.
+        </div>
+      )}
+
+      {loading&&<div style={{textAlign:"center",padding:24,color:"#9ca3af"}}>⏳ Loading…</div>}
+
+      {!loading&&(
+        <div style={{display:"grid",gap:8}}>
+          {stats.map(s=>{
+            const name=assignments[s.date];
+            const color=name?colorMap[name]:"#e5e7eb";
+            const textColor=name?"white":"#9ca3af";
+            return(
+              <div key={s.date} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 14px",borderRadius:8,background:"#f8fafc",border:"1px solid #e2e8f0"}}>
+                <div style={{minWidth:130}}>
+                  <div style={{fontSize:13,fontWeight:700,color:"#0d2e5e"}}>{s.name}</div>
+                  <div style={{fontSize:11,color:"#9ca3af"}}>{new Date(s.date+"T12:00:00").toLocaleDateString("en-CA",{weekday:"short",month:"short",day:"numeric"})}</div>
+                </div>
+                <span style={{fontSize:13,fontWeight:700,padding:"4px 14px",borderRadius:99,background:color,color:textColor,minWidth:80,textAlign:"center"}}>
+                  {name||"—"}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
