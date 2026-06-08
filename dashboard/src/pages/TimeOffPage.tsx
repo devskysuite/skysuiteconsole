@@ -11,7 +11,7 @@ import { useRole, canApproveTimeOff } from "../hooks/useRole";
 import { fmtISODate, timeOffStatusBadge } from "../utils/formatting";
 import type { TimeOffRequest } from "../types";
 
-const TENANT_ID = "1c1d62e8-f392-4caa-a8a6-0ce98e0913d9";
+const TENANT_ID = "common"; // "common" accepts any Microsoft work/school account across tenants
 const CLIENT_ID  = "9a1a21f1-40a3-4872-a4d6-888bd51d116d";
 const CAL_ID     = "AAMkADgyOGUwMDUyLTNiZjMtNGQzNi1hNTgwLTQ2M2IzYzE2YmQ5MgBGAAAAAACGxuDePTlOQawDDU8UfW0gBwBxt6lSDH0kQY0tk4wDjNk8AAAAAAEGAABxt6lSDH0kQY0tk4wDjNk8AAALmQObAAA=";
 const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
