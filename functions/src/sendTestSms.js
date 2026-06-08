@@ -1,17 +1,21 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
-import { defineSecret } from "firebase-functions/params";
-
-const twilioSid   = defineSecret("TWILIO_ACCOUNT_SID");
-const twilioToken = defineSecret("TWILIO_AUTH_TOKEN");
-const twilioFrom  = defineSecret("TWILIO_FROM");
+import { db } from "./utils/firestore.js";
 
 export const sendTestSms = onCall(
-  { secrets: [twilioSid, twilioToken, twilioFrom], cors: true },
+  { cors: true },
   async (request) => {
     if (!request.auth) throw new HttpsError("unauthenticated", "Login required.");
 
     const { to, name } = request.data;
     if (!to) throw new HttpsError("invalid-argument", "Phone number required.");
+
+    // Read Twilio credentials from Firestore settings
+    const secretSnap = await db.collection("settings").doc("secrets").get();
+    const secrets = secretSnap.data() || {};
+    const sid   = secrets.twilioAccountSid;
+    const token = secrets.twilioAuthToken;
+    const from  = secrets.twilioFrom;
+    if (!sid || !token || !from) throw new HttpsError("failed-precondition", "Twilio credentials not configured.");
 
     // Normalize to E.164
     const digits = to.replace(/\D/g, "");
@@ -19,12 +23,7 @@ export const sendTestSms = onCall(
 
     const body = `Hi ${name || "there"}, this is a test message from SkySuite. If you received this, your contact info is set up correctly! 🎉`;
 
-    const sid   = twilioSid.value();
-    const token = twilioToken.value();
-    const from  = twilioFrom.value();
-
-    const res = await fetch(
-      `https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`,
+    const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`,
       {
         method: "POST",
         headers: {
