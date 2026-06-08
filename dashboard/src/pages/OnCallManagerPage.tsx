@@ -499,8 +499,25 @@ function RotationOrderDisplay({ db }: { db: any }) {
       getDoc(doc(db, "settings", "rotationOrders")),
       getDoc(doc(db, "settings", "onCallConfig")),
     ]).then(([ordSnap, cfgSnap]) => {
-      if (ordSnap.exists()) setOrders(ordSnap.data() as Record<string, string[]>);
-      if (cfgSnap.exists() && cfgSnap.data().employees) setRoster(cfgSnap.data().employees);
+      const employees: string[] = cfgSnap.exists() ? (cfgSnap.data().employees || []) : [];
+      let loadedOrders: Record<string, string[]> = ordSnap.exists() ? (ordSnap.data() as Record<string, string[]>) : {};
+
+      if (employees.length) {
+        setRoster(employees);
+        // Auto-generate any missing year orders
+        let changed = false;
+        const now = new Date().getFullYear();
+        for (const yr of [now, now + 1]) {
+          if (!loadedOrders[String(yr)]?.length) {
+            loadedOrders = { ...loadedOrders, [String(yr)]: [...employees].sort(() => Math.random() - 0.5) };
+            changed = true;
+          }
+        }
+        if (changed) {
+          setDoc(doc(db, "settings", "rotationOrders"), loadedOrders, { merge: true }).catch(() => {});
+        }
+      }
+      setOrders(loadedOrders);
       setLoaded(true);
     }).catch(() => setLoaded(true));
   }, []);
