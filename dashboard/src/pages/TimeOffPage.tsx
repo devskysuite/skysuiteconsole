@@ -241,12 +241,11 @@ export default function TimeOffPage() {
                     <div key={i} style={{ minHeight: 110, background: isToday ? "#fff8f0" : "#fafafa", border: isToday ? "2px solid #f97316" : "1px solid #e5e7eb", borderRadius: 6, padding: 6 }}>
                       {date && <>
                         <div style={{ fontSize: 12, fontWeight: isToday ? 800 : 500, color: isToday ? "#f97316" : "#374151", marginBottom: 2 }}>{parseInt(date.slice(8))}</div>
-                        {names.slice(0, 2).map(n => (
+                        {names.map(n => (
                           <div key={n} style={{ fontSize: 11, fontWeight: 600, background: "#f97316", color: "white", borderRadius: 4, padding: "2px 5px", marginBottom: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                             🏖 {n}
                           </div>
                         ))}
-                        {names.length > 2 && <div style={{ fontSize: 9, color: "#9ca3af" }}>+{names.length - 2}</div>}
                       </>}
                     </div>
                   );

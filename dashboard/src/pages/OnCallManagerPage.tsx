@@ -402,11 +402,10 @@ export default function OnCallManagerPage() {
                     onClick={()=>{ if(clickableOncall&&connected) setSwapModal({event:clickableOncall}); }}>
                     {date&&<>
                       <div style={{fontSize:12,fontWeight:isToday?800:500,color:isToday?"#1565c0":"#374151",marginBottom:2}}>{parseInt(date.slice(8))}</div>
-                      {dayEvs.slice(0,2).map(ev=>{const c=pillStyle(ev.subject);const n=getName(ev.subject);return(
+                      {dayEvs.map(ev=>{const c=pillStyle(ev.subject);const n=getName(ev.subject);return(
                         <div key={ev.id} style={{fontSize:11,fontWeight:600,background:c.bg,color:c.color,borderRadius:4,padding:"2px 5px",marginBottom:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
                           {c.prefix}{n}
                         </div>);})}
-                      {dayEvs.length>2&&<div style={{fontSize:9,color:"#9ca3af"}}>+{dayEvs.length-2}</div>}
                       {clickableOncall&&<div style={{fontSize:9,color:"#1565c0",marginTop:2}}>tap to swap</div>}
                     </>}
                   </div>);
