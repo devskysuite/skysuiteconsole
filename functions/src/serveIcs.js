@@ -57,6 +57,8 @@ export const serveIcs = onRequest({ cors: false, invoker: "public" }, async (req
       "METHOD:PUBLISH",
       `X-WR-CALNAME:${escapeIcs(personName)} On-Call`,
       "X-WR-TIMEZONE:America/Toronto",
+      "REFRESH-INTERVAL;VALUE=DURATION:P1D",
+      "X-PUBLISHED-TTL:P1D",
     ];
     for (const ev of myEvents) {
       const uid = `${ev.id || Math.random().toString(36).slice(2)}@skysuite`;
@@ -75,7 +77,8 @@ export const serveIcs = onRequest({ cors: false, invoker: "public" }, async (req
 
     const slug = personName.toLowerCase().replace(/\s+/g, "-");
     res.setHeader("Content-Type", "text/calendar; charset=utf-8");
-    res.setHeader("Content-Disposition", `attachment; filename="${slug}-oncall.ics"`);
+    res.setHeader("Content-Disposition", `inline; filename="${slug}-oncall.ics"`);
+    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
     res.status(200).send(lines.join("\r\n"));
   } catch (e) {
     res.status(500).send(`Error: ${e.message}`);

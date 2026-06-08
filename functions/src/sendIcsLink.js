@@ -1,7 +1,7 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { db } from "./utils/firestore.js";
 
-const ICS_BASE_URL = "https://skysuite.ca/api/ics";
+const ICS_BASE_URL = "webcal://skysuite.ca/api/ics";
 
 export const sendIcsLink = onCall({ cors: true }, async (request) => {
   if (!request.auth) throw new HttpsError("unauthenticated", "Login required.");
