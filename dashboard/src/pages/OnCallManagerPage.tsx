@@ -593,6 +593,9 @@ export default function OnCallManagerPage() {
                  <button onClick={connectOutlook} style={btnS("#1565c0")}>🔗 Connect Outlook</button></>}
           </div>
 
+          {/* Twilio Settings */}
+          <TwilioSettingsPanel db={db}/>
+
           {/* On-Call Roster */}
           <div style={{background:"white",borderRadius:12,padding:20,boxShadow:"0 1px 4px rgba(0,0,0,0.07)",marginBottom:16}}>
             <h2 style={{fontSize:15,fontWeight:700,color:"#0d2e5e",marginBottom:4}}>👥 On-Call Roster</h2>
@@ -801,6 +804,59 @@ function IcsExportPanel({ accessToken, calId, db }: { accessToken:string; calId:
             {busy===name?"⏳ Building…":`⬇ ${name}`}
           </button>
         ))}
+      </div>
+    </div>
+  );
+}
+
+function TwilioSettingsPanel({ db }: { db:any }) {
+  const [sid,   setSid]   = useState("");
+  const [token, setToken] = useState("");
+  const [from,  setFrom]  = useState("");
+  const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(()=>{
+    getDoc(doc(db,"settings","secrets")).then(s=>{
+      const d = s.data()||{};
+      setSid(d.twilioAccountSid||"");
+      setToken(d.twilioAuthToken||"");
+      setFrom(d.twilioFrom||"");
+      setLoaded(true);
+    }).catch(()=>setLoaded(true));
+  },[]);
+
+  async function save(){
+    if(!sid.trim()||!token.trim()||!from.trim()) return;
+    setSaving(true); setSaved(false);
+    await setDoc(doc(db,"settings","secrets"),{ twilioAccountSid:sid.trim(), twilioAuthToken:token.trim(), twilioFrom:from.trim() },{merge:true});
+    setSaving(false); setSaved(true);
+    setTimeout(()=>setSaved(false),3000);
+  }
+
+  if(!loaded) return null;
+  return(
+    <div style={{background:"white",borderRadius:12,padding:20,boxShadow:"0 1px 4px rgba(0,0,0,0.07)",marginTop:16}}>
+      <h2 style={{fontSize:15,fontWeight:700,color:"#0d2e5e",margin:"0 0 4px"}}>📱 Twilio SMS Settings</h2>
+      <p style={{fontSize:12,color:"#6b7280",marginBottom:14}}>Enter your Twilio credentials to enable SMS features. Find these in your <a href="https://console.twilio.com" target="_blank" rel="noreferrer" style={{color:"#1565c0"}}>Twilio Console</a>.</p>
+      <div style={{display:"grid",gap:10,maxWidth:480}}>
+        <div>
+          <label style={lbl}>Account SID</label>
+          <input style={inp} type="text" value={sid} onChange={e=>setSid(e.target.value)} placeholder="ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" autoComplete="off"/>
+        </div>
+        <div>
+          <label style={lbl}>Auth Token</label>
+          <input style={inp} type="password" value={token} onChange={e=>setToken(e.target.value)} placeholder="••••••••••••••••••••••••••••••••" autoComplete="off"/>
+        </div>
+        <div>
+          <label style={lbl}>From Number (E.164)</label>
+          <input style={inp} type="text" value={from} onChange={e=>setFrom(e.target.value)} placeholder="+12895551234"/>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:12,marginTop:4}}>
+          <button onClick={save} disabled={saving||!sid||!token||!from} style={btnS("#1565c0")}>{saving?"Saving…":"💾 Save"}</button>
+          {saved&&<span style={{fontSize:13,color:"#059669",fontWeight:600}}>✅ Saved</span>}
+        </div>
       </div>
     </div>
   );
