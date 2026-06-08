@@ -593,9 +593,6 @@ export default function OnCallManagerPage() {
                  <button onClick={connectOutlook} style={btnS("#1565c0")}>🔗 Connect Outlook</button></>}
           </div>
 
-          {/* Twilio Settings */}
-          <TwilioSettingsPanel db={db}/>
-
           {/* On-Call Roster */}
           <div style={{background:"white",borderRadius:12,padding:20,boxShadow:"0 1px 4px rgba(0,0,0,0.07)",marginBottom:16}}>
             <h2 style={{fontSize:15,fontWeight:700,color:"#0d2e5e",marginBottom:4}}>👥 On-Call Roster</h2>
@@ -648,9 +645,6 @@ export default function OnCallManagerPage() {
               <button onClick={()=>setRebalanceModal(true)} disabled={!connected} style={btnS("#f97316")}>⚖ Rebalance</button>
             </div>
           </div>
-
-          {/* ICS Calendars */}
-          {connected&&<IcsExportPanel accessToken={accessToken} calId={CAL_ID} db={db}/>}
 
           {/* Locked Years */}
           <LockedYearsPanel db={db}/>

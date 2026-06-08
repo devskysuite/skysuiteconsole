@@ -19,6 +19,7 @@ const ADMIN_ITEMS = [
   { to: "/categories",      label: "Categories" },
   { to: "/repair-contacts", label: "Manage Contacts" },
   { to: "/users",           label: "Users" },
+  { to: "/twilio",          label: "Twilio SMS" },
 ];
 
 export default function Nav() {
@@ -161,7 +162,7 @@ export default function Nav() {
         {isAdmin && (
           <div ref={dropdownRef} style={{ position: "relative" }}>
             <button
-              style={{ ...styles.adminBtn, ...(pathname === "/categories" || pathname === "/repair-contacts" || pathname === "/users" ? styles.linkActive : {}) }}
+              style={{ ...styles.adminBtn, ...(pathname === "/categories" || pathname === "/repair-contacts" || pathname === "/users" || pathname === "/twilio" ? styles.linkActive : {}) }}
               onClick={() => setMenuOpen((v) => !v)}
             >
               Admin

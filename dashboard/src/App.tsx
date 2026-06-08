@@ -22,6 +22,7 @@ import OnCallPage from "./pages/OnCallPage";
 import OnCallAdminPage from "./pages/OnCallAdminPage";
 import OnCallManagerPage from "./pages/OnCallManagerPage";
 import PidTuningPage from "./pages/PidTuningPage";
+import TwilioPage from "./pages/TwilioPage";
 import Nav from "./components/Nav";
 import { ToastProvider } from "./components/Toast";
 import Spinner from "./components/Spinner";
@@ -105,6 +106,7 @@ export default function App() {
                       <Route path="/on-call/legacy" element={<OnCallPage />} />
                       <Route path="/on-call/manage" element={<OnCallAdminPage />} />
                       <Route path="/pid-tuning" element={<PidTuningPage />} />
+                      <Route path="/twilio" element={<TwilioPage />} />
                     </Routes>
                 </AppLayout>
               </RequireAuth>
