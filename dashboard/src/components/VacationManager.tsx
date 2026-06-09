@@ -5,7 +5,7 @@ import { db } from "../firebase";
 
 const callVacation = httpsCallable(getFunctions(), "vacationAction");
 
-type VacEvent = { id: string; subject: string; start: string; end: string };
+type VacEvent = { id: string; subject: string; start: string; end: string; calId?: string };
 
 function fmt(iso: string) {
   if (!iso) return "";
@@ -68,7 +68,7 @@ export default function VacationManager() {
     if (!window.confirm(`Delete "${ev.subject}" (${fmt(ev.start)})?`)) return;
     setDeleting(ev.id);
     try {
-      await callVacation({ action: "delete", eventId: ev.id });
+      await callVacation({ action: "delete", eventId: ev.id, eventCalId: ev.calId });
       setEvents(prev => prev.filter(e => e.id !== ev.id));
     } catch (e: any) {
       setError(e?.message ?? "Failed to delete vacation.");

@@ -137,10 +137,10 @@ export default function TimeOffPage() {
     setVacBusy(false);
   }
 
-  async function deleteVacationDay(ev: { id: string; name: string }) {
+  async function deleteVacationDay(ev: { id: string; name: string; calId?: string }) {
     if (!await confirm(`Delete ${ev.name}'s vacation?`)) return;
     try {
-      await callVacation({ action: "delete", eventId: ev.id });
+      await callVacation({ action: "delete", eventId: ev.id, eventCalId: ev.calId });
       await loadVacations();
     } catch (e: any) { toast(e?.message ?? "Failed to delete vacation.", "error"); }
   }
@@ -218,16 +218,16 @@ export default function TimeOffPage() {
   for (let i = 0; i < first; i++) grid.push("");
   for (let d = 1; d <= daysInMonth; d++) grid.push(`${year}-${String(month+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`);
 
-  // Vacation map: date → [{id,name}]
-  const vacByDate: Record<string, { id: string; name: string }[]> = {};
-  events.forEach(ev => {
+  // Vacation map: date → [{id,name,calId}]
+  const vacByDate: Record<string, { id: string; name: string; calId?: string }[]> = {};
+  events.forEach((ev: any) => {
     let cur = new Date(ev.start + "T12:00:00");
     const end = new Date(ev.end + "T12:00:00");
     const name = ev.subject.replace(/vacation\s*[-–]?\s*/i, "").replace(/[-–]\s*vacation/i, "").trim();
     while (cur < end) {
       const d = cur.toISOString().slice(0, 10);
       if (!vacByDate[d]) vacByDate[d] = [];
-      if (!vacByDate[d].some(x => x.id === ev.id)) vacByDate[d].push({ id: ev.id, name });
+      if (!vacByDate[d].some(x => x.id === ev.id)) vacByDate[d].push({ id: ev.id, name, calId: ev.calId });
       cur.setDate(cur.getDate() + 1);
     }
   });
