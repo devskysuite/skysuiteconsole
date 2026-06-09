@@ -112,6 +112,7 @@ export default function OnCallManagerPage() {
 
   const [accessToken,setAccessToken]=useState("");
   const [connected,setConnected]=useState(false);
+  const [tokenLoading,setTokenLoading]=useState(true); // true until Firestore token check completes
   const [events,setEvents]=useState<CalEvent[]>([]);
   const [loading,setLoading]=useState(false);
   const [error,setError]=useState("");
@@ -190,7 +191,7 @@ export default function OnCallManagerPage() {
     return unsub;
   },[]);
 
-  // Load token from Firestore
+  // Load shared Outlook token from Firestore (one admin logs in once; all users share it)
   useEffect(()=>{
     async function load() {
       try {
@@ -204,6 +205,7 @@ export default function OnCallManagerPage() {
         const cfg=await getDoc(doc(db,"settings","oncallConfig"));
         if(cfg.exists()&&cfg.data().statVisMinRole) setStatVisMinRole(cfg.data().statVisMinRole);
       } catch {}
+      setTokenLoading(false); // always clear the loading gate
     }
     load();
   },[]);
@@ -520,8 +522,13 @@ export default function OnCallManagerPage() {
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20,flexWrap:"wrap",gap:12}}>
         <h1 style={{fontSize:24,fontWeight:800,color:"#0d2e5e"}}>On-Call Manager</h1>
         <div style={{display:"flex",gap:10,alignItems:"center"}}>
-          {connected ? <span style={{fontSize:13,color:"#059669",fontWeight:600}}>✅ Connected</span>
-            : <button onClick={connectOutlook} style={btnS("#1565c0")}>Connect Outlook</button>}
+          {tokenLoading
+            ? <span style={{fontSize:12,color:"#9ca3af"}}>⏳ Connecting…</span>
+            : connected
+              ? <span style={{fontSize:13,color:"#059669",fontWeight:600}}>✅ Connected</span>
+              : isAdmin
+                ? <button onClick={connectOutlook} style={btnS("#1565c0")}>Connect Outlook</button>
+                : null}
         </div>
       </div>
 
@@ -547,8 +554,9 @@ export default function OnCallManagerPage() {
             <span style={{background:"#1565c0",color:"#fff",fontSize:11,fontWeight:600,padding:"2px 8px",borderRadius:99}}>On Call</span>
             {connected&&<span style={{fontSize:11,color:"#9ca3af"}}>Click your on-call day to request a swap{isAdmin?" · tap ＋ to add an event":""}</span>}
           </div>
-          {loading&&<div style={{textAlign:"center",padding:40,color:"#9ca3af"}}>⏳ Loading...</div>}
-          {!connected&&!loading&&<div style={{textAlign:"center",padding:40,color:"#9ca3af"}}>Connect Outlook above to view the calendar.</div>}
+          {(loading||tokenLoading)&&<div style={{textAlign:"center",padding:40,color:"#9ca3af"}}>⏳ Loading...</div>}
+          {!tokenLoading&&!connected&&!loading&&isAdmin&&<div style={{textAlign:"center",padding:40,color:"#9ca3af"}}>Connect Outlook above to view the calendar.</div>}
+          {!tokenLoading&&!connected&&!loading&&!isAdmin&&<div style={{textAlign:"center",padding:40,color:"#9ca3af"}}>Calendar not available — ask an admin to connect Outlook.</div>}
           {connected&&!loading&&(
             <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:3}}>
               {DAYS.map(d=><div key={d} style={{textAlign:"center",fontSize:12,fontWeight:700,color:"#6b7280",padding:"8px 0",textTransform:"uppercase"}}>{d}</div>)}
