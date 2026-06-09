@@ -21,6 +21,7 @@ const TENANT_ID = "1c1d62e8-f392-4caa-a8a6-0ce98e0913d9";
 const CLIENT_ID  = "9a1a21f1-40a3-4872-a4d6-888bd51d116d";
 const CAL_ID     = "AAMkADgyOGUwMDUyLTNiZjMtNGQzNi1hNTgwLTQ2M2IzYzE2YmQ5MgBGAAAAAACGxuDePTlOQawDDU8UfW0gBwBxt6lSDH0kQY0tk4wDjNk8AAAAAAEGAABxt6lSDH0kQY0tk4wDjNk8AAALmQObAAA=";
 const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+const SHORT_MONTHS = MONTHS.map(m=>m.slice(0,3));
 const DAYS   = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
 
 type View = "month" | "list" | "request" | "my-requests" | "approvals";
@@ -346,7 +347,9 @@ export default function TimeOffPage() {
                       title={admin && date ? "Click to add a vacation" : undefined}
                       style={{ minHeight: 110, background: isToday ? "#fff8f0" : (inMonth ? "#fafafa" : "#f1f1f1"), border: isToday ? "2px solid #f97316" : "1px solid #e5e7eb", borderRadius: 6, padding: 6, opacity: inMonth ? 1 : 0.55, cursor: admin && date ? "pointer" : "default" }}>
                       {date && <>
-                        <div style={{ fontSize: 12, fontWeight: isToday ? 800 : 500, color: isToday ? "#f97316" : "#374151", marginBottom: 2 }}>{parseInt(date.slice(8))}</div>
+                        <div style={{ fontSize: inMonth ? 12 : 10, fontWeight: isToday ? 800 : 500, color: isToday ? "#f97316" : (inMonth ? "#374151" : "#9ca3af"), marginBottom: 2 }}>
+                          {inMonth ? parseInt(date.slice(8)) : `${SHORT_MONTHS[parseInt(date.slice(5,7))-1]} ${parseInt(date.slice(8))}`}
+                        </div>
                         {dayVacs.map(v => (
                           <div key={v.id}
                             title={admin ? "Tap to edit or delete" : undefined}

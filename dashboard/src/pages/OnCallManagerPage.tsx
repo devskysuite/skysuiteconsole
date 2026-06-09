@@ -39,6 +39,7 @@ async function graphFetch(token:string, path:string, method="GET", body?:any) {
 
 // ── Calendar grid ────────────────────────────────────────────────────────────
 const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+const SHORT_MONTHS = MONTHS.map(m=>m.slice(0,3));
 const DAYS   = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
 
 function fmtYMD(d:Date){return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;}
@@ -564,7 +565,9 @@ export default function OnCallManagerPage() {
                     onClick={()=>{ if(clickableOncall&&connected) setSwapModal({event:clickableOncall}); }}>
                     {date&&<>
                       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:2}}>
-                        <span style={{fontSize:12,fontWeight:isToday?800:500,color:isToday?"#1565c0":"#374151"}}>{parseInt(date.slice(8))}</span>
+                        <span style={{fontSize:inMonth?12:10,fontWeight:isToday?800:500,color:isToday?"#1565c0":"#9ca3af"}}>
+                          {inMonth ? parseInt(date.slice(8)) : `${SHORT_MONTHS[parseInt(date.slice(5,7))-1]} ${parseInt(date.slice(8))}`}
+                        </span>
                         {isAdmin&&connected&&<button title="Add event" onClick={(e)=>{e.stopPropagation();setAddModal({date});setAddName("");setAddType("oncall");setAddMultiDay(false);setAddEndDate(date);}} style={{background:"none",border:"none",color:"#1565c0",fontSize:14,fontWeight:700,cursor:"pointer",lineHeight:1,padding:0}}>＋</button>}
                       </div>
                       {dayEvs.map(ev=>{const c=pillStyle(ev.subject);const n=getName(ev.subject);return(
