@@ -1,5 +1,6 @@
 import { onRequest } from "firebase-functions/v2/https";
 import { getOutlookAccessToken } from "./utils/getOutlookToken.js";
+import { getVacationCalendarId } from "./utils/getVacationCalendar.js";
 import { db } from "./utils/firestore.js";
 
 const CAL_ID = "AAMkADgyOGUwMDUyLTNiZjMtNGQzNi1hNTgwLTQ2M2IzYzE2YmQ5MgBGAAAAAACGxuDePTlOQawDDU8UfW0gBwBxt6lSDH0kQY0tk4wDjNk8AAAAAAEGAABxt6lSDH0kQY0tk4wDjNk8AAALmQObAAA=";
@@ -28,27 +29,35 @@ export const serveIcs = onRequest({ cors: false, invoker: "public" }, async (req
 
   try {
     const accessToken = await getOutlookAccessToken();
+    const vacCalId = await getVacationCalendarId(accessToken).catch(() => null);
     const start = new Date().toISOString().slice(0, 10);
     const endD  = new Date(); endD.setMonth(endD.getMonth() + 13);
     const end   = endD.toISOString().slice(0, 10);
 
-    let events = [];
-    let url = `https://graph.microsoft.com/v1.0/me/calendars/${encodeURIComponent(CAL_ID)}/calendarView?startDateTime=${start}T00:00:00&endDateTime=${end}T23:59:59&$top=200&$select=subject,start,end,isAllDay`;
-    while (url) {
-      const r = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
-      const json = await r.json();
-      if (!r.ok) throw new Error(json.error?.message || "Graph API error");
-      events = events.concat(json.value || []);
-      url = json["@odata.nextLink"] || null;
+    async function fetchCal(calId) {
+      const out = [];
+      let url = `https://graph.microsoft.com/v1.0/me/calendars/${encodeURIComponent(calId)}/calendarView?startDateTime=${start}T00:00:00&endDateTime=${end}T23:59:59&$top=200&$select=subject,start,end,isAllDay`;
+      while (url) {
+        const r = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+        const json = await r.json();
+        if (!r.ok) throw new Error(json.error?.message || "Graph API error");
+        out.push(...(json.value || []));
+        url = json["@odata.nextLink"] || null;
+      }
+      return out;
     }
 
+    const onCallRaw = await fetchCal(CAL_ID);
+    const vacRaw    = vacCalId ? await fetchCal(vacCalId).catch(() => []) : [];
+
     const firstName = personName.split(" ")[0].toLowerCase();
-    // Keep this person's on-call AND vacation events from Outlook
-    const myEvents = events.filter(e => {
+    // On-call events for this person (from the On-Call calendar)
+    const myOnCall = onCallRaw.filter(e => {
       const s = (e.subject || "").toLowerCase();
-      if (!s.includes(firstName)) return false;
-      return s.includes("on call") || s.includes("oncall") || s.includes("vacation");
+      return s.includes(firstName) && (s.includes("on call") || s.includes("oncall")) && !s.includes("vacation");
     });
+    // Vacation events for this person (from the Vacation calendar)
+    const myVac = vacRaw.filter(e => (e.subject || "").toLowerCase().includes(firstName));
 
     const lines = [
       "BEGIN:VCALENDAR",
@@ -81,14 +90,22 @@ export const serveIcs = onRequest({ cors: false, invoker: "public" }, async (req
       );
     }
 
-    for (const ev of myEvents) {
+    // On-call events
+    for (const ev of myOnCall) {
       const uid = `${ev.id || Math.random().toString(36).slice(2)}@skysuite`;
       const s  = (ev.start?.date || ev.start?.dateTime?.slice(0, 10) || "").replace(/-/g, "");
       const e2 = (ev.end?.date   || ev.end?.dateTime?.slice(0, 10)   || "").replace(/-/g, "") || s;
       if (!s) continue;
-      const isVacation = (ev.subject || "").toLowerCase().includes("vacation");
-      if (isVacation) vacationDates.add(s);
-      pushEvent({ uid, start: s, end: e2, summary: ev.subject || "", isVacation });
+      pushEvent({ uid, start: s, end: e2, summary: ev.subject || "", isVacation: false });
+    }
+    // Vacation events (from the Vacation calendar)
+    for (const ev of myVac) {
+      const uid = `${ev.id || Math.random().toString(36).slice(2)}@skysuite`;
+      const s  = (ev.start?.date || ev.start?.dateTime?.slice(0, 10) || "").replace(/-/g, "");
+      const e2 = (ev.end?.date   || ev.end?.dateTime?.slice(0, 10)   || "").replace(/-/g, "") || s;
+      if (!s) continue;
+      vacationDates.add(s);
+      pushEvent({ uid, start: s, end: e2, summary: ev.subject || `${personName} Vacation`, isVacation: true });
     }
 
     // Merge approved vacation from Firestore (for any not already on the Outlook calendar)

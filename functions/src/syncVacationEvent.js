@@ -1,8 +1,7 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { getOutlookAccessToken } from "./utils/getOutlookToken.js";
+import { getVacationCalendarId } from "./utils/getVacationCalendar.js";
 import { db } from "./utils/firestore.js";
-
-const CAL_ID = "AAMkADgyOGUwMDUyLTNiZjMtNGQzNi1hNTgwLTQ2M2IzYzE2YmQ5MgBGAAAAAACGxuDePTlOQawDDU8UfW0gBwBxt6lSDH0kQY0tk4wDjNk8AAAAAAEGAABxt6lSDH0kQY0tk4wDjNk8AAALmQObAAA=";
 
 async function graph(token, path, method, body) {
   const res = await fetch(`https://graph.microsoft.com/v1.0${path}`, {
@@ -29,9 +28,10 @@ export const syncVacationEvent = onCall({ cors: true }, async (request) => {
   if (!snap.exists) throw new HttpsError("not-found", "Request not found.");
   const r = snap.data();
 
-  let token;
+  let token, vacCalId;
   try {
     token = await getOutlookAccessToken();
+    vacCalId = await getVacationCalendarId(token);
   } catch (e) {
     throw new HttpsError("failed-precondition", e.message);
   }
@@ -39,20 +39,20 @@ export const syncVacationEvent = onCall({ cors: true }, async (request) => {
   // Forced removal (e.g. request is being deleted) → delete event regardless of status
   if (remove) {
     if (r.calendarEventId) {
-      await graph(token, `/me/calendars/${CAL_ID}/events/${r.calendarEventId}`, "DELETE").catch(() => {});
+      await graph(token, `/me/calendars/${vacCalId}/events/${r.calendarEventId}`, "DELETE").catch(() => {});
       await ref.update({ calendarEventId: null }).catch(() => {});
     }
     return { action: "removed" };
   }
 
-  // APPROVED → ensure event exists
+  // APPROVED → ensure event exists on the Vacation calendar
   if (r.status === "APPROVED" && !r.calendarEventId && r.startDate) {
     const name = r.employeeName || "Employee";
     const endD = new Date(r.endDate || r.startDate);
     endD.setDate(endD.getDate() + 1); // Graph all-day end is exclusive
     const endDate = endD.toISOString().slice(0, 10);
 
-    const created = await graph(token, `/me/calendars/${CAL_ID}/events`, "POST", {
+    const created = await graph(token, `/me/calendars/${vacCalId}/events`, "POST", {
       subject: `${name} Vacation`,
       start: { dateTime: `${r.startDate}T00:00:00`, timeZone: "America/Toronto" },
       end:   { dateTime: `${endDate}T00:00:00`,     timeZone: "America/Toronto" },
@@ -64,7 +64,7 @@ export const syncVacationEvent = onCall({ cors: true }, async (request) => {
 
   // Not APPROVED → remove any existing event
   if (r.status !== "APPROVED" && r.calendarEventId) {
-    await graph(token, `/me/calendars/${CAL_ID}/events/${r.calendarEventId}`, "DELETE").catch(() => {});
+    await graph(token, `/me/calendars/${vacCalId}/events/${r.calendarEventId}`, "DELETE").catch(() => {});
     await ref.update({ calendarEventId: null });
     return { action: "deleted" };
   }

@@ -156,6 +156,7 @@ export default function OnCallManagerPage() {
   const [addMultiDay,setAddMultiDay]=useState(false);
   const [addEndDate,setAddEndDate]=useState("");
   const [addSubmitting,setAddSubmitting]=useState(false);
+  const [vacCalId,setVacCalId]=useState("");
 
   // Auth user
   useEffect(()=>{ return onAuthStateChanged(auth, u=>{ if(u) setCurrentUser({uid:u.uid,displayName:u.displayName||u.email||"Me"}); }); },[]);
@@ -230,6 +231,18 @@ export default function OnCallManagerPage() {
       setEvents(evs); setLoading(false);
     })().catch(()=>setLoading(false));
   },[accessToken,year,month,refreshKey]);
+
+  // Resolve the dedicated "Vacation" calendar id (for adding vacation events)
+  useEffect(()=>{
+    if(!accessToken) return;
+    (async()=>{
+      try{
+        const d=await graphFetch(accessToken,"/me/calendars?$top=100");
+        const cal=(d.value||[]).find((c:any)=>(c.name||"").toLowerCase().includes("vacation"));
+        if(cal?.id) setVacCalId(cal.id);
+      }catch{}
+    })();
+  },[accessToken]);
 
   async function connectOutlook() {
     const v=genVerifier(), c=await genChallenge(v);
@@ -468,42 +481,42 @@ export default function OnCallManagerPage() {
   // Admin: add an on-call or vacation event (one day or a range) from the calendar grid
   async function submitAddEvent(){
     if(!addModal||!accessToken||!addName.trim()) return;
+    const isVac = addType==="vacation";
+    if(isVac && !vacCalId){ window.alert("No Vacation calendar found in Outlook. Create a calendar named \"Vacation\" first."); return; }
     setAddSubmitting(true);
-    const subject = addType==="vacation" ? `${addName.trim()} Vacation` : `${addName.trim()} On Call`;
+    const subject = isVac ? `${addName.trim()} Vacation` : `${addName.trim()} On Call`;
+    const targetCal = isVac ? vacCalId : CAL_ID;
     const startDate = addModal.date;
     const lastDate  = addMultiDay && addEndDate ? addEndDate : startDate;
     try{
-      // One all-day event per day so each day shows on the grid
-      const days:string[]=[];
-      let d=new Date(startDate); const last=new Date(lastDate);
-      while(d<=last){ days.push(d.toISOString().slice(0,10)); d.setDate(d.getDate()+1); }
-      for(const day of days){
-        const nx=new Date(day); nx.setDate(nx.getDate()+1);
-        await graphFetch(accessToken,`/me/calendars/${CAL_ID}/events`,"POST",{
+      if(isVac){
+        // Single multi-day all-day event on the Vacation calendar
+        const nx=new Date(lastDate); nx.setDate(nx.getDate()+1);
+        await graphFetch(accessToken,`/me/calendars/${targetCal}/events`,"POST",{
           subject,
-          start:{dateTime:`${day}T00:00:00`,timeZone:"America/Toronto"},
+          start:{dateTime:`${startDate}T00:00:00`,timeZone:"America/Toronto"},
           end:{dateTime:`${nx.toISOString().slice(0,10)}T00:00:00`,timeZone:"America/Toronto"},
           isAllDay:true
         });
+      } else {
+        // One all-day event per day so each day shows on the on-call grid
+        const days:string[]=[];
+        let d=new Date(startDate); const last=new Date(lastDate);
+        while(d<=last){ days.push(d.toISOString().slice(0,10)); d.setDate(d.getDate()+1); }
+        for(const day of days){
+          const nx=new Date(day); nx.setDate(nx.getDate()+1);
+          await graphFetch(accessToken,`/me/calendars/${targetCal}/events`,"POST",{
+            subject,
+            start:{dateTime:`${day}T00:00:00`,timeZone:"America/Toronto"},
+            end:{dateTime:`${nx.toISOString().slice(0,10)}T00:00:00`,timeZone:"America/Toronto"},
+            isAllDay:true
+          });
+        }
       }
       setAddModal(null); setAddName(""); setAddType("oncall"); setAddMultiDay(false); setAddEndDate("");
       setRefreshKey(k=>k+1);
     }catch{ window.alert("Failed to add event. Try again."); }
     setAddSubmitting(false);
-  }
-
-  // Admin: delete a vacation event straight from the calendar grid
-  async function deleteVacationEvent(ev:CalEvent){
-    if(!isAdmin||!accessToken) return;
-    const who=getName(ev.subject);
-    if(!window.confirm(`Remove ${who}'s vacation (${ev.start}) from the calendar?`)) return;
-    try{
-      await graphFetch(accessToken,`/me/events/${ev.id}`,"DELETE");
-      setEvents(prev=>prev.filter(e=>e.id!==ev.id));
-      // Clean up any linked time-off request so it doesn't re-sync
-      const qs=await getDocs(query(collection(db,"timeOffRequests"),where("calendarEventId","==",ev.id)));
-      for(const d of qs.docs) await deleteDoc(doc(db,"timeOffRequests",d.id));
-    }catch{ window.alert("Failed to remove vacation. Try again."); }
   }
 
   const eventMap:Record<string,CalEvent[]>={};
@@ -545,8 +558,7 @@ export default function OnCallManagerPage() {
           </div>
           <div style={{display:"flex",gap:16,marginBottom:14,flexWrap:"wrap",alignItems:"center"}}>
             <span style={{background:"#1565c0",color:"#fff",fontSize:11,fontWeight:600,padding:"2px 8px",borderRadius:99}}>📞 On Call</span>
-            <span style={{background:"#f97316",color:"#fff",fontSize:11,fontWeight:600,padding:"2px 8px",borderRadius:99}}>🏖 Vacation</span>
-            {connected&&<span style={{fontSize:11,color:"#9ca3af"}}>Click your on-call day to request a swap{isAdmin?" · tap a 🏖 vacation to remove it":""}</span>}
+            {connected&&<span style={{fontSize:11,color:"#9ca3af"}}>Click your on-call day to request a swap{isAdmin?" · tap ＋ to add an event":""}</span>}
           </div>
           {loading&&<div style={{textAlign:"center",padding:40,color:"#9ca3af"}}>⏳ Loading...</div>}
           {!connected&&!loading&&<div style={{textAlign:"center",padding:40,color:"#9ca3af"}}>Connect Outlook above to view the calendar.</div>}
@@ -554,10 +566,8 @@ export default function OnCallManagerPage() {
             <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:3}}>
               {DAYS.map(d=><div key={d} style={{textAlign:"center",fontSize:12,fontWeight:700,color:"#6b7280",padding:"8px 0",textTransform:"uppercase"}}>{d}</div>)}
               {grid.map((date,i)=>{
-                const allDay=date?(eventMap[date]||[]):[];
                 const isOnCall=(s:string)=>{const l=s.toLowerCase();return(l.includes("on call")||l.includes("oncall"))&&!l.includes("vacation");};
-                const dayEvs=allDay.filter(e=>isOnCall(e.subject));
-                const vacEvs=allDay.filter(e=>e.subject.toLowerCase().includes("vacation"));
+                const dayEvs=date?(eventMap[date]||[]).filter(e=>isOnCall(e.subject)):[];
                 const isToday=date===todayStr;
                 const myOncall=dayEvs.find(e=>getName(e.subject).toLowerCase()===currentUser?.displayName?.split(" ")[0].toLowerCase());
                 // Admin can click any on-call event; user can only click their own
@@ -573,13 +583,6 @@ export default function OnCallManagerPage() {
                       {dayEvs.map(ev=>{const c=pillStyle(ev.subject);const n=getName(ev.subject);return(
                         <div key={ev.id} style={{fontSize:11,fontWeight:600,background:c.bg,color:c.color,borderRadius:4,padding:"2px 5px",marginBottom:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
                           {c.prefix}{n}
-                        </div>);})}
-                      {vacEvs.map(ev=>{const c=pillStyle(ev.subject);const n=getName(ev.subject);return(
-                        <div key={ev.id}
-                          title={isAdmin?"Tap to remove this vacation":undefined}
-                          onClick={isAdmin?(e)=>{e.stopPropagation();deleteVacationEvent(ev);}:undefined}
-                          style={{fontSize:11,fontWeight:600,background:c.bg,color:c.color,borderRadius:4,padding:"2px 5px",marginBottom:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",cursor:isAdmin?"pointer":"default"}}>
-                          {c.prefix}{n}{isAdmin?" ✕":""}
                         </div>);})}
                       {clickableOncall&&<div style={{fontSize:9,color:"#1565c0",marginTop:2}}>tap to swap</div>}
                     </>}
