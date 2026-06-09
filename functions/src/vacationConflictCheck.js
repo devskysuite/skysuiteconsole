@@ -2,31 +2,31 @@ import { onSchedule } from "firebase-functions/v2/scheduler";
 import { getOutlookAccessToken } from "./utils/getOutlookToken.js";
 import { SHARED_CAL_ID } from "./utils/getVacationCalendar.js";
 import { sendSms } from "./utils/twilio.js";
+import { firstNameFromSubject, findUserByFirstName, eventDays } from "./utils/names.js";
 import { db } from "./utils/firestore.js";
 
-function firstName(subject) {
-  return (subject || "").replace(/on ?call/ig, "").replace(/vacation/ig, "").replace(/[-–]/g, " ").trim().split(/\s+/)[0]?.toLowerCase() || "";
-}
+const TZ = "America/Toronto";
 
 // Each morning at 7:00, checks the next 365 days for anyone scheduled on call
 // on a day they're also on vacation, and texts a single alert number.
 export const vacationConflictCheck = onSchedule(
-  { schedule: "every day 07:00", timeZone: "America/Toronto", timeoutSeconds: 300 },
+  { schedule: "every day 07:00", timeZone: TZ, timeoutSeconds: 300 },
   async () => {
     const cfg = (await db.collection("settings").doc("onCallConfig").get()).data() || {};
     const alertPhone = cfg.alertPhone;
     if (!alertPhone) { console.log("[conflictCheck] No alertPhone set; skipping."); return; }
 
     const token = await getOutlookAccessToken();
-    const start = new Date().toISOString().slice(0, 10);
+    const start = new Date().toLocaleDateString("en-CA", { timeZone: TZ });
     const endD  = new Date(); endD.setDate(endD.getDate() + 365);
-    const end   = endD.toISOString().slice(0, 10);
+    const end   = endD.toLocaleDateString("en-CA", { timeZone: TZ });
 
     // Map: date → { oncall:Set<name>, vacation:Set<name> }
     const byDate = {};
+    const headers = { Authorization: `Bearer ${token}`, Prefer: `outlook.timezone="${TZ}"` };
     let url = `https://graph.microsoft.com/v1.0/me/calendars/${encodeURIComponent(SHARED_CAL_ID)}/calendarView?startDateTime=${start}T00:00:00&endDateTime=${end}T23:59:59&$top=999&$select=subject,start,end`;
     while (url) {
-      const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+      const res = await fetch(url, { headers });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error?.message || "Graph error");
       for (const e of json.value || []) {
@@ -34,16 +34,11 @@ export const vacationConflictCheck = onSchedule(
         const isVac = s.includes("vacation");
         const isOnCall = (s.includes("on call") || s.includes("oncall")) && !isVac;
         if (!isVac && !isOnCall) continue;
-        const name = firstName(e.subject);
+        const name = firstNameFromSubject(e.subject);
         if (!name) continue;
-        // Expand across the event's day range
-        let cur = new Date((e.start?.date || e.start?.dateTime?.slice(0, 10)) + "T12:00:00");
-        const last = new Date((e.end?.date || e.end?.dateTime?.slice(0, 10) || e.start?.date) + "T12:00:00");
-        while (cur < last) {
-          const d = cur.toISOString().slice(0, 10);
+        for (const d of eventDays(e)) {
           if (!byDate[d]) byDate[d] = { oncall: new Set(), vacation: new Set() };
           byDate[d][isVac ? "vacation" : "oncall"].add(name);
-          cur.setDate(cur.getDate() + 1);
         }
       }
       url = json["@odata.nextLink"] || null;
@@ -73,10 +68,10 @@ export const vacationConflictCheck = onSchedule(
     const byPerson = {};
     for (const c of conflicts) { (byPerson[c.name] ||= []).push(c.date); }
     for (const [name, dates] of Object.entries(byPerson)) {
-      const user = users.find(u => (u.displayName || "").split(" ")[0].toLowerCase() === name && u.phone);
-      if (!user) { console.log(`[conflictCheck] No phone for ${name}.`); continue; }
-      const list = dates.sort().join(", ");
       try {
+        const user = findUserByFirstName(users, name);
+        if (!user?.phone) { console.log(`[conflictCheck] No phone for ${name}.`); continue; }
+        const list = dates.sort().join(", ");
         await sendSms(user.phone, `Heads up ${cap(name)} — you're scheduled on call during your vacation: ${list}. Please arrange a swap. - SkySuite`);
       } catch (e) { console.error(`[conflictCheck] ${name}:`, e.message); }
     }
