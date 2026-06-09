@@ -17,26 +17,23 @@ interface Customer {
   billingAddress: string; businessAddress: string;
   createdBy: string; createdOn: string; customerType: string;
   email: string; phone: string; tags: string; syncStatus: string;
+  creditLimit?: number;
+  pricebook?: string;
+  taxCode?: string;
+  taxExemptId?: string;
+  paymentTerms?: string;
+  invoicePreset?: string;
+  invoiceDelivery?: string;
 }
 interface Property {
   id?: string;
-  name: string;
-  status: string;
-  customerName: string;
-  customerId?: string;
-  propertyType: string;
-  openJobs: number;
-  openJobsValue: number;
-  outstandingBalance: number;
-  overdueBalance: number;
-  propertyAddress: string;
-  accountNumber: string;
-  billingAddress: string;
-  billingCustomer: string;
-  createdBy: string;
-  createdOn: string;
-  customerType: string;
-  tags: string;
+  name: string; status: string; customerName: string; customerId?: string;
+  propertyType: string; openJobs: number; openJobsValue: number;
+  outstandingBalance: number; overdueBalance: number;
+  propertyAddress: string; accountNumber: string; billingAddress: string;
+  billingCustomer: string; createdBy: string; createdOn: string;
+  customerType: string; tags: string;
+  customerRole?: string; jobsCompleted?: number;
 }
 interface Contact {
   id?: string; name: string; role: string; email: string; phone: string;
@@ -47,17 +44,23 @@ function fmt$(n: number): string {
   if (!n) return "$0.00";
   return "$" + n.toLocaleString("en-CA", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
+function mapsUrl(addr: string): string {
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(addr)}`;
+}
 
 const TYPE_COLORS: Record<string, { background: string; color: string }> = {
-  Industrial:           { background: "#dbeafe", color: "#1e40af" },
-  Commercial:           { background: "#ede9fe", color: "#6d28d9" },
-  Institutional:        { background: "#d1fae5", color: "#065f46" },
-  "Property Manager":   { background: "#fef3c7", color: "#92400e" },
-  Construction:         { background: "#fee2e2", color: "#991b1b" },
-  Other:                { background: "#f3f4f6", color: "#374151" },
+  Industrial:         { background: "#dbeafe", color: "#1e40af" },
+  Commercial:         { background: "#ede9fe", color: "#6d28d9" },
+  Institutional:      { background: "#d1fae5", color: "#065f46" },
+  "Property Manager": { background: "#fef3c7", color: "#92400e" },
+  Construction:       { background: "#fee2e2", color: "#991b1b" },
+  Other:              { background: "#f3f4f6", color: "#374151" },
 };
 
-// ── Small building-block components ───────────────────────────────────────────
+const ALL_TABS = ["Properties","Contacts","Jobs & Visits","Service Agreements","Projects","Quotes","Accounting","Attachments","History"] as const;
+type Tab = typeof ALL_TABS[number];
+
+// ── Building blocks ───────────────────────────────────────────────────────────
 function SideLabel({ children }: { children: React.ReactNode }) {
   return <div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 4 }}>{children}</div>;
 }
@@ -69,10 +72,10 @@ function SideSection({ label, children }: { label: string; children: React.React
     </div>
   );
 }
-function InfoField({ label, children, span = 1 }: { label: string; children: React.ReactNode; span?: number }) {
+function StatField({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div style={{ gridColumn: `span ${span}` }}>
-      <div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 4 }}>{label}</div>
+    <div style={{ flex: 1, minWidth: 110, paddingRight: 16 }}>
+      <div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 }}>{label}</div>
       <div style={{ fontSize: 13, color: "#111827", fontWeight: 500 }}>{children}</div>
     </div>
   );
@@ -80,11 +83,27 @@ function InfoField({ label, children, span = 1 }: { label: string; children: Rea
 function TabBtn({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
   return (
     <button onClick={onClick} style={{
-      padding: "12px 18px", fontWeight: 600, fontSize: 14, cursor: "pointer",
-      background: "none", border: "none",
+      padding: "12px 16px", fontWeight: 600, fontSize: 13, cursor: "pointer",
+      background: "none", border: "none", whiteSpace: "nowrap" as const,
       borderBottom: active ? "2px solid #1565c0" : "2px solid transparent",
       color: active ? "#1565c0" : "#6b7280", marginBottom: -1,
     }}>{label}</button>
+  );
+}
+function MapLink({ address }: { address: string }) {
+  if (!address) return null;
+  return (
+    <a
+      href={mapsUrl(address)}
+      target="_blank"
+      rel="noopener noreferrer"
+      style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 6, fontSize: 11, color: "#1565c0", textDecoration: "none", fontWeight: 500 }}
+    >
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+        <path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/>
+      </svg>
+      View on Maps
+    </a>
   );
 }
 
@@ -94,13 +113,14 @@ export default function CustomerDetailPage() {
   const navigate      = useNavigate();
   const isAdmin       = useIsAdmin();
 
-  const [customer,   setCustomer]   = useState<Customer | null>(null);
-  const [loading,    setLoading]    = useState(true);
-  const [tab,        setTab]        = useState<"properties"|"contacts"|"notes">("properties");
-  const [properties, setProperties] = useState<Property[]>([]);
-  const [contacts,   setContacts]   = useState<Contact[]>([]);
-  const [notes,      setNotes]      = useState("");
-  const [notesSaved, setNotesSaved] = useState(false);
+  const [customer,       setCustomer]       = useState<Customer | null>(null);
+  const [loading,        setLoading]        = useState(true);
+  const [tab,            setTab]            = useState<Tab>("Properties");
+  const [properties,     setProperties]     = useState<Property[]>([]);
+  const [contacts,       setContacts]       = useState<Contact[]>([]);
+  const [notes,          setNotes]          = useState("");
+  const [notesSaved,     setNotesSaved]     = useState(false);
+  const [showNoteInput,  setShowNoteInput]  = useState(false);
 
   // Properties pagination
   type PropPageSize = 25 | 50 | 75 | 100;
@@ -114,12 +134,12 @@ export default function CustomerDetailPage() {
   const propRangeStart = propSafePage * propPageSize + 1;
   const propRangeEnd   = Math.min(propSafePage * propPageSize + propPageSize, properties.length);
 
-  // Edit modals
+  // Modals
   const [editModal,    setEditModal]    = useState(false);
   const [propModal,    setPropModal]    = useState<Property | null | "new">(null);
   const [contactModal, setContactModal] = useState<Contact | null | "new">(null);
 
-  // Load customer doc
+  // Load customer
   useEffect(() => {
     if (!customerId) return;
     getDoc(doc(db, "customers", customerId)).then(snap => {
@@ -128,7 +148,7 @@ export default function CustomerDetailPage() {
     }).catch(() => setLoading(false));
   }, [customerId]);
 
-  // Properties — top-level collection filtered by customerId
+  // Properties
   useEffect(() => {
     if (!customerId) return;
     return onSnapshot(
@@ -137,7 +157,7 @@ export default function CustomerDetailPage() {
     );
   }, [customerId]);
 
-  // Contacts sub-collection
+  // Contacts
   useEffect(() => {
     if (!customerId) return;
     return onSnapshot(collection(db, "customers", customerId, "contacts"), snap => {
@@ -145,7 +165,7 @@ export default function CustomerDetailPage() {
     });
   }, [customerId]);
 
-  // Notes doc
+  // Notes
   useEffect(() => {
     if (!customerId) return;
     getDoc(doc(db, "customers", customerId, "meta", "notes")).then(snap => {
@@ -156,7 +176,8 @@ export default function CustomerDetailPage() {
   async function saveNotes() {
     if (!customerId) return;
     await setDoc(doc(db, "customers", customerId, "meta", "notes"), { text: notes });
-    setNotesSaved(true); setTimeout(() => setNotesSaved(false), 2000);
+    setNotesSaved(true); setShowNoteInput(false);
+    setTimeout(() => setNotesSaved(false), 2000);
   }
 
   async function saveCustomer(data: Partial<Customer>) {
@@ -168,7 +189,6 @@ export default function CustomerDetailPage() {
 
   async function saveProperty(data: Property) {
     if (!customerId || !customer) return;
-    // Always write to top-level properties collection, stamping customerId + customerName
     const payload: Property = { ...data, customerId, customerName: customer.name };
     if (data.id) {
       const { id: _id, ...rest } = payload;
@@ -211,53 +231,77 @@ export default function CustomerDetailPage() {
   const tc = customer.customerType ? (TYPE_COLORS[customer.customerType] || TYPE_COLORS.Other) : null;
 
   return (
-    <div style={{ minHeight: "100vh", background: "#f9fafb" }}>
+    <div style={{ minHeight: "100vh", background: "#f3f4f6" }}>
 
       {/* ── Breadcrumb ── */}
-      <div style={{ background: "#fff", borderBottom: "1px solid #e5e7eb", padding: "0 0 0 0" }}>
-        <div style={{ padding: "8px 24px", fontSize: 12, color: "#9ca3af" }}>
-          <Link to="/customers" style={{ color: "#1565c0", textDecoration: "none", fontWeight: 500 }}>Customers</Link>
-          <span style={{ margin: "0 6px" }}>/</span>
-          <span>View customer</span>
-        </div>
+      <div style={{ background: "#fff", borderBottom: "1px solid #e5e7eb", padding: "8px 24px", fontSize: 12, color: "#9ca3af" }}>
+        <Link to="/customers" style={{ color: "#1565c0", textDecoration: "none", fontWeight: 500 }}>Customers</Link>
+        <span style={{ margin: "0 6px" }}>/</span>
+        <span>View customer</span>
+      </div>
 
-        {/* Customer name header */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 24px 16px", flexWrap: "wrap", gap: 10 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-            {/* Circle icon */}
-            <div style={{ width: 28, height: 28, borderRadius: "50%", background: "#1565c0", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-            </div>
-            <h1 style={{ fontSize: 22, fontWeight: 800, color: "#0d2e5e", margin: 0 }}>{customer.name}</h1>
-            <span style={{ fontSize: 13, color: "#9ca3af", fontWeight: 500 }}>{customer.code}</span>
-            <span style={{ background: "#dcfce7", color: "#166534", fontSize: 12, fontWeight: 700, padding: "3px 10px", borderRadius: 99 }}>{customer.status}</span>
-            {tc && <span style={{ ...tc, fontSize: 12, fontWeight: 600, padding: "3px 10px", borderRadius: 99 }}>{customer.customerType}</span>}
+      {/* ── Title bar ── */}
+      <div style={{ background: "#fff", borderBottom: "1px solid #e5e7eb", padding: "12px 24px 14px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          <div style={{ width: 30, height: 30, borderRadius: "50%", background: "#1565c0", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5">
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+            </svg>
           </div>
-          {isAdmin && (
-            <button onClick={() => setEditModal(true)} style={{ ...btnS("#1565c0"), fontSize: 13 }}>Edit</button>
-          )}
+          <h1 style={{ fontSize: 22, fontWeight: 800, color: "#0d2e5e", margin: 0 }}>{customer.name}</h1>
+          <span style={{
+            background: customer.status === "Active" ? "#dcfce7" : "#f3f4f6",
+            color: customer.status === "Active" ? "#166534" : "#6b7280",
+            fontSize: 12, fontWeight: 700, padding: "3px 10px", borderRadius: 99,
+          }}>{customer.status}</span>
+          {tc && <span style={{ ...tc, fontSize: 12, fontWeight: 600, padding: "3px 10px", borderRadius: 99 }}>{customer.customerType}</span>}
+          {customer.code && <span style={{ fontSize: 12, color: "#9ca3af", fontWeight: 500 }}>{customer.code}</span>}
         </div>
+        {isAdmin && (
+          <button onClick={() => setEditModal(true)} style={{ ...btnS("#1565c0"), fontSize: 13 }}>Edit</button>
+        )}
       </div>
 
       {/* ── Two-column body ── */}
-      <div style={{ display: "flex", alignItems: "flex-start", minHeight: "calc(100vh - 140px)" }}>
+      <div style={{ display: "flex", alignItems: "flex-start" }}>
 
         {/* ── Left sidebar ── */}
-        <div style={{ width: 200, flexShrink: 0, borderRight: "1px solid #e5e7eb", padding: "24px 20px", background: "#fff", minHeight: "100%", alignSelf: "stretch" }}>
+        <div style={{ width: 220, flexShrink: 0, borderRight: "1px solid #e5e7eb", padding: "24px 20px", background: "#fff", minHeight: "calc(100vh - 140px)", alignSelf: "stretch" }}>
+
           <SideSection label="Billing Address">
-            {customer.billingAddress
-              ? customer.billingAddress.split(", ").map((line, i) => <div key={i}>{line}</div>)
-              : <span style={{ color: "#d1d5db" }}>—</span>}
+            {customer.billingAddress ? (
+              <>
+                <div style={{ fontSize: 12, fontWeight: 600, color: "#374151", marginBottom: 2 }}>
+                  Bill To: {customer.name}
+                </div>
+                {customer.billingAddress.split(/,\s*/).map((line, i) => (
+                  <div key={i}>{line}</div>
+                ))}
+                <MapLink address={customer.billingAddress} />
+              </>
+            ) : (
+              <span style={{ color: "#d1d5db" }}>—</span>
+            )}
           </SideSection>
 
           <SideSection label="Business Address">
-            {customer.businessAddress
-              ? customer.businessAddress.split(", ").map((line, i) => <div key={i}>{line}</div>)
-              : <span style={{ color: "#d1d5db" }}>—</span>}
+            {customer.businessAddress ? (
+              <>
+                <div style={{ fontSize: 12, fontWeight: 600, color: "#374151", marginBottom: 2 }}>
+                  Ship To: {customer.name}
+                </div>
+                {customer.businessAddress.split(/,\s*/).map((line, i) => (
+                  <div key={i}>{line}</div>
+                ))}
+                <MapLink address={customer.businessAddress} />
+              </>
+            ) : (
+              <span style={{ color: "#d1d5db" }}>—</span>
+            )}
           </SideSection>
 
           <SideSection label="No of Properties">
-            <strong>{customer.numberOfProperties || properties.length || "—"}</strong>
+            <strong style={{ fontSize: 15 }}>{customer.numberOfProperties || properties.length || 0}</strong>
           </SideSection>
 
           <SideSection label="Email Address">
@@ -271,86 +315,118 @@ export default function CustomerDetailPage() {
               ? <a href={`tel:${customer.phone}`} style={{ color: "#1565c0", textDecoration: "none" }}>{customer.phone}</a>
               : <span style={{ color: "#d1d5db" }}>—</span>}
           </SideSection>
-
-          <SideSection label="Created By">
-            {customer.createdBy || <span style={{ color: "#d1d5db" }}>—</span>}
-          </SideSection>
-
-          <SideSection label="Created On">
-            {customer.createdOn || <span style={{ color: "#d1d5db" }}>—</span>}
-          </SideSection>
         </div>
 
         {/* ── Main content ── */}
         <div style={{ flex: 1, minWidth: 0 }}>
 
-          {/* Info grid */}
-          <div style={{ background: "#fff", borderBottom: "1px solid #e5e7eb", padding: "20px 28px" }}>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: "16px 24px", marginBottom: 16 }}>
-              <InfoField label="Credit Limit">
-                {customer.outstandingBalance > 0 || customer.overdueBalance > 0 ? "—" : "—"}
-              </InfoField>
-              <InfoField label="Outstanding Balance">
+          {/* ── Stats strip 1: Type / Tax / Notes ── */}
+          <div style={{ background: "#fff", borderBottom: "1px solid #e5e7eb", padding: "16px 24px" }}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "12px 0" }}>
+              <StatField label="Customer Type">
+                {customer.customerType
+                  ? <span style={{ ...(tc || TYPE_COLORS.Other), fontSize: 12, fontWeight: 600, padding: "2px 10px", borderRadius: 99 }}>{customer.customerType}</span>
+                  : <span style={{ color: "#9ca3af" }}>—</span>}
+              </StatField>
+              <StatField label="Pricebook">
+                {customer.pricebook || <span style={{ color: "#9ca3af" }}>—</span>}
+              </StatField>
+              <StatField label="Tax Code">
+                {customer.taxCode || <span style={{ color: "#9ca3af" }}>—</span>}
+              </StatField>
+              <StatField label="Tax Exempt ID">
+                {customer.taxExemptId || <span style={{ color: "#9ca3af" }}>—</span>}
+              </StatField>
+              <div style={{ flex: 2, minWidth: 180 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 }}>Customer Notes</div>
+                {showNoteInput ? (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    <textarea
+                      value={notes}
+                      onChange={e => setNotes(e.target.value)}
+                      style={{ width: "100%", minHeight: 60, padding: "6px 8px", border: "1px solid #d1d5db", borderRadius: 6, fontSize: 13, fontFamily: "inherit", resize: "vertical", boxSizing: "border-box" as const }}
+                    />
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <button onClick={saveNotes} style={{ ...btnS("#1565c0"), fontSize: 12, padding: "4px 12px" }}>Save</button>
+                      <button onClick={() => setShowNoteInput(false)} style={{ ...btnS("#6b7280"), fontSize: 12, padding: "4px 12px" }}>Cancel</button>
+                    </div>
+                  </div>
+                ) : notes ? (
+                  <div
+                    style={{ fontSize: 13, color: "#374151", cursor: isAdmin ? "pointer" : "default", lineHeight: 1.5 }}
+                    onClick={() => isAdmin && setShowNoteInput(true)}
+                  >
+                    {notes}
+                    {notesSaved && <span style={{ marginLeft: 8, fontSize: 11, color: "#059669", fontWeight: 600 }}>Saved</span>}
+                  </div>
+                ) : (
+                  <button onClick={() => setShowNoteInput(true)} style={{ background: "none", border: "none", padding: 0, color: "#1565c0", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+                    + Add note
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* ── Stats strip 2: Financials ── */}
+          <div style={{ background: "#fff", borderBottom: "1px solid #e5e7eb", padding: "16px 24px" }}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "12px 0" }}>
+              <StatField label="Credit Limit">
+                {customer.creditLimit ? fmt$(customer.creditLimit) : <span style={{ color: "#9ca3af" }}>—</span>}
+              </StatField>
+              <StatField label="Outstanding Balance">
                 <span style={{ color: customer.outstandingBalance > 0 ? "#dc2626" : "#111827", fontWeight: customer.outstandingBalance > 0 ? 700 : 500 }}>
                   {fmt$(customer.outstandingBalance)}
                 </span>
-              </InfoField>
-              <InfoField label="Overdue Balance">
+              </StatField>
+              <StatField label="Overdue Balance">
                 <span style={{ color: customer.overdueBalance > 0 ? "#dc2626" : "#111827", fontWeight: customer.overdueBalance > 0 ? 700 : 500 }}>
                   {fmt$(customer.overdueBalance)}
                 </span>
-              </InfoField>
-              <InfoField label="Last Payment">
-                {customer.lastPayment ? fmt$(customer.lastPayment) : "—"}
-              </InfoField>
-              <InfoField label="Last Payment Date">
-                {customer.lastPaymentDate || "—"}
-              </InfoField>
-              <InfoField label="Open Jobs">
-                <span style={{ fontWeight: customer.openJobs > 0 ? 700 : 400 }}>{customer.openJobs}</span>
-              </InfoField>
-              <InfoField label="Open Jobs Value">
-                {customer.openJobsValue > 0 ? fmt$(customer.openJobsValue) : "—"}
-              </InfoField>
+              </StatField>
+              <StatField label="Payment Terms">
+                {customer.paymentTerms || <span style={{ color: "#9ca3af" }}>—</span>}
+              </StatField>
+              <StatField label="Invoice Preset">
+                {customer.invoicePreset || <span style={{ color: "#9ca3af" }}>—</span>}
+              </StatField>
+              <StatField label="Invoice Delivery">
+                {customer.invoiceDelivery || <span style={{ color: "#9ca3af" }}>—</span>}
+              </StatField>
             </div>
+          </div>
 
-            {/* Sync status */}
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{ fontSize: 12, color: "#6b7280" }}>Sync Status:</span>
-              <span style={{ background: "#dcfce7", color: "#166534", fontSize: 12, fontWeight: 600, padding: "2px 10px", borderRadius: 99 }}>
-                {customer.syncStatus || "In Sync"}
-              </span>
-            </div>
+          {/* ── Accounting sync ── */}
+          <div style={{ background: "#fff", borderBottom: "1px solid #e5e7eb", padding: "10px 24px", display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{ fontSize: 12, fontWeight: 600, color: "#6b7280" }}>Accounting Software Sync Status</span>
+            <span style={{ background: "#dcfce7", color: "#166534", fontSize: 12, fontWeight: 700, padding: "2px 10px", borderRadius: 99 }}>
+              {customer.syncStatus || "Synced"}
+            </span>
           </div>
 
           {/* ── Tabs ── */}
-          <div style={{ background: "#fff", borderBottom: "1px solid #e5e7eb", padding: "0 28px", display: "flex", gap: 0 }}>
-            <TabBtn label="Properties" active={tab === "properties"} onClick={() => setTab("properties")} />
-            <TabBtn label="Contacts"   active={tab === "contacts"}   onClick={() => setTab("contacts")} />
-            <TabBtn label="Notes"      active={tab === "notes"}      onClick={() => setTab("notes")} />
+          <div style={{ background: "#fff", borderBottom: "1px solid #e5e7eb", padding: "0 24px", display: "flex", overflowX: "auto" }}>
+            {ALL_TABS.map(t => (
+              <TabBtn key={t} label={t} active={tab === t} onClick={() => setTab(t)} />
+            ))}
           </div>
 
-          <div style={{ padding: "24px 28px" }}>
+          <div style={{ padding: "24px" }}>
 
             {/* ── Properties tab ── */}
-            {tab === "properties" && (
+            {tab === "Properties" && (
               <>
-                {/* Toolbar: row-size picker left, Add button right */}
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, flexWrap: "wrap", gap: 10 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <span style={{ fontSize: 12, color: "#6b7280", whiteSpace: "nowrap" }}>Rows per page:</span>
                     <div style={{ display: "flex", gap: 4 }}>
                       {PROP_PAGE_SIZES.map(s => (
-                        <button
-                          key={s}
-                          onClick={() => setPropPageSize(s)}
-                          style={{
-                            padding: "3px 10px", fontSize: 12, fontWeight: 600, borderRadius: 6, cursor: "pointer",
-                            border: "1px solid " + (propPageSize === s ? "#1565c0" : "#d1d5db"),
-                            background: propPageSize === s ? "#1565c0" : "#fff",
-                            color: propPageSize === s ? "#fff" : "#374151",
-                          }}
-                        >{s}</button>
+                        <button key={s} onClick={() => setPropPageSize(s)} style={{
+                          padding: "3px 10px", fontSize: 12, fontWeight: 600, borderRadius: 6, cursor: "pointer",
+                          border: "1px solid " + (propPageSize === s ? "#1565c0" : "#d1d5db"),
+                          background: propPageSize === s ? "#1565c0" : "#fff",
+                          color: propPageSize === s ? "#fff" : "#374151",
+                        }}>{s}</button>
                       ))}
                     </div>
                     {properties.length > 0 && (
@@ -372,18 +448,17 @@ export default function CustomerDetailPage() {
                   </div>
                 ) : (
                   <>
-                    <div style={{ overflowX: "auto" }}>
+                    <div style={{ overflowX: "auto", background: "#fff", borderRadius: 8, border: "1px solid #e5e7eb" }}>
                       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                         <thead>
-                          <tr style={{ borderBottom: "2px solid #e5e7eb" }}>
+                          <tr style={{ borderBottom: "2px solid #e5e7eb", background: "#f9fafb" }}>
                             <th style={th}>Name</th>
-                            <th style={th}>Status</th>
-                            <th style={th}>Type</th>
+                            <th style={th}>Property Type</th>
                             <th style={th}>Property Address</th>
-                            <th style={{ ...th, textAlign: "center" as const }}>Open Jobs</th>
-                            <th style={th}>Outstanding</th>
-                            <th style={th}>Overdue</th>
-                            <th style={{ ...th, width: 44 }}></th>
+                            <th style={th}>Customer Role</th>
+                            <th style={{ ...th, textAlign: "center" as const }}>Jobs Completed</th>
+                            <th style={th}>Activity</th>
+                            {isAdmin && <th style={{ ...th, width: 44 }}></th>}
                           </tr>
                         </thead>
                         <tbody>
@@ -391,35 +466,39 @@ export default function CustomerDetailPage() {
                             <tr key={p.id} style={{ borderBottom: "1px solid #f3f4f6" }}
                                 onMouseEnter={e => (e.currentTarget.style.background = "#f9fafb")}
                                 onMouseLeave={e => (e.currentTarget.style.background = "")}>
-                              <td style={{ ...td, color: "#1565c0", fontWeight: 600, cursor: "pointer" }} onClick={() => setPropModal(p)}>{p.name}</td>
-                              <td style={td}>
-                                <span style={{ background: p.status === "Active" ? "#dcfce7" : "#f3f4f6", color: p.status === "Active" ? "#166534" : "#6b7280", fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 99 }}>
-                                  {p.status || "Active"}
-                                </span>
+                              <td style={{ ...td, fontWeight: 600 }}>
+                                {p.id
+                                  ? <Link to={`/properties/${p.id}`} style={{ color: "#1565c0", textDecoration: "none" }}>{p.name}</Link>
+                                  : <span style={{ color: "#1565c0" }}>{p.name}</span>}
                               </td>
-                              <td style={td}>{p.propertyType || "—"}</td>
-                              <td style={{ ...td, maxWidth: 220 }}>
+                              <td style={td}>{p.propertyType || <span style={{ color: "#9ca3af" }}>—</span>}</td>
+                              <td style={{ ...td, maxWidth: 240 }}>
                                 <span title={p.propertyAddress} style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>
-                                  {p.propertyAddress || "—"}
+                                  {p.propertyAddress || <span style={{ color: "#9ca3af" }}>—</span>}
                                 </span>
                               </td>
-                              <td style={{ ...td, textAlign: "center" as const, fontWeight: p.openJobs > 0 ? 700 : 400 }}>{p.openJobs ?? 0}</td>
-                              <td style={{ ...td, color: p.outstandingBalance > 0 ? "#dc2626" : "#374151", fontWeight: p.outstandingBalance > 0 ? 600 : 400 }}>
-                                {p.outstandingBalance > 0 ? fmt$(p.outstandingBalance) : "—"}
-                              </td>
-                              <td style={{ ...td, color: p.overdueBalance > 0 ? "#dc2626" : "#374151", fontWeight: p.overdueBalance > 0 ? 700 : 400 }}>
-                                {p.overdueBalance > 0 ? fmt$(p.overdueBalance) : "—"}
+                              <td style={td}>{p.customerRole || <span style={{ color: "#9ca3af" }}>—</span>}</td>
+                              <td style={{ ...td, textAlign: "center" as const }}>
+                                {p.jobsCompleted ?? p.openJobs ?? 0}
                               </td>
                               <td style={td}>
-                                {isAdmin && <button onClick={() => deleteProperty(p.id!)} style={{ background: "none", border: "none", cursor: "pointer", color: "#dc2626", fontSize: 13 }}>✕</button>}
+                                <span style={{
+                                  background: p.status === "Active" ? "#dcfce7" : "#f3f4f6",
+                                  color: p.status === "Active" ? "#166534" : "#6b7280",
+                                  fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 99,
+                                }}>{p.status || "Active"}</span>
                               </td>
+                              {isAdmin && (
+                                <td style={td}>
+                                  <button onClick={() => deleteProperty(p.id!)} style={{ background: "none", border: "none", cursor: "pointer", color: "#dc2626", fontSize: 13 }}>✕</button>
+                                </td>
+                              )}
                             </tr>
                           ))}
                         </tbody>
                       </table>
                     </div>
 
-                    {/* Pagination footer */}
                     {propTotalPages > 1 && (
                       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 14, flexWrap: "wrap", gap: 8 }}>
                         <span style={{ fontSize: 12, color: "#6b7280" }}>
@@ -451,7 +530,7 @@ export default function CustomerDetailPage() {
             )}
 
             {/* ── Contacts tab ── */}
-            {tab === "contacts" && (
+            {tab === "Contacts" && (
               <>
                 {isAdmin && (
                   <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 14 }}>
@@ -465,66 +544,59 @@ export default function CustomerDetailPage() {
                     {isAdmin && <button onClick={() => setContactModal("new")} style={{ ...btnS("#1565c0"), fontSize: 13, marginTop: 8 }}>Add First Contact</button>}
                   </div>
                 ) : (
-                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-                    <thead>
-                      <tr style={{ borderBottom: "2px solid #e5e7eb" }}>
-                        <th style={th}>Name</th>
-                        <th style={th}>Role</th>
-                        <th style={th}>Email</th>
-                        <th style={th}>Phone</th>
-                        <th style={{ ...th, width: 60 }}></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {contacts.map(c => (
-                        <tr key={c.id} style={{ borderBottom: "1px solid #f3f4f6" }}
-                            onMouseEnter={e => (e.currentTarget.style.background = "#f9fafb")}
-                            onMouseLeave={e => (e.currentTarget.style.background = "")}>
-                          <td style={{ ...td, fontWeight: 600, cursor: "pointer", color: "#1565c0" }} onClick={() => setContactModal(c)}>{c.name}</td>
-                          <td style={td}>{c.role || "—"}</td>
-                          <td style={td}>
-                            {c.email ? <a href={`mailto:${c.email}`} style={{ color: "#1565c0", textDecoration: "none" }}>{c.email}</a> : "—"}
-                          </td>
-                          <td style={td}>{c.phone || "—"}</td>
-                          <td style={td}>
-                            {isAdmin && <button onClick={() => deleteContact(c.id!)} style={{ background: "none", border: "none", cursor: "pointer", color: "#dc2626", fontSize: 13 }}>✕</button>}
-                          </td>
+                  <div style={{ background: "#fff", borderRadius: 8, border: "1px solid #e5e7eb", overflow: "hidden" }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                      <thead>
+                        <tr style={{ borderBottom: "2px solid #e5e7eb", background: "#f9fafb" }}>
+                          <th style={th}>Name</th>
+                          <th style={th}>Role</th>
+                          <th style={th}>Email</th>
+                          <th style={th}>Phone</th>
+                          {isAdmin && <th style={{ ...th, width: 60 }}></th>}
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody>
+                        {contacts.map(c => (
+                          <tr key={c.id} style={{ borderBottom: "1px solid #f3f4f6" }}
+                              onMouseEnter={e => (e.currentTarget.style.background = "#f9fafb")}
+                              onMouseLeave={e => (e.currentTarget.style.background = "")}>
+                            <td style={{ ...td, fontWeight: 600, cursor: "pointer", color: "#1565c0" }} onClick={() => setContactModal(c)}>{c.name}</td>
+                            <td style={td}>{c.role || "—"}</td>
+                            <td style={td}>
+                              {c.email ? <a href={`mailto:${c.email}`} style={{ color: "#1565c0", textDecoration: "none" }}>{c.email}</a> : "—"}
+                            </td>
+                            <td style={td}>{c.phone || "—"}</td>
+                            {isAdmin && (
+                              <td style={td}>
+                                <button onClick={() => deleteContact(c.id!)} style={{ background: "none", border: "none", cursor: "pointer", color: "#dc2626", fontSize: 13 }}>✕</button>
+                              </td>
+                            )}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 )}
               </>
             )}
 
-            {/* ── Notes tab ── */}
-            {tab === "notes" && (
-              <div style={{ maxWidth: 640 }}>
-                <textarea
-                  value={notes}
-                  onChange={e => setNotes(e.target.value)}
-                  placeholder="Add notes about this customer…"
-                  readOnly={!isAdmin}
-                  style={{ width: "100%", minHeight: 160, padding: "12px 14px", border: "1px solid #d1d5db", borderRadius: 10, fontSize: 14, fontFamily: "inherit", resize: "vertical", boxSizing: "border-box" as const, color: "#374151", background: isAdmin ? "#fff" : "#f9fafb" }}
-                />
-                {isAdmin && (
-                  <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 10 }}>
-                    <button onClick={saveNotes} style={btnS("#1565c0")}>Save Notes</button>
-                    {notesSaved && <span style={{ fontSize: 13, color: "#059669", fontWeight: 600 }}>✅ Saved</span>}
-                  </div>
-                )}
+            {/* ── Stub tabs ── */}
+            {tab !== "Properties" && tab !== "Contacts" && (
+              <div style={{ textAlign: "center", padding: "48px 0", color: "#9ca3af" }}>
+                <div style={{ fontSize: 28, marginBottom: 8, opacity: 0.4 }}>
+                  {tab === "Jobs & Visits" ? "🔧" : tab === "Attachments" ? "📎" : tab === "History" ? "🕐" : tab === "Accounting" ? "💰" : "📄"}
+                </div>
+                <p style={{ fontSize: 14, fontWeight: 500 }}>{tab} coming soon</p>
               </div>
             )}
           </div>
         </div>
       </div>
 
-      {/* ── Edit Customer modal ── */}
+      {/* ── Modals ── */}
       {editModal && customer && (
         <EditCustomerModal customer={customer} onSave={saveCustomer} onClose={() => setEditModal(false)} />
       )}
-
-      {/* ── Property modal ── */}
       {propModal !== null && (
         <PropertyModal
           initial={propModal === "new" ? undefined : propModal}
@@ -532,8 +604,6 @@ export default function CustomerDetailPage() {
           onClose={() => setPropModal(null)}
         />
       )}
-
-      {/* ── Contact modal ── */}
       {contactModal !== null && (
         <ContactModal
           initial={contactModal === "new" ? undefined : contactModal}
@@ -572,6 +642,13 @@ function EditCustomerModal({ customer, onSave, onClose }:
           <div><label style={lbl}># Properties</label><input style={inp} type="number" min={0} value={form.numberOfProperties} onChange={e => set("numberOfProperties")(parseInt(e.target.value)||0)} /></div>
           <div><label style={lbl}>Email</label><input style={inp} type="email" value={form.email} onChange={e => set("email")(e.target.value)} /></div>
           <div><label style={lbl}>Phone</label><input style={inp} type="tel" value={form.phone} onChange={e => set("phone")(e.target.value)} /></div>
+          <div><label style={lbl}>Payment Terms</label><input style={inp} value={form.paymentTerms || ""} onChange={e => set("paymentTerms")(e.target.value)} placeholder="e.g. Net 30" /></div>
+          <div><label style={lbl}>Invoice Delivery</label>
+            <select style={inp} value={form.invoiceDelivery || ""} onChange={e => set("invoiceDelivery")(e.target.value)}>
+              <option value="">— Select —</option>
+              {["By Email","By Mail","In Person","Online Portal"].map(o => <option key={o}>{o}</option>)}
+            </select>
+          </div>
           <div style={{ gridColumn: "1/-1" }}><label style={lbl}>Billing Address</label><textarea style={{ ...inp, resize: "vertical", minHeight: 56, fontFamily: "inherit" }} value={form.billingAddress} onChange={e => set("billingAddress")(e.target.value)} /></div>
           <div style={{ gridColumn: "1/-1" }}><label style={lbl}>Business Address</label><textarea style={{ ...inp, resize: "vertical", minHeight: 48, fontFamily: "inherit" }} value={form.businessAddress} onChange={e => set("businessAddress")(e.target.value)} /></div>
         </div>
