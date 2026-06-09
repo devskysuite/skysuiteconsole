@@ -62,18 +62,15 @@ export const exportUserIcs = onCall(
 
     for (const ev of myEvents) {
       const uid = `${ev.id || Math.random().toString(36).slice(2)}@skysuite`;
-      const dtstart = ev.isAllDay
-        ? `DTSTART;VALUE=DATE:${toIcsDate(ev.start.date || ev.start.dateTime?.slice(0,10))}`
-        : `DTSTART:${(ev.start.dateTime || "").replace(/[-:]/g,"").replace(".000","").replace(/\.\d+/,"")}`;
-      const dtend = ev.isAllDay
-        ? `DTEND;VALUE=DATE:${toIcsDate(ev.end.date || ev.end.dateTime?.slice(0,10))}`
-        : `DTEND:${(ev.end.dateTime || "").replace(/[-:]/g,"").replace(".000","").replace(/\.\d+/,"")}`;
+      const startDate = ev.start?.date || ev.start?.dateTime?.slice(0, 10) || "";
+      const endDate   = ev.end?.date   || ev.end?.dateTime?.slice(0, 10)   || startDate;
+      if (!startDate) continue; // skip malformed events rather than crashing
 
       lines.push(
         "BEGIN:VEVENT",
         `UID:${uid}`,
-        dtstart,
-        dtend,
+        `DTSTART;VALUE=DATE:${toIcsDate(startDate)}`,
+        `DTEND;VALUE=DATE:${toIcsDate(endDate)}`,
         `SUMMARY:${escapeIcs(ev.subject)}`,
         "END:VEVENT"
       );
