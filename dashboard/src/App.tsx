@@ -26,6 +26,7 @@ import TwilioPage from "./pages/TwilioPage";
 import DispatchPage from "./pages/DispatchPage";
 import CustomersPage from "./pages/CustomersPage";
 import CustomerDetailPage from "./pages/CustomerDetailPage";
+import PropertiesPage from "./pages/PropertiesPage";
 import Nav from "./components/Nav";
 import { ToastProvider } from "./components/Toast";
 import Spinner from "./components/Spinner";
@@ -55,7 +56,7 @@ import { useLocation } from "react-router-dom";
 
 function AppLayout({ children }: { children: React.ReactNode }) {
   const { pathname } = useLocation();
-  const fullWidth = pathname.startsWith("/dispatch") || pathname.startsWith("/on-call") || pathname.startsWith("/time-off") || pathname.startsWith("/customers");
+  const fullWidth = pathname.startsWith("/dispatch") || pathname.startsWith("/on-call") || pathname.startsWith("/time-off") || pathname.startsWith("/customers") || pathname.startsWith("/properties");
   return (
     <>
       <Nav />
@@ -113,6 +114,7 @@ export default function App() {
                       <Route path="/dispatch" element={<DispatchPage />} />
                       <Route path="/customers" element={<CustomersPage />} />
                       <Route path="/customers/:customerId" element={<CustomerDetailPage />} />
+                      <Route path="/properties" element={<PropertiesPage />} />
                     </Routes>
                 </AppLayout>
               </RequireAuth>
