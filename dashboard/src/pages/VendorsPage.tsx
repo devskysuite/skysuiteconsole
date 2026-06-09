@@ -222,7 +222,7 @@ const btnS  = (bg: string): React.CSSProperties => ({ background: bg, color: "#f
 const pgBtn: React.CSSProperties = { padding: "4px 10px", fontSize: 12, fontWeight: 500, borderRadius: 6, cursor: "pointer", border: "1px solid #d1d5db", background: "#fff", color: "#374151" };
 const lbl: React.CSSProperties  = { display: "block", fontSize: 12, fontWeight: 600, color: "#374151", marginBottom: 4 };
 const inp: React.CSSProperties  = { width: "100%", padding: "8px 12px", border: "1px solid #d1d5db", borderRadius: 8, fontSize: 14, boxSizing: "border-box" as const };
-const th: React.CSSProperties   = { padding: "10px 12px", textAlign: "left" as const, fontSize: 11, fontWeight: 700, color: "#6b7280", textTransform: "uppercase" as const, letterSpacing: 0.4, whiteSpace: "nowrap" as const, background: "#f9fafb", borderBottom: "2px solid #e5e7eb", position: "sticky" as const, top: 96, zIndex: 3 };
+const th: React.CSSProperties   = { padding: "10px 12px", textAlign: "left" as const, fontSize: 11, fontWeight: 700, color: "#6b7280", textTransform: "uppercase" as const, letterSpacing: 0.4, whiteSpace: "nowrap" as const, background: "#f9fafb", borderBottom: "2px solid #e5e7eb", position: "sticky" as const, top: 0, zIndex: 3 };
 const td: React.CSSProperties   = { padding: "10px 12px", fontSize: 13, color: "#374151", verticalAlign: "middle" as const };
 
 // ── Main page ─────────────────────────────────────────────────────────────────
@@ -330,10 +330,10 @@ export default function VendorsPage() {
   }
 
   return (
-    <div style={{ minHeight: "100vh", paddingBottom: 40 }}>
+    <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 96px)" }}>
 
       {/* Header */}
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", padding: "20px 24px 16px", flexWrap: "wrap", gap: 12 }}>
+      <div style={{ flexShrink: 0, display: "flex", alignItems: "flex-start", justifyContent: "space-between", padding: "20px 24px 16px", flexWrap: "wrap", gap: 12 }}>
         <div>
           <div style={{ fontSize: 12, color: "#9ca3af", fontWeight: 500, marginBottom: 4, textTransform: "uppercase", letterSpacing: 0.5 }}>Directory</div>
           <h1 style={{ fontSize: 26, fontWeight: 800, color: "#0d2e5e", margin: 0 }}>Vendors</h1>
@@ -353,14 +353,14 @@ export default function VendorsPage() {
       </div>
 
       {/* Filter tabs */}
-      <div style={{ display: "flex", borderBottom: "2px solid #e5e7eb", padding: "0 24px", overflowX: "auto" }}>
+      <div style={{ flexShrink: 0, display: "flex", borderBottom: "2px solid #e5e7eb", padding: "0 24px", overflowX: "auto" }}>
         <FilterTab label="All Vendors"    count={vendors.length}    active={filter === "all"}           onClick={() => setFilter("all")} />
         <FilterTab label="Suppliers"      count={cntSupplier}       active={filter === "supplier"}      onClick={() => setFilter("supplier")} />
         <FilterTab label="Subcontractors" count={cntSubcontractor}  active={filter === "subcontractor"} onClick={() => setFilter("subcontractor")} />
       </div>
 
       {/* Search + rows-per-page */}
-      <div style={{ padding: "12px 24px", display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+      <div style={{ flexShrink: 0, padding: "12px 24px", display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
         <div style={{ position: "relative", flex: 1, maxWidth: 420 }}>
           <span style={{ position: "absolute", left: 11, top: "50%", transform: "translateY(-50%)", color: "#9ca3af", fontSize: 14, pointerEvents: "none" }}>🔍</span>
           <input
@@ -387,7 +387,7 @@ export default function VendorsPage() {
       </div>
 
       {/* Table */}
-      <div style={{ overflowX: "auto", overflowY: "clip", borderTop: "1px solid #e5e7eb", background: "#fff" }}>
+      <div style={{ flex: 1, overflow: "auto", minHeight: 0, borderTop: "1px solid #e5e7eb", background: "#fff" }}>
         {loading ? (
           <div style={{ textAlign: "center", padding: 80, color: "#9ca3af" }}>Loading vendors…</div>
         ) : vendors.length === 0 ? (
@@ -410,7 +410,7 @@ export default function VendorsPage() {
           <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1100 }}>
             <thead>
               <tr>
-                <th style={{ ...th, minWidth: 220, position: "sticky" as const, left: 0, top: 96, zIndex: 4, borderRight: "1px solid #e5e7eb" }}>Vendor</th>
+                <th style={{ ...th, minWidth: 220, position: "sticky" as const, left: 0, top: 0, zIndex: 4, borderRight: "1px solid #e5e7eb" }}>Vendor</th>
                 <th style={th}>Type</th>
                 <th style={{ ...th, minWidth: 150 }}>Contact</th>
                 <th style={{ ...th, minWidth: 130 }}>Phone</th>
@@ -439,7 +439,7 @@ export default function VendorsPage() {
 
       {/* Pagination footer */}
       {filtered.length > 0 && pageSize !== "all" && (
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 24px", borderTop: "1px solid #e5e7eb", background: "#fafafa", flexWrap: "wrap", gap: 10 }}>
+        <div style={{ flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 24px", borderTop: "1px solid #e5e7eb", background: "#fafafa", flexWrap: "wrap", gap: 10 }}>
           <span style={{ fontSize: 13, color: "#6b7280" }}>
             Showing {rangeStart.toLocaleString()}–{rangeEnd.toLocaleString()} of {filtered.length.toLocaleString()} vendor{filtered.length !== 1 ? "s" : ""}
           </span>
