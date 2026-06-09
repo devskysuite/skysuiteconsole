@@ -985,12 +985,13 @@ function LockedYearsPanel({ db }: { db:any }) {
   const years = [thisYear-1, thisYear, thisYear+1, thisYear+2];
   const [locked, setLocked] = useState<number[]>([]);
   useEffect(()=>{
-    getDoc(doc(db,"settings","lockedYears")).then(s=>setLocked(s.data()?.years||[])).catch(()=>{});
+    const unsub=onSnapshot(doc(db,"settings","lockedYears"),s=>setLocked(s.data()?.years||[]));
+    return unsub;
   },[]);
   async function toggle(y:number){
     const next=locked.includes(y)?locked.filter(x=>x!==y):[...locked,y];
+    setLocked(next); // optimistic; snapshot confirms
     await setDoc(doc(db,"settings","lockedYears"),{years:next},{merge:true});
-    setLocked(next);
   }
   return(
     <div style={{background:"white",borderRadius:12,padding:20,boxShadow:"0 1px 4px rgba(0,0,0,0.07)",marginTop:16}}>
@@ -1051,6 +1052,13 @@ function RotationOrderDisplay({ db, accessToken }: { db: any; accessToken: strin
   useEffect(() => {
     if (accessToken && !loaded && !loading) loadFromCalendar();
   }, [accessToken]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Keep lock state live so the badge/Shuffle button update instantly when a
+  // year is locked/unlocked in the panel below (no refresh needed).
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, "settings", "lockedYears"), s => setLocked(s.data()?.years || []));
+    return unsub;
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function loadFromCalendar() {
     if (!accessToken) return;
