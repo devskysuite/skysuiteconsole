@@ -54,7 +54,7 @@ import { useLocation } from "react-router-dom";
 
 function AppLayout({ children }: { children: React.ReactNode }) {
   const { pathname } = useLocation();
-  const fullWidth = pathname.startsWith("/dispatch") || pathname.startsWith("/on-call") || pathname.startsWith("/time-off");
+  const fullWidth = pathname.startsWith("/dispatch") || pathname.startsWith("/on-call") || pathname.startsWith("/time-off") || pathname.startsWith("/customers");
   return (
     <>
       <Nav />

@@ -419,7 +419,7 @@ export default function CustomersPage() {
     <div style={{ minHeight: "100vh", paddingBottom: 40 }}>
 
       {/* Header */}
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 16, flexWrap: "wrap", gap: 12 }}>
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", padding: "20px 24px 16px", marginBottom: 0, flexWrap: "wrap", gap: 12 }}>
         <div>
           <div style={{ fontSize: 12, color: "#9ca3af", fontWeight: 500, marginBottom: 4, textTransform: "uppercase", letterSpacing: 0.5 }}>Directory</div>
           <h1 style={{ fontSize: 26, fontWeight: 800, color: "#0d2e5e", margin: 0 }}>Customers</h1>
@@ -451,7 +451,7 @@ export default function CustomersPage() {
       </div>
 
       {/* Filter tabs */}
-      <div style={{ display: "flex", borderBottom: "2px solid #e5e7eb", marginBottom: 0, overflowX: "auto" }}>
+      <div style={{ display: "flex", borderBottom: "2px solid #e5e7eb", marginBottom: 0, overflowX: "auto", padding: "0 24px" }}>
         <FilterTab label="All Customers" count={customers.length} active={filter === "all"}                   onClick={() => setFilter("all")} />
         <FilterTab label="Credit Warning" count={cntWarning}      active={filter === "warning"} dot="#f59e0b" onClick={() => setFilter("warning")} />
         <FilterTab label="Credit Risk"    count={cntRisk}          active={filter === "risk"}    dot="#f97316" onClick={() => setFilter("risk")} />
@@ -459,7 +459,7 @@ export default function CustomersPage() {
       </div>
 
       {/* Search + count */}
-      <div style={{ padding: "14px 0", display: "flex", gap: 12, alignItems: "center" }}>
+      <div style={{ padding: "12px 24px", display: "flex", gap: 12, alignItems: "center" }}>
         <div style={{ position: "relative", flex: 1, maxWidth: 420 }}>
           <span style={{ position: "absolute", left: 11, top: "50%", transform: "translateY(-50%)", color: "#9ca3af", fontSize: 14, pointerEvents: "none" }}>🔍</span>
           <input
@@ -476,7 +476,7 @@ export default function CustomersPage() {
       </div>
 
       {/* Table */}
-      <div style={{ overflowX: "auto", borderRadius: 12, border: "1px solid #e5e7eb", background: "#fff", boxShadow: "0 1px 4px rgba(0,0,0,0.05)" }}>
+      <div style={{ overflowX: "auto", borderTop: "1px solid #e5e7eb", background: "#fff" }}>
         {loading ? (
           <div style={{ textAlign: "center", padding: 80, color: "#9ca3af" }}>Loading customers…</div>
 
