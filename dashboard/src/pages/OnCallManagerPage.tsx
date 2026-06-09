@@ -1081,6 +1081,7 @@ function RotationOrderDisplay({ db, accessToken }: { db: any; accessToken: strin
   const [errors,   setErrors]   = useState<string[]>([]);
   const [loading,  setLoading]  = useState(false);
   const [loaded,   setLoaded]   = useState(false);
+  const [locked,   setLocked]   = useState<number[]>([]);
   const thisYear = new Date().getFullYear();
 
   // Auto-load when token becomes available
@@ -1139,12 +1140,35 @@ function RotationOrderDisplay({ db, accessToken }: { db: any; accessToken: strin
 
       setOrders(newOrders);
       setErrors(errs);
+
+      // Lock-awareness: a locked year's rotation must match the calendar.
+      // If someone shuffled a locked year's saved order but never rebalanced,
+      // pull the old rotation back — reset the saved order to the calendar order.
+      const lockSnap = await getDoc(doc(db, "settings", "lockedYears")).catch(() => null);
+      const lockedYears: number[] = lockSnap?.data()?.years || [];
+      setLocked(lockedYears);
+      if (lockedYears.length) {
+        const ordSnap = await getDoc(doc(db, "settings", "rotationOrders")).catch(() => null);
+        const saved: Record<string, string[]> = ordSnap?.data() || {};
+        const fixes: Record<string, string[]> = {};
+        for (const y of lockedYears) {
+          const cal = newOrders[String(y)];
+          const sav = saved[String(y)];
+          if (cal?.length && sav && JSON.stringify(sav) !== JSON.stringify(cal)) {
+            fixes[String(y)] = cal; // revert to the locked calendar's actual order
+          }
+        }
+        if (Object.keys(fixes).length) {
+          await setDoc(doc(db, "settings", "rotationOrders"), fixes, { merge: true }).catch(() => {});
+        }
+      }
     } catch(e) { console.error(e); }
     setLoading(false);
     setLoaded(true);
   }
 
   async function shuffleYear(year: number) {
+    if (locked.includes(year)) return; // can't shuffle a locked year
     const current = orders[String(year)] || [];
     if (!current.length) return;
     const shuffled = [...current].sort(() => Math.random() - 0.5);
@@ -1180,12 +1204,14 @@ function RotationOrderDisplay({ db, accessToken }: { db: any; accessToken: strin
       {[thisYear, thisYear + 1].map(y => {
         const cycle = orders[String(y)] || [];
         const isCurrent = y === thisYear;
+        const isLocked = locked.includes(y);
         return (
           <div key={y} style={{ marginBottom: 16, background: "#f8fafc", borderRadius: 10, padding: "14px 16px", border: "1px solid #e2e8f0" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
-              <span style={{ fontSize: 14, fontWeight: 700, color: "#0d2e5e" }}>📅 {y} {isCurrent ? "(Current Year)" : "(Next Year)"}</span>
+              <span style={{ fontSize: 14, fontWeight: 700, color: "#0d2e5e" }}>{y} {isCurrent ? "(Current Year)" : "(Next Year)"}</span>
               {isCurrent && <span style={{ fontSize: 11, color: "#9ca3af", fontWeight: 600 }}>Read from calendar</span>}
-              {!isCurrent && cycle.length > 0 && (
+              {isLocked && <span style={{ fontSize: 11, color: "#dc2626", fontWeight: 700 }}>Locked</span>}
+              {!isCurrent && !isLocked && cycle.length > 0 && (
                 <button onClick={() => shuffleYear(y)} style={{ fontSize: 11, padding: "3px 12px", borderRadius: 99, background: "#eff6ff", border: "1px solid #bfdbfe", cursor: "pointer", fontWeight: 600, color: "#1565c0" }}>
                   Shuffle {y}
                 </button>
