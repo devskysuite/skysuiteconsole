@@ -588,7 +588,11 @@ export default function OnCallManagerPage() {
           {/* Connection */}
           <div style={{background:"white",borderRadius:12,padding:20,boxShadow:"0 1px 4px rgba(0,0,0,0.07)",marginBottom:16}}>
             <h2 style={{fontSize:15,fontWeight:700,color:"#0d2e5e",marginBottom:12}}>Outlook Connection</h2>
-            {connected ? <span style={{fontSize:13,color:"#059669",fontWeight:600}}>✅ Connected to Outlook</span>
+            {connected
+              ? <div style={{display:"flex",alignItems:"center",gap:12}}>
+                  <span style={{fontSize:13,color:"#059669",fontWeight:600}}>✅ Connected to Outlook</span>
+                  <button onClick={connectOutlook} style={{...btnS("#6b7280"),fontSize:12,padding:"5px 14px"}}>🔄 Reconnect</button>
+                </div>
               : <><p style={{fontSize:13,color:"#6b7280",marginBottom:10}}>Sign in with the SkySuite Outlook account to enable calendar features.</p>
                  <button onClick={connectOutlook} style={btnS("#1565c0")}>🔗 Connect Outlook</button></>}
           </div>
