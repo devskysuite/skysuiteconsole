@@ -32,10 +32,14 @@ export const exchangeOutlookCode = onCall({ cors: true }, async (request) => {
       {
         method:  "POST",
         headers: {
+          // Do NOT include an Origin header for the initial code exchange.
+          // Azure checks for an Origin header to detect cross-origin browser
+          // requests and blocks them for Web-type app registrations (AADSTS9002326).
+          // A genuine server-to-server call has no Origin header, so Microsoft
+          // treats it as a legitimate Web-app auth-code exchange and allows it.
+          // (Contrast with refresh-token redemption, which needs Origin to
+          // satisfy AADSTS9002327 for SPA-issued tokens — see getOutlookToken.js.)
           "Content-Type": "application/x-www-form-urlencoded",
-          // Some tenants require the Origin header when redeeming PKCE codes
-          // that were issued against an SPA-style flow. Safe to include always.
-          "Origin": "https://skysuite.ca",
         },
         body: params.toString(),
       }
