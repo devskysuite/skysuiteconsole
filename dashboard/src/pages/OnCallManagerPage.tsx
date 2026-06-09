@@ -165,6 +165,7 @@ export default function OnCallManagerPage() {
   const [addMultiDay,setAddMultiDay]=useState(false);
   const [addEndDate,setAddEndDate]=useState("");
   const [addSubmitting,setAddSubmitting]=useState(false);
+  const [backupRefresh,setBackupRefresh]=useState(0);
 
   // Auth user
   useEffect(()=>{ return onAuthStateChanged(auth, u=>{ if(u) setCurrentUser({uid:u.uid,displayName:u.displayName||u.email||"Me"}); }); },[]);
@@ -715,10 +716,10 @@ export default function OnCallManagerPage() {
           <div style={{background:"white",borderRadius:12,padding:20,boxShadow:"0 1px 4px rgba(0,0,0,0.07)",marginTop:16}}>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:4}}>
               <h2 style={{fontSize:15,fontWeight:700,color:"#0d2e5e",margin:0}}>🗄 Calendar Backups</h2>
-              <button onClick={async()=>{await backupCalendar("manual");window.location.reload();}} disabled={!connected} style={{...btnS("#6b7280"),fontSize:12,padding:"5px 14px"}}>Backup Now</button>
+              <button onClick={async()=>{await backupCalendar("manual");setBackupRefresh(k=>k+1);}} disabled={!connected} style={{...btnS("#6b7280"),fontSize:12,padding:"5px 14px"}}>Backup Now</button>
             </div>
             <p style={{fontSize:12,color:"#6b7280",marginBottom:14}}>Auto-saved before every swap, push, or rebalance. Last 10 kept. Click ↩ Restore to roll back.</p>
-            <BackupsList db={db} onRestore={restoreBackup} connected={connected}/>
+            <BackupsList db={db} onRestore={restoreBackup} connected={connected} refreshKey={backupRefresh}/>
           </div>
         </div>
       )}
@@ -1024,13 +1025,13 @@ function LockedYearsPanel({ db }: { db:any }) {
   );
 }
 
-function BackupsList({ db, onRestore, connected }: { db:any; onRestore:(b:any)=>void; connected:boolean }) {
+function BackupsList({ db, onRestore, connected, refreshKey }: { db:any; onRestore:(b:any)=>void; connected:boolean; refreshKey?:number }) {
   const [backups, setBackups] = useState<any[]>([]);
   useEffect(()=>{
     getDocs(query(collection(db,"calendarBackups"),orderBy("createdAt","desc"),limit(10)))
       .then(s=>setBackups(s.docs.map(d=>({id:d.id,...d.data()}))))
       .catch(()=>{});
-  },[]);
+  },[refreshKey]);
   if(!backups.length) return <p style={{fontSize:12,color:"#9ca3af"}}>No backups yet — one will be created automatically before your next change.</p>;
   return(
     <div>
