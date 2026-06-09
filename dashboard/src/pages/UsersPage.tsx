@@ -45,7 +45,6 @@ function fmtPhone(raw: string): string {
 const fns = getFunctions();
 const callSendSms           = httpsCallable(fns, "sendTestSms");
 const callPasswordReset     = httpsCallable(fns, "sendPasswordResetEmail");
-const callExportIcs         = httpsCallable(fns, "exportUserIcs");
 const callGetUidByEmail     = httpsCallable(fns, "getUidByEmail");
 const callSendScheduleText  = httpsCallable(fns, "sendScheduleText");
 const callSendIcsLink       = httpsCallable(fns, "sendIcsLink");
@@ -329,10 +328,12 @@ export default function UsersPage() {
     if (!u.displayName) { toast("No name set.", "error"); return; }
     setIcsLoading(u.id);
     try {
-      const result: any = await callExportIcs({ personName: u.displayName });
-      const { ics, count } = result.data;
-      if (!count) { toast(`No on-call events found for ${u.displayName}`, "error"); return; }
-      // Download
+      // Download straight from the working ICS feed endpoint (same one used by the texted link)
+      const res = await fetch(`https://skysuite.ca/api/ics?name=${encodeURIComponent(u.displayName)}`);
+      if (!res.ok) throw new Error(`Server returned ${res.status}`);
+      const ics = await res.text();
+      const count = (ics.match(/BEGIN:VEVENT/g) || []).length;
+      if (!count) { toast(`No on-call or vacation events found for ${u.displayName}`, "error"); return; }
       const blob = new Blob([ics], { type: "text/calendar;charset=utf-8" });
       const url  = URL.createObjectURL(blob);
       const a    = document.createElement("a");
@@ -340,7 +341,7 @@ export default function UsersPage() {
       a.download = `${(u.displayName || "user").toLowerCase().replace(/\s+/g, "-")}-oncall.ics`;
       a.click();
       URL.revokeObjectURL(url);
-      toast(`Downloaded ${count} on-call events for ${u.displayName}`, "success");
+      toast(`Downloaded ${count} events for ${u.displayName}`, "success");
     } catch (e: any) {
       toast(e?.message ?? "Failed to export ICS.", "error");
     } finally {
