@@ -458,6 +458,20 @@ export default function OnCallManagerPage() {
     finishProgress(`✅ Done! ${pushed} events created.`);
   }
 
+  // Admin: delete a vacation event straight from the calendar grid
+  async function deleteVacationEvent(ev:CalEvent){
+    if(!isAdmin||!accessToken) return;
+    const who=getName(ev.subject);
+    if(!window.confirm(`Remove ${who}'s vacation (${ev.start}) from the calendar?`)) return;
+    try{
+      await graphFetch(accessToken,`/me/events/${ev.id}`,"DELETE");
+      setEvents(prev=>prev.filter(e=>e.id!==ev.id));
+      // Clean up any linked time-off request so it doesn't re-sync
+      const qs=await getDocs(query(collection(db,"timeOffRequests"),where("calendarEventId","==",ev.id)));
+      for(const d of qs.docs) await deleteDoc(doc(db,"timeOffRequests",d.id));
+    }catch{ window.alert("Failed to remove vacation. Try again."); }
+  }
+
   const eventMap:Record<string,CalEvent[]>={};
   events.forEach(e=>{if(!eventMap[e.start])eventMap[e.start]=[];eventMap[e.start].push(e);});
   const todayStr=`${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,"0")}-${String(today.getDate()).padStart(2,"0")}`;
@@ -497,7 +511,8 @@ export default function OnCallManagerPage() {
           </div>
           <div style={{display:"flex",gap:16,marginBottom:14,flexWrap:"wrap",alignItems:"center"}}>
             <span style={{background:"#1565c0",color:"#fff",fontSize:11,fontWeight:600,padding:"2px 8px",borderRadius:99}}>📞 On Call</span>
-            {connected&&<span style={{fontSize:11,color:"#9ca3af"}}>Click your on-call day to request a swap · Vacations are in Time Off</span>}
+            <span style={{background:"#f97316",color:"#fff",fontSize:11,fontWeight:600,padding:"2px 8px",borderRadius:99}}>🏖 Vacation</span>
+            {connected&&<span style={{fontSize:11,color:"#9ca3af"}}>Click your on-call day to request a swap{isAdmin?" · tap a 🏖 vacation to remove it":""}</span>}
           </div>
           {loading&&<div style={{textAlign:"center",padding:40,color:"#9ca3af"}}>⏳ Loading...</div>}
           {!connected&&!loading&&<div style={{textAlign:"center",padding:40,color:"#9ca3af"}}>Connect Outlook above to view the calendar.</div>}
@@ -505,12 +520,14 @@ export default function OnCallManagerPage() {
             <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:3}}>
               {DAYS.map(d=><div key={d} style={{textAlign:"center",fontSize:12,fontWeight:700,color:"#6b7280",padding:"8px 0",textTransform:"uppercase"}}>{d}</div>)}
               {grid.map((date,i)=>{
-                // On-call calendar shows ONLY on-call events — no vacations
-                const dayEvs=date?(eventMap[date]||[]).filter(e=>{const s=e.subject.toLowerCase();return(s.includes("on call")||s.includes("oncall"))&&!s.includes("vacation");}):[];
+                const allDay=date?(eventMap[date]||[]):[];
+                const isOnCall=(s:string)=>{const l=s.toLowerCase();return(l.includes("on call")||l.includes("oncall"))&&!l.includes("vacation");};
+                const dayEvs=allDay.filter(e=>isOnCall(e.subject));
+                const vacEvs=allDay.filter(e=>e.subject.toLowerCase().includes("vacation"));
                 const isToday=date===todayStr;
-                const myOncall=dayEvs.find(e=>{const s=e.subject.toLowerCase();return(s.includes("on call")||s.includes("oncall"))&&!s.includes("vacation")&&getName(e.subject).toLowerCase()===currentUser?.displayName?.split(" ")[0].toLowerCase();});
+                const myOncall=dayEvs.find(e=>getName(e.subject).toLowerCase()===currentUser?.displayName?.split(" ")[0].toLowerCase());
                 // Admin can click any on-call event; user can only click their own
-                const clickableOncall=isAdmin?dayEvs.find(e=>{const s=e.subject.toLowerCase();return(s.includes("on call")||s.includes("oncall"))&&!s.includes("vacation");}):myOncall;
+                const clickableOncall=isAdmin?dayEvs.find(e=>isOnCall(e.subject)):myOncall;
                 return(
                   <div key={i} style={{minHeight:110,background:isToday?"#eff6ff":"#fafafa",border:isToday?"2px solid #1565c0":"1px solid #e5e7eb",borderRadius:6,padding:6,cursor:clickableOncall?"pointer":"default"}}
                     onClick={()=>{ if(clickableOncall&&connected) setSwapModal({event:clickableOncall}); }}>
@@ -519,6 +536,13 @@ export default function OnCallManagerPage() {
                       {dayEvs.map(ev=>{const c=pillStyle(ev.subject);const n=getName(ev.subject);return(
                         <div key={ev.id} style={{fontSize:11,fontWeight:600,background:c.bg,color:c.color,borderRadius:4,padding:"2px 5px",marginBottom:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
                           {c.prefix}{n}
+                        </div>);})}
+                      {vacEvs.map(ev=>{const c=pillStyle(ev.subject);const n=getName(ev.subject);return(
+                        <div key={ev.id}
+                          title={isAdmin?"Tap to remove this vacation":undefined}
+                          onClick={isAdmin?(e)=>{e.stopPropagation();deleteVacationEvent(ev);}:undefined}
+                          style={{fontSize:11,fontWeight:600,background:c.bg,color:c.color,borderRadius:4,padding:"2px 5px",marginBottom:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",cursor:isAdmin?"pointer":"default"}}>
+                          {c.prefix}{n}{isAdmin?" ✕":""}
                         </div>);})}
                       {clickableOncall&&<div style={{fontSize:9,color:"#1565c0",marginTop:2}}>tap to swap</div>}
                     </>}
