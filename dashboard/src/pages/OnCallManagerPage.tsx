@@ -1231,11 +1231,14 @@ function StatHolidaysPanel({accessToken,calId,db}:{accessToken:string;calId:stri
   async function load(year:number){
     setLoading(true);
     try{
-      // 1. Load roster from Firestore
+      // 1. Roster + that year's saved (shuffled) order — same source the rotation uses
       const cfgSnap=await getDoc(doc(db,"settings","onCallConfig")).catch(()=>null);
       const roster:string[]=cfgSnap?.data()?.employees||[];
+      const ordSnap=await getDoc(doc(db,"settings","rotationOrders")).catch(()=>null);
+      const savedYear:string[]=ordSnap?.data()?.[String(year)]||[];
+      const order:string[]=savedYear.length?savedYear:roster;
 
-      // 2. Fetch all on-call events for the selected year from Outlook
+      // 2. Confirmed on-call events already on the calendar for this year
       const confirmedMap:Record<string,string>={};
       if(accessToken){
         const evs:any[]=[];
@@ -1244,39 +1247,21 @@ function StatHolidaysPanel({accessToken,calId,db}:{accessToken:string;calId:stri
         evs.forEach(e=>{const date=e.start?.date||e.start?.dateTime?.slice(0,10)||"";const name=getName(e.subject||"");if(date&&name)confirmedMap[date]=name;});
       }
 
-      // 3. Build projection: find last confirmed event, continue rotation from there
-      const projectedMap:Record<string,string>={};
-      if(roster.length>0&&accessToken){
-        // Fetch last ~14 days before year start to find rotation position
-        const lookback=new Date(year,0,1); lookback.setDate(lookback.getDate()-roster.length*2+1);
-        const anchors:any[]=[];
-        let aUrl=`https://graph.microsoft.com/v1.0/me/calendars/${calId}/calendarView?startDateTime=${lookback.toISOString().slice(0,10)}T00:00:00&endDateTime=${year+1}-12-31T23:59:59&$top=999&$select=subject,start&$orderby=start/dateTime`;
-        while(aUrl){const d=await(await fetch(aUrl,{headers:{Authorization:`Bearer ${accessToken}`}})).json();(d.value||[]).forEach((e:any)=>{const s=(e.subject||"").toLowerCase();if((s.includes("on call")||s.includes("oncall"))&&!s.includes("vacation"))anchors.push(e);});aUrl=d["@odata.nextLink"]||"";}
-
-        // Find last confirmed date and derive next rotation index
-        if(anchors.length>0){
-          const lastEv=anchors[anchors.length-1];
-          const lastDate=lastEv.start?.date||lastEv.start?.dateTime?.slice(0,10)||"";
-          const lastName=getName(lastEv.subject||"");
-          const lastIdx=roster.findIndex(n=>n.toLowerCase()===lastName.toLowerCase());
-          let nextIdx=(lastIdx>=0?lastIdx+1:0)%roster.length;
-          // Walk forward from the day after the last confirmed date to end of selected year
-          const cur=new Date(lastDate+"T12:00:00"); cur.setDate(cur.getDate()+1);
-          const endOfYear=new Date(year,11,31);
-          while(cur<=endOfYear){
-            const d=cur.toISOString().slice(0,10);
-            if(!confirmedMap[d]){
-              projectedMap[d]=roster[nextIdx%roster.length];
-            }
-            nextIdx++; cur.setDate(cur.getDate()+1);
-          }
+      // 3. For each stat holiday: use the confirmed person if scheduled, else
+      // project with the SAME date-anchored formula as push/rebalance/nightly:
+      //   order[ daysSinceJan1(year) % order.length ]
+      // This works for any year (incl. far-future like 2028) and matches what
+      // the rotation will actually create.
+      const merged:Record<string,{name:string;confirmed:boolean}>={};
+      const jan1=Date.UTC(year,0,1);
+      for(const st of getStatHolidays(year)){
+        if(confirmedMap[st.date]){ merged[st.date]={name:confirmedMap[st.date],confirmed:true}; continue; }
+        if(order.length){
+          const since=Math.floor((Date.parse(st.date+"T00:00:00Z")-jan1)/86400000);
+          const person=order[((since%order.length)+order.length)%order.length];
+          merged[st.date]={name:person,confirmed:false};
         }
       }
-
-      // 4. Merge: confirmed takes priority
-      const merged:Record<string,{name:string;confirmed:boolean}>={};
-      Object.entries(confirmedMap).forEach(([d,n])=>merged[d]={name:n,confirmed:true});
-      Object.entries(projectedMap).forEach(([d,n])=>{if(!merged[d])merged[d]={name:n,confirmed:false};});
       setAssignments(merged);
     }catch(err){console.error(err);}
     setLoading(false);setLoaded(true);
