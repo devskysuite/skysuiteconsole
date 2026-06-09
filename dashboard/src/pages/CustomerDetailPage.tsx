@@ -102,6 +102,18 @@ export default function CustomerDetailPage() {
   const [notes,      setNotes]      = useState("");
   const [notesSaved, setNotesSaved] = useState(false);
 
+  // Properties pagination
+  type PropPageSize = 25 | 50 | 75 | 100;
+  const PROP_PAGE_SIZES: PropPageSize[] = [25, 50, 75, 100];
+  const [propPageSize, setPropPageSize] = useState<PropPageSize>(25);
+  const [propPage,     setPropPage]     = useState(0);
+  useEffect(() => { setPropPage(0); }, [properties, propPageSize]);
+  const propTotalPages = Math.max(1, Math.ceil(properties.length / propPageSize));
+  const propSafePage   = Math.min(propPage, propTotalPages - 1);
+  const propPaginated  = properties.slice(propSafePage * propPageSize, propSafePage * propPageSize + propPageSize);
+  const propRangeStart = propSafePage * propPageSize + 1;
+  const propRangeEnd   = Math.min(propSafePage * propPageSize + propPageSize, properties.length);
+
   // Edit modals
   const [editModal,    setEditModal]    = useState(false);
   const [propModal,    setPropModal]    = useState<Property | null | "new">(null);
@@ -323,11 +335,35 @@ export default function CustomerDetailPage() {
             {/* ── Properties tab ── */}
             {tab === "properties" && (
               <>
-                {isAdmin && (
-                  <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 14 }}>
-                    <button onClick={() => setPropModal("new")} style={{ ...btnS("#1565c0"), fontSize: 13 }}>+ Add Property</button>
+                {/* Toolbar: row-size picker left, Add button right */}
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, flexWrap: "wrap", gap: 10 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontSize: 12, color: "#6b7280", whiteSpace: "nowrap" }}>Rows per page:</span>
+                    <div style={{ display: "flex", gap: 4 }}>
+                      {PROP_PAGE_SIZES.map(s => (
+                        <button
+                          key={s}
+                          onClick={() => setPropPageSize(s)}
+                          style={{
+                            padding: "3px 10px", fontSize: 12, fontWeight: 600, borderRadius: 6, cursor: "pointer",
+                            border: "1px solid " + (propPageSize === s ? "#1565c0" : "#d1d5db"),
+                            background: propPageSize === s ? "#1565c0" : "#fff",
+                            color: propPageSize === s ? "#fff" : "#374151",
+                          }}
+                        >{s}</button>
+                      ))}
+                    </div>
+                    {properties.length > 0 && (
+                      <span style={{ fontSize: 12, color: "#9ca3af" }}>
+                        {properties.length} propert{properties.length !== 1 ? "ies" : "y"}
+                      </span>
+                    )}
                   </div>
-                )}
+                  {isAdmin && (
+                    <button onClick={() => setPropModal("new")} style={{ ...btnS("#1565c0"), fontSize: 13 }}>+ Add Property</button>
+                  )}
+                </div>
+
                 {properties.length === 0 ? (
                   <div style={{ textAlign: "center", padding: "40px 0", color: "#9ca3af" }}>
                     <div style={{ fontSize: 32, marginBottom: 10 }}>🏢</div>
@@ -335,50 +371,81 @@ export default function CustomerDetailPage() {
                     {isAdmin && <button onClick={() => setPropModal("new")} style={{ ...btnS("#1565c0"), fontSize: 13, marginTop: 8 }}>Add First Property</button>}
                   </div>
                 ) : (
-                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-                    <thead>
-                      <tr style={{ borderBottom: "2px solid #e5e7eb" }}>
-                        <th style={th}>Name</th>
-                        <th style={th}>Status</th>
-                        <th style={th}>Type</th>
-                        <th style={th}>Property Address</th>
-                        <th style={{ ...th, textAlign: "center" as const }}>Open Jobs</th>
-                        <th style={th}>Outstanding</th>
-                        <th style={th}>Overdue</th>
-                        <th style={{ ...th, width: 44 }}></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {properties.map(p => (
-                        <tr key={p.id} style={{ borderBottom: "1px solid #f3f4f6" }}
-                            onMouseEnter={e => (e.currentTarget.style.background = "#f9fafb")}
-                            onMouseLeave={e => (e.currentTarget.style.background = "")}>
-                          <td style={{ ...td, color: "#1565c0", fontWeight: 600, cursor: "pointer" }} onClick={() => setPropModal(p)}>{p.name}</td>
-                          <td style={td}>
-                            <span style={{ background: p.status === "Active" ? "#dcfce7" : "#f3f4f6", color: p.status === "Active" ? "#166534" : "#6b7280", fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 99 }}>
-                              {p.status || "Active"}
-                            </span>
-                          </td>
-                          <td style={td}>{p.propertyType || "—"}</td>
-                          <td style={{ ...td, maxWidth: 220 }}>
-                            <span title={p.propertyAddress} style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>
-                              {p.propertyAddress || "—"}
-                            </span>
-                          </td>
-                          <td style={{ ...td, textAlign: "center" as const, fontWeight: p.openJobs > 0 ? 700 : 400 }}>{p.openJobs ?? 0}</td>
-                          <td style={{ ...td, color: p.outstandingBalance > 0 ? "#dc2626" : "#374151", fontWeight: p.outstandingBalance > 0 ? 600 : 400 }}>
-                            {p.outstandingBalance > 0 ? fmt$(p.outstandingBalance) : "—"}
-                          </td>
-                          <td style={{ ...td, color: p.overdueBalance > 0 ? "#dc2626" : "#374151", fontWeight: p.overdueBalance > 0 ? 700 : 400 }}>
-                            {p.overdueBalance > 0 ? fmt$(p.overdueBalance) : "—"}
-                          </td>
-                          <td style={td}>
-                            {isAdmin && <button onClick={() => deleteProperty(p.id!)} style={{ background: "none", border: "none", cursor: "pointer", color: "#dc2626", fontSize: 13 }}>✕</button>}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                  <>
+                    <div style={{ overflowX: "auto" }}>
+                      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                        <thead>
+                          <tr style={{ borderBottom: "2px solid #e5e7eb" }}>
+                            <th style={th}>Name</th>
+                            <th style={th}>Status</th>
+                            <th style={th}>Type</th>
+                            <th style={th}>Property Address</th>
+                            <th style={{ ...th, textAlign: "center" as const }}>Open Jobs</th>
+                            <th style={th}>Outstanding</th>
+                            <th style={th}>Overdue</th>
+                            <th style={{ ...th, width: 44 }}></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {propPaginated.map(p => (
+                            <tr key={p.id} style={{ borderBottom: "1px solid #f3f4f6" }}
+                                onMouseEnter={e => (e.currentTarget.style.background = "#f9fafb")}
+                                onMouseLeave={e => (e.currentTarget.style.background = "")}>
+                              <td style={{ ...td, color: "#1565c0", fontWeight: 600, cursor: "pointer" }} onClick={() => setPropModal(p)}>{p.name}</td>
+                              <td style={td}>
+                                <span style={{ background: p.status === "Active" ? "#dcfce7" : "#f3f4f6", color: p.status === "Active" ? "#166534" : "#6b7280", fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 99 }}>
+                                  {p.status || "Active"}
+                                </span>
+                              </td>
+                              <td style={td}>{p.propertyType || "—"}</td>
+                              <td style={{ ...td, maxWidth: 220 }}>
+                                <span title={p.propertyAddress} style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>
+                                  {p.propertyAddress || "—"}
+                                </span>
+                              </td>
+                              <td style={{ ...td, textAlign: "center" as const, fontWeight: p.openJobs > 0 ? 700 : 400 }}>{p.openJobs ?? 0}</td>
+                              <td style={{ ...td, color: p.outstandingBalance > 0 ? "#dc2626" : "#374151", fontWeight: p.outstandingBalance > 0 ? 600 : 400 }}>
+                                {p.outstandingBalance > 0 ? fmt$(p.outstandingBalance) : "—"}
+                              </td>
+                              <td style={{ ...td, color: p.overdueBalance > 0 ? "#dc2626" : "#374151", fontWeight: p.overdueBalance > 0 ? 700 : 400 }}>
+                                {p.overdueBalance > 0 ? fmt$(p.overdueBalance) : "—"}
+                              </td>
+                              <td style={td}>
+                                {isAdmin && <button onClick={() => deleteProperty(p.id!)} style={{ background: "none", border: "none", cursor: "pointer", color: "#dc2626", fontSize: 13 }}>✕</button>}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Pagination footer */}
+                    {propTotalPages > 1 && (
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 14, flexWrap: "wrap", gap: 8 }}>
+                        <span style={{ fontSize: 12, color: "#6b7280" }}>
+                          Showing {propRangeStart}–{propRangeEnd} of {properties.length}
+                        </span>
+                        <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                          <button onClick={() => setPropPage(0)} disabled={propSafePage === 0} style={{ ...pgBtn, opacity: propSafePage === 0 ? 0.35 : 1 }}>«</button>
+                          <button onClick={() => setPropPage(p => Math.max(0, p - 1))} disabled={propSafePage === 0} style={{ ...pgBtn, opacity: propSafePage === 0 ? 0.35 : 1 }}>‹ Prev</button>
+                          {Array.from({ length: propTotalPages }, (_, i) => i)
+                            .filter(i => Math.abs(i - propSafePage) <= 2)
+                            .map(i => (
+                              <button key={i} onClick={() => setPropPage(i)} style={{
+                                ...pgBtn,
+                                background: i === propSafePage ? "#1565c0" : "#fff",
+                                color:      i === propSafePage ? "#fff"    : "#374151",
+                                border:     "1px solid " + (i === propSafePage ? "#1565c0" : "#d1d5db"),
+                                fontWeight: i === propSafePage ? 700 : 500,
+                                minWidth: 30,
+                              }}>{i + 1}</button>
+                            ))}
+                          <button onClick={() => setPropPage(p => Math.min(propTotalPages - 1, p + 1))} disabled={propSafePage >= propTotalPages - 1} style={{ ...pgBtn, opacity: propSafePage >= propTotalPages - 1 ? 0.35 : 1 }}>Next ›</button>
+                          <button onClick={() => setPropPage(propTotalPages - 1)} disabled={propSafePage >= propTotalPages - 1} style={{ ...pgBtn, opacity: propSafePage >= propTotalPages - 1 ? 0.35 : 1 }}>»</button>
+                        </div>
+                      </div>
+                    )}
+                  </>
                 )}
               </>
             )}
@@ -595,6 +662,7 @@ function ContactModal({ initial, onSave, onClose }:
 
 // ── Styles ────────────────────────────────────────────────────────────────────
 const btnS = (bg: string): React.CSSProperties => ({ background: bg, color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 14, fontWeight: 600, cursor: "pointer" });
+const pgBtn: React.CSSProperties = { padding: "4px 10px", fontSize: 12, fontWeight: 500, borderRadius: 6, cursor: "pointer", border: "1px solid #d1d5db", background: "#fff", color: "#374151" };
 const lbl: React.CSSProperties = { display: "block", fontSize: 12, fontWeight: 600, color: "#374151", marginBottom: 4 };
 const inp: React.CSSProperties = { width: "100%", padding: "8px 12px", border: "1px solid #d1d5db", borderRadius: 8, fontSize: 14, boxSizing: "border-box" as const };
 const th: React.CSSProperties = { padding: "10px 14px", textAlign: "left" as const, fontSize: 11, fontWeight: 700, color: "#6b7280", textTransform: "uppercase" as const, letterSpacing: 0.4, whiteSpace: "nowrap" as const };
