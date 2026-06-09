@@ -373,7 +373,6 @@ export default function OnCallManagerPage() {
   async function runRotation(action:"preview"|"push"|"rebalance", rebalanceFrom?:string) {
     if(!accessToken) return;
     const rotDays=parseInt((document.getElementById("rot-days") as HTMLSelectElement)?.value||"1");
-    const shuffle=(document.getElementById("rot-shuffle") as HTMLInputElement)?.checked;
 
     // 365-day rolling window from today
     const today=new Date().toISOString().slice(0,10);
@@ -385,6 +384,10 @@ export default function OnCallManagerPage() {
     const cfgSnap=await getDoc(doc(db,"settings","onCallConfig")).catch(()=>null);
     const roster:string[]=cfgSnap?.data()?.employees||rosterNames;
     if(!roster.length){ finishProgress("No employees in roster. Go to Setup → On-Call Roster."); return; }
+
+    // The rotation order to build with. For rebalance, use the saved order for
+    // that year (set via the Shuffle button) if present — never auto-shuffle.
+    let order:string[]=roster;
 
     const actionLabel=action==="preview"?"👁 Preview":action==="rebalance"?"⚖ Rebalance":"⬆ Fill 365 Days";
     startProgress(actionLabel, `Roster: ${roster.join(", ")}`, 365);
@@ -406,9 +409,13 @@ export default function OnCallManagerPage() {
       const lockSnap=await getDoc(doc(db,"settings","lockedYears")).catch(()=>null);
       const lockedYears:number[]=lockSnap?.data()?.years||[];
       if(lockedYears.includes(rebalYear)){
-        finishProgress(`🔒 ${rebalYear} is locked and cannot be rebalanced.`);
+        finishProgress(`${rebalYear} is locked and cannot be rebalanced.`);
         return;
       }
+      // Use the saved rotation order for this year (from the Shuffle button) as-is
+      const ordSnap=await getDoc(doc(db,"settings","rotationOrders")).catch(()=>null);
+      const yrOrder:string[]=ordSnap?.data()?.[String(rebalYear)]||[];
+      if(yrOrder.length) order=yrOrder;
       let deleted=0;
       for(let i=0;i<existingEvs.length;i+=20){
         const chunk=existingEvs.slice(i,i+20);
@@ -428,31 +435,20 @@ export default function OnCallManagerPage() {
       // Find last person before or at the first gap
       const lastEv=existingEvs[existingEvs.length-1];
       const lastName=getName(lastEv.subject);
-      const lastIdx=roster.findIndex(n=>n.toLowerCase()===lastName.toLowerCase());
-      if(lastIdx>=0) startIdx=(lastIdx+1)%roster.length;
-    } else if(action==="rebalance"){
-      // For rebalance: look at the event just before rebalanceFrom in the full calendar
-      const prevEvs:any[]=[];
-      const prevStart=new Date(startDate); prevStart.setDate(prevStart.getDate()-(rotDays*roster.length+5));
-      let pUrl=`https://graph.microsoft.com/v1.0/me/calendars/${CAL_ID}/calendarView?startDateTime=${prevStart.toISOString().slice(0,10)}T00:00:00&endDateTime=${startDate}T00:00:00&$top=999&$select=id,subject,start&$orderby=start/dateTime`;
-      while(pUrl){ const d=await graphFetch(accessToken,pUrl.replace("https://graph.microsoft.com/v1.0","")); (d.value||[]).filter((e:any)=>{const s=(e.subject||"").toLowerCase();return(s.includes("on call")||s.includes("oncall"))&&!s.includes("vacation");}).forEach((e:any)=>prevEvs.push(e)); pUrl=d["@odata.nextLink"]||""; }
-      if(prevEvs.length>0){
-        const lastName=getName(prevEvs[prevEvs.length-1].subject);
-        const lastIdx=roster.findIndex(n=>n.toLowerCase()===lastName.toLowerCase());
-        if(lastIdx>=0) startIdx=(lastIdx+1)%roster.length;
-      }
-      if(shuffle) startIdx=0;
+      const lastIdx=order.findIndex(n=>n.toLowerCase()===lastName.toLowerCase());
+      if(lastIdx>=0) startIdx=(lastIdx+1)%order.length;
     }
+    // Rebalance always starts the chosen order at the rebalance date (Jan 1) — startIdx stays 0.
 
     // Build schedule — gaps only, continuing rotation from where calendar left off
     const toAdd:any[]=[];
-    tickProgress(`Starting from ${roster[startIdx]} (${startIdx+1}/${roster.length}) — building schedule…`, 0, 365);
+    tickProgress(`Starting from ${order[startIdx]} (${startIdx+1}/${order.length}) — building schedule…`, 0, 365);
     let cur=new Date(startDate), idx=startIdx;
     while(cur.toISOString().slice(0,10)<=endStr){
       const d=cur.toISOString().slice(0,10);
       if(!occupied.has(d)){
         const end2=new Date(cur); end2.setDate(end2.getDate()+rotDays);
-        toAdd.push({subject:`${roster[idx%roster.length]} On Call`,start:{dateTime:`${d}T00:00:00`,timeZone:"America/Toronto"},end:{dateTime:`${end2.toISOString().slice(0,10)}T00:00:00`,timeZone:"America/Toronto"},isAllDay:true});
+        toAdd.push({subject:`${order[idx%order.length]} On Call`,start:{dateTime:`${d}T00:00:00`,timeZone:"America/Toronto"},end:{dateTime:`${end2.toISOString().slice(0,10)}T00:00:00`,timeZone:"America/Toronto"},isAllDay:true});
         idx++;
       } else {
         // Still advance rotation index for occupied days
@@ -687,9 +683,9 @@ export default function OnCallManagerPage() {
 
           {/* Rotation Planner */}
           <div style={{background:"white",borderRadius:12,padding:20,boxShadow:"0 1px 4px rgba(0,0,0,0.07)"}}>
-            <h2 style={{fontSize:15,fontWeight:700,color:"#0d2e5e",marginBottom:4}}>🔁 Rotation Planner</h2>
-            <p style={{fontSize:12,color:"#6b7280",marginBottom:4}}>Always maintains exactly 365 days scheduled. Rotation order shuffles automatically on Jan 1 each year.</p>
-            <p style={{fontSize:11,color:"#9ca3af",marginBottom:16}}>Push fills the next 365 days. Rebalance clears from a date and rebuilds.</p>
+            <h2 style={{fontSize:15,fontWeight:700,color:"#0d2e5e",marginBottom:4}}>Rotation Planner</h2>
+            <p style={{fontSize:12,color:"#6b7280",marginBottom:4}}>Always maintains exactly 365 days scheduled. Rebalance keeps the rotation order as-is — use Shuffle on a year to change it, then Lock when happy.</p>
+            <p style={{fontSize:11,color:"#9ca3af",marginBottom:16}}>Push fills the next 365 days. Rebalance clears from Jan 1 and rebuilds using that year's order.</p>
 
             {/* Year rotation orders display */}
             <RotationOrderDisplay db={db} accessToken={accessToken}/>
@@ -700,10 +696,6 @@ export default function OnCallManagerPage() {
                   <option value="1">1 day</option><option value="2">2 days</option><option value="7">7 days</option><option value="14">14 days</option>
                 </select>
               </div>
-
-              <label style={{display:"flex",alignItems:"center",gap:6,fontSize:13,color:"#374151",paddingBottom:2}}>
-                <input type="checkbox" id="rot-shuffle" style={{width:15,height:15}}/>Shuffle order
-              </label>
             </div>
 
             <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
@@ -1153,10 +1145,10 @@ function RotationOrderDisplay({ db, accessToken }: { db: any; accessToken: strin
           <div key={y} style={{ marginBottom: 16, background: "#f8fafc", borderRadius: 10, padding: "14px 16px", border: "1px solid #e2e8f0" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
               <span style={{ fontSize: 14, fontWeight: 700, color: "#0d2e5e" }}>📅 {y} {isCurrent ? "(Current Year)" : "(Next Year)"}</span>
-              {isCurrent && <span style={{ fontSize: 11, color: "#9ca3af", fontWeight: 600 }}>🔒 Locked — read from calendar</span>}
+              {isCurrent && <span style={{ fontSize: 11, color: "#9ca3af", fontWeight: 600 }}>Read from calendar</span>}
               {!isCurrent && cycle.length > 0 && (
                 <button onClick={() => shuffleYear(y)} style={{ fontSize: 11, padding: "3px 12px", borderRadius: 99, background: "#eff6ff", border: "1px solid #bfdbfe", cursor: "pointer", fontWeight: 600, color: "#1565c0" }}>
-                  🔀 Shuffle {y}
+                  Shuffle {y}
                 </button>
               )}
             </div>

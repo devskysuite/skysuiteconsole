@@ -51,12 +51,14 @@ export const dailyOnCallFill = onSchedule(
     const rotOrders = ordSnap.exists() ? ordSnap.data() : {};
     console.log(`Roster: ${employees.join(", ")}`);
 
-    // Auto-generate rotation order for any missing year
+    // Use the saved rotation order for the year; if none exists, fall back to
+    // the roster order as-is. NEVER auto-shuffle — shuffling is a manual action
+    // (the Shuffle button), and a year is locked once it's set the way you want.
     function getOrderForYear(year) {
       if (rotOrders[String(year)]?.length) return rotOrders[String(year)];
-      const shuffled = [...employees].sort(() => Math.random() - 0.5);
-      rotOrders[String(year)] = shuffled;
-      return shuffled;
+      const order = [...employees];
+      rotOrders[String(year)] = order;
+      return order;
     }
 
     // Save any newly generated orders
