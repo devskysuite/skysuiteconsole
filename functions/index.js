@@ -8,3 +8,4 @@ export { sendScheduleText } from "./src/sendScheduleText.js";
 export { sendIcsLink } from "./src/sendIcsLink.js";
 export { serveIcs } from "./src/serveIcs.js";
 export { syncVacationEvent } from "./src/syncVacationEvent.js";
+export { notifyApproversSms } from "./src/notifyApproversSms.js";

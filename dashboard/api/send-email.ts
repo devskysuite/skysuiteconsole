@@ -1,7 +1,19 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { cert, getApps, initializeApp } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
+import { getFirestore } from "firebase-admin/firestore";
 import { Resend } from "resend";
+
+const APPROVER_ROLES = ["owner", "admin", "manager"];
+
+async function approverEmails(): Promise<string[]> {
+  const snap = await getFirestore().collection("users").get();
+  const emails = snap.docs
+    .map((d) => d.data())
+    .filter((u) => APPROVER_ROLES.includes(u.role) && u.email)
+    .map((u) => u.email as string);
+  return Array.from(new Set(emails));
+}
 
 function initFirebase() {
   if (!getApps().length) {
@@ -44,9 +56,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   if (type === "time-off") {
     const { employee_name, employee_email, start_date, end_date, reason } = payload;
+    const recipients = await approverEmails();
     await resend.emails.send({
       from: FROM,
-      to: ADMIN_EMAIL,
+      to: recipients.length ? recipients : ADMIN_EMAIL,
       subject: `Time Off Request — ${employee_name}`,
       html: `
         <div style="font-family: sans-serif; max-width: 560px; margin: 0 auto; padding: 32px 0;">

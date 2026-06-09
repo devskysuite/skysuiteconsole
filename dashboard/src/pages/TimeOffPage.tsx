@@ -8,9 +8,11 @@ import { doc as fsDoc, getDoc as fsGetDoc, setDoc as fsSetDoc } from "firebase/f
 import { getFunctions, httpsCallable } from "firebase/functions";
 import { auth, db } from "../firebase";
 
-const callSyncVacation = httpsCallable(getFunctions(), "syncVacationEvent");
+const callSyncVacation     = httpsCallable(getFunctions(), "syncVacationEvent");
+const callNotifyApprovers  = httpsCallable(getFunctions(), "notifyApproversSms");
 import { useToast } from "../components/Toast";
-import { useRole, canApproveTimeOff } from "../hooks/useRole";
+import { useRole, canApproveTimeOff, isAdminRole } from "../hooks/useRole";
+import TimeOffNotifySettings from "../components/TimeOffNotifySettings";
 import { fmtISODate, timeOffStatusBadge } from "../utils/formatting";
 import type { TimeOffRequest } from "../types";
 
@@ -144,7 +146,18 @@ export default function TimeOffPage() {
         uid: currentUser.uid, employeeName: currentUser.displayName, employeeEmail: currentUser.email,
         startDate, endDate: effectiveEnd, reason: reason.trim(), status: "PENDING", createdAt: new Date(),
       });
-      // No email — request appears in the Approvals tab for any admin/manager to action.
+      // Notify approvers per the configured method(s). Always visible in the Approvals tab regardless.
+      try {
+        const nSnap = await fsGetDoc(fsDoc(db, "settings", "timeOffNotify"));
+        const notify = nSnap.data() || {};
+        if (notify.sms) {
+          callNotifyApprovers({ employeeName: currentUser.displayName, startDate, endDate: effectiveEnd }).catch(() => {});
+        }
+        if (notify.email) {
+          const idToken = await auth.currentUser?.getIdToken() ?? "";
+          fetch("/api/send-email", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ idToken, type: "time-off", payload: { employee_name: currentUser.displayName, employee_email: currentUser.email, start_date: startDate, end_date: effectiveEnd, reason: reason.trim() || "No reason provided" } }) }).catch(() => {});
+        }
+      } catch {}
       setSuccess("Vacation request submitted successfully.");
       setStartDate(""); setEndDate(""); setReason("");
       await loadMyRequests();
@@ -351,6 +364,7 @@ export default function TimeOffPage() {
         {/* ── Approvals (managers/admins only) ── */}
         {view === "approvals" && canApprove && (
           <div>
+            {isAdminRole(role) && <TimeOffNotifySettings />}
             <h2 style={{ fontSize: 17, fontWeight: 700, marginBottom: 16, color: "#0d2e5e" }}>Vacation Approvals</h2>
             {allRequests.length === 0 ? (
               <p style={{ color: "#888", fontSize: 14 }}>No requests yet.</p>

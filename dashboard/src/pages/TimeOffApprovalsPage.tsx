@@ -9,9 +9,10 @@ import {
 } from "firebase/firestore";
 import { getFunctions, httpsCallable } from "firebase/functions";
 import { db } from "../firebase";
-import { useRole, canApproveTimeOff } from "../hooks/useRole";
+import { useRole, canApproveTimeOff, isAdminRole } from "../hooks/useRole";
 import { useToast } from "../components/Toast";
 import Spinner from "../components/Spinner";
+import TimeOffNotifySettings from "../components/TimeOffNotifySettings";
 import { fmtISODate, timeOffStatusBadge } from "../utils/formatting";
 import type { TimeOffRequest } from "../types";
 
@@ -139,6 +140,8 @@ export default function TimeOffApprovalsPage() {
   return (
     <div>
       <h1 style={styles.h1}>Time Off Approvals</h1>
+
+      {isAdminRole(role) && <TimeOffNotifySettings />}
 
       <div style={styles.card}>
         {/* Filter toggle */}
