@@ -661,6 +661,9 @@ export default function OnCallManagerPage() {
                  <button onClick={connectOutlook} style={btnS("#1565c0")}>🔗 Connect Outlook</button></>}
           </div>
 
+          {/* Vacation Calendar picker */}
+          {connected&&<VacationCalPanel accessToken={accessToken} db={db}/>}
+
           {/* On-Call Roster */}
           <div style={{background:"white",borderRadius:12,padding:20,boxShadow:"0 1px 4px rgba(0,0,0,0.07)",marginBottom:16}}>
             <h2 style={{fontSize:15,fontWeight:700,color:"#0d2e5e",marginBottom:4}}>👥 On-Call Roster</h2>
@@ -904,6 +907,50 @@ function IcsExportPanel({ accessToken, calId, db }: { accessToken:string; calId:
             {busy===name?"⏳ Building…":`⬇ ${name}`}
           </button>
         ))}
+      </div>
+    </div>
+  );
+}
+
+function VacationCalPanel({ accessToken, db }: { accessToken:string; db:any }) {
+  const [cals,setCals]=useState<{id:string;name:string}[]>([]);
+  const [selected,setSelected]=useState("");
+  const [saved,setSaved]=useState(false);
+  const [loading,setLoading]=useState(true);
+
+  useEffect(()=>{
+    if(!accessToken) return;
+    (async()=>{
+      try{
+        const d=await graphFetch(accessToken,"/me/calendars?$top=100");
+        const list=(d.value||[]).map((c:any)=>({id:c.id,name:c.name}));
+        setCals(list);
+        const snap=await getDoc(doc(db,"settings","outlookOnCall"));
+        const cur=snap.data()?.vacationCalId;
+        if(cur) setSelected(cur);
+        else { const v=list.find((c:any)=>c.name.toLowerCase().includes("vacation")); if(v) setSelected(v.id); }
+      }catch{}
+      setLoading(false);
+    })();
+  },[accessToken]);
+
+  async function save(id:string){
+    setSelected(id); setSaved(false);
+    await setDoc(doc(db,"settings","outlookOnCall"),{vacationCalId:id},{merge:true});
+    setSaved(true); setTimeout(()=>setSaved(false),3000);
+  }
+
+  if(loading) return null;
+  return(
+    <div style={{background:"white",borderRadius:12,padding:20,boxShadow:"0 1px 4px rgba(0,0,0,0.07)",marginBottom:16}}>
+      <h2 style={{fontSize:15,fontWeight:700,color:"#0d2e5e",marginBottom:4}}>🏖 Vacation Calendar</h2>
+      <p style={{fontSize:12,color:"#6b7280",marginBottom:12}}>Pick which Outlook calendar vacation events are written to. Choose the one you see in your Outlook so they show up there.</p>
+      <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+        <select value={selected} onChange={e=>save(e.target.value)} style={{...inp,maxWidth:320}}>
+          <option value="">Select calendar…</option>
+          {cals.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+        {saved&&<span style={{fontSize:12,color:"#059669",fontWeight:600}}>✅ Saved</span>}
       </div>
     </div>
   );
