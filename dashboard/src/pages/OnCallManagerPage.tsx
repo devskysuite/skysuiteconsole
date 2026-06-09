@@ -118,7 +118,10 @@ export default function OnCallManagerPage() {
 
   const [accessToken,setAccessToken]=useState("");
   const [connected,setConnected]=useState(false);
-  const [tokenLoading,setTokenLoading]=useState(true); // true until Firestore token check completes
+  // true until either the Firestore token check OR the OAuth callback exchange completes.
+  // Initialise to true — if there's a ?code= in the URL the callback effect owns
+  // clearing it; otherwise the load() effect clears it.
+  const [tokenLoading,setTokenLoading]=useState(true);
   const [events,setEvents]=useState<CalEvent[]>([]);
   const [loading,setLoading]=useState(false);
   const [error,setError]=useState("");
@@ -236,12 +239,15 @@ export default function OnCallManagerPage() {
         const cfg=await getDoc(doc(db,"settings","oncallConfig"));
         if(cfg.exists()&&cfg.data().statVisMinRole) setStatVisMinRole(cfg.data().statVisMinRole);
       } catch {}
-      setTokenLoading(false); // always clear the loading gate
+      // Only clear the loading gate here if there's no OAuth callback in flight.
+      // When ?code= is present the callback useEffect owns clearing tokenLoading.
+      if(!new URLSearchParams(window.location.search).has("code")) setTokenLoading(false);
     }
     load();
   },[]);
 
-  // Handle OAuth callback
+  // Handle OAuth callback — exchange the code via a Cloud Function (server-side)
+  // so the Web-type Azure app registration doesn't block the cross-origin exchange.
   useEffect(()=>{
     const params=new URLSearchParams(window.location.search);
     const code=params.get("code");
@@ -250,19 +256,17 @@ export default function OnCallManagerPage() {
     const verifier=sessionStorage.getItem("pkce_verifier")||"";
     sessionStorage.removeItem("pkce_verifier");
     (async()=>{
-      const bodyParams:any={ client_id:CLIENT_ID, code, redirect_uri:REDIRECT, grant_type:"authorization_code", scope:"Calendars.ReadWrite offline_access" };
-      if(verifier) bodyParams.code_verifier=verifier;
-      const r=await fetch(`https://login.microsoftonline.com/${TENANT_ID}/oauth2/v2.0/token`,{method:"POST",body:new URLSearchParams(bodyParams)});
-      const d=await r.json();
-      if(d.access_token){
-        setAccessToken(d.access_token); setConnected(true);
-        const expiresAt=Date.now()+((d.expires_in||3600)-300)*1000;
-        try{await setDoc(doc(db,"settings","outlookOnCall"),{
-          refreshToken:  d.refresh_token,
-          accessToken:   d.access_token,
-          tokenExpiresAt: expiresAt,
-        },{merge:true});}catch{}
-      } else { setError("Auth failed: "+(d.error_description||JSON.stringify(d))); }
+      try{
+        const exchangeCode=httpsCallable(getFunctions(),"exchangeOutlookCode");
+        const result:any=await exchangeCode({ code, codeVerifier:verifier||undefined, redirectUri:REDIRECT });
+        const d=result.data;
+        if(d?.accessToken){ setAccessToken(d.accessToken); setConnected(true); }
+        else { setError("Auth failed: token exchange returned no access token"); }
+      }catch(e:any){
+        setError("Auth failed: "+(e?.message||JSON.stringify(e)));
+      }finally{
+        setTokenLoading(false);
+      }
     })();
   },[]);
 

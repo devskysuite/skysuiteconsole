@@ -13,3 +13,4 @@ export { vacationAction } from "./src/vacationAction.js";
 export { oncallReminderSms } from "./src/oncallReminderSms.js";
 export { vacationConflictCheck } from "./src/vacationConflictCheck.js";
 export { conflictCheckNow } from "./src/conflictCheckNow.js";
+export { exchangeOutlookCode } from "./src/exchangeOutlookCode.js";
