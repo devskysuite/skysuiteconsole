@@ -1,33 +1,7 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
-import { db } from "./utils/firestore.js";
+import { getOutlookAccessToken } from "./utils/getOutlookToken.js";
 
-const TENANT_ID = "1c1d62e8-f392-4caa-a8a6-0ce98e0913d9";
-const CLIENT_ID = "9a1a21f1-40a3-4872-a4d6-888bd51d116d";
-const CAL_ID    = "AAMkADgyOGUwMDUyLTNiZjMtNGQzNi1hNTgwLTQ2M2IzYzE2YmQ5MgBGAAAAAACGxuDePTlOQawDDU8UfW0gBwBxt6lSDH0kQY0tk4wDjNk8AAAAAAEGAABxt6lSDH0kQY0tk4wDjNk8AAALmQObAAA=";
-
-async function getAccessToken() {
-  const snap = await db.collection("settings").doc("outlookOnCall").get();
-  const data = snap.data() || {};
-  const refreshToken = data.refreshToken;
-  if (!refreshToken) throw new HttpsError("failed-precondition", "No Outlook connection. Connect Outlook first.");
-
-  const res = await fetch(
-    `https://login.microsoftonline.com/${TENANT_ID}/oauth2/v2.0/token`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        grant_type: "refresh_token",
-        client_id: CLIENT_ID,
-        refresh_token: refreshToken,
-        scope: "Calendars.ReadWrite offline_access",
-      }).toString(),
-    }
-  );
-  const json = await res.json();
-  if (!res.ok) throw new HttpsError("internal", json.error_description || "Token refresh failed");
-  return json.access_token;
-}
+const CAL_ID = "AAMkADgyOGUwMDUyLTNiZjMtNGQzNi1hNTgwLTQ2M2IzYzE2YmQ5MgBGAAAAAACGxuDePTlOQawDDU8UfW0gBwBxt6lSDH0kQY0tk4wDjNk8AAAAAAEGAABxt6lSDH0kQY0tk4wDjNk8AAALmQObAAA=";
 
 function escapeIcs(str) {
   return (str || "").replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\n/g, "\\n");
@@ -46,7 +20,7 @@ export const exportUserIcs = onCall(
     const { personName } = request.data;
     if (!personName) throw new HttpsError("invalid-argument", "personName required.");
 
-    const token = await getAccessToken();
+    const token = await getOutlookAccessToken().catch(e => { throw new HttpsError("failed-precondition", e.message); });
 
     // Fetch 12 months of events
     const start = new Date().toISOString().slice(0, 10);
