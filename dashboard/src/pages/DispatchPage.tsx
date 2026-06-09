@@ -335,7 +335,7 @@ function VisitModal({ init, onClose }: { init: { techUid: string; techName: stri
 }
 
 const s: Record<string, any> = {
-  headerBar: { display: "flex", alignItems: "center", justifyContent: "space-between", background: "#0d2e5e", color: "#fff", borderRadius: 12, padding: "12px 18px", marginBottom: 14, flexWrap: "wrap", gap: 10 },
+  headerBar: { display: "flex", alignItems: "center", justifyContent: "space-between", background: "#0d2e5e", color: "#fff", borderRadius: 0, padding: "12px 18px", marginBottom: 14, flexWrap: "wrap", gap: 10 },
   segment: { display: "flex", background: "rgba(255,255,255,0.12)", borderRadius: 8, overflow: "hidden" },
   segOn: { background: "#fff", color: "#0d2e5e", border: "none", padding: "6px 14px", fontSize: 12, fontWeight: 800, cursor: "pointer" },
   segOff: { background: "transparent", color: "rgba(255,255,255,0.8)", border: "none", padding: "6px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer" },
