@@ -25,6 +25,7 @@ import PidTuningPage from "./pages/PidTuningPage";
 import TwilioPage from "./pages/TwilioPage";
 import DispatchPage from "./pages/DispatchPage";
 import CustomersPage from "./pages/CustomersPage";
+import CustomerDetailPage from "./pages/CustomerDetailPage";
 import Nav from "./components/Nav";
 import { ToastProvider } from "./components/Toast";
 import Spinner from "./components/Spinner";
@@ -111,6 +112,7 @@ export default function App() {
                       <Route path="/twilio" element={<TwilioPage />} />
                       <Route path="/dispatch" element={<DispatchPage />} />
                       <Route path="/customers" element={<CustomersPage />} />
+                      <Route path="/customers/:customerId" element={<CustomerDetailPage />} />
                     </Routes>
                 </AppLayout>
               </RequireAuth>

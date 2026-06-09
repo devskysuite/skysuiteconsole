@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   addDoc, collection, deleteDoc, doc,
   onSnapshot, setDoc, updateDoc,
@@ -131,9 +132,10 @@ function FilterTab({ label, count, active, dot, onClick }:
 function CustomerRow({ c, onEdit, onDelete, isAdmin }:
   { c: Customer; onEdit: () => void; onDelete: () => void; isAdmin: boolean }) {
   const tc = c.customerType ? (TYPE_COLORS[c.customerType] || TYPE_COLORS.Other) : null;
+  const navigate = useNavigate();
   return (
     <tr
-      onClick={onEdit}
+      onClick={() => navigate(`/customers/${c.id}`)}
       style={{ borderBottom: "1px solid #f3f4f6", cursor: "pointer", transition: "background 0.1s" }}
       onMouseEnter={e => (e.currentTarget.style.background = "#f8fafc")}
       onMouseLeave={e => (e.currentTarget.style.background = "")}
@@ -326,7 +328,6 @@ export default function CustomersPage() {
   const [search, setSearch]       = useState("");
   const [filter, setFilter]       = useState<"all"|"warning"|"risk"|"hold">("all");
   const [createModal, setCreateModal] = useState(false);
-  const [editModal, setEditModal]     = useState<Customer | null>(null);
   const [importing, setImporting]     = useState(false);
   const [importProg, setImportProg]   = useState({ done: 0, total: 0 });
   const fileRef = useRef<HTMLInputElement>(null);
@@ -404,10 +405,6 @@ export default function CustomersPage() {
   async function createCustomer(data: Omit<Customer, "id">) {
     await addDoc(collection(db, "customers"), data);
     setCreateModal(false);
-  }
-  async function updateCustomer(id: string, data: Omit<Customer, "id">) {
-    await updateDoc(doc(db, "customers", id), { ...data });
-    setEditModal(null);
   }
   async function deleteCustomer(c: Customer) {
     if (!confirm(`Delete "${c.name}"? This cannot be undone.`)) return;
@@ -526,7 +523,7 @@ export default function CustomersPage() {
                 <CustomerRow
                   key={c.id}
                   c={c}
-                  onEdit={() => setEditModal(c)}
+                  onEdit={() => {}}
                   onDelete={() => deleteCustomer(c)}
                   isAdmin={!!isAdmin}
                 />
@@ -539,14 +536,6 @@ export default function CustomersPage() {
       {/* Modals */}
       {createModal && (
         <CustomerModal title="Create Customer" onSave={createCustomer} onClose={() => setCreateModal(false)} />
-      )}
-      {editModal && (
-        <CustomerModal
-          title={`Edit — ${editModal.name}`}
-          initial={editModal}
-          onSave={data => updateCustomer(editModal.id!, data)}
-          onClose={() => setEditModal(null)}
-        />
       )}
     </div>
   );
