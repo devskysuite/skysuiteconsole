@@ -1,6 +1,5 @@
 import { onRequest } from "firebase-functions/v2/https";
 import { getOutlookAccessToken } from "./utils/getOutlookToken.js";
-import { getVacationCalendarId } from "./utils/getVacationCalendar.js";
 import { db } from "./utils/firestore.js";
 
 const CAL_ID = "AAMkADgyOGUwMDUyLTNiZjMtNGQzNi1hNTgwLTQ2M2IzYzE2YmQ5MgBGAAAAAACGxuDePTlOQawDDU8UfW0gBwBxt6lSDH0kQY0tk4wDjNk8AAAAAAEGAABxt6lSDH0kQY0tk4wDjNk8AAALmQObAAA=";
@@ -29,35 +28,30 @@ export const serveIcs = onRequest({ cors: false, invoker: "public" }, async (req
 
   try {
     const accessToken = await getOutlookAccessToken();
-    const vacCalId = await getVacationCalendarId(accessToken).catch(() => null);
     const start = new Date().toISOString().slice(0, 10);
     const endD  = new Date(); endD.setMonth(endD.getMonth() + 13);
     const end   = endD.toISOString().slice(0, 10);
 
-    async function fetchCal(calId) {
-      const out = [];
-      let url = `https://graph.microsoft.com/v1.0/me/calendars/${encodeURIComponent(calId)}/calendarView?startDateTime=${start}T00:00:00&endDateTime=${end}T23:59:59&$top=200&$select=subject,start,end,isAllDay`;
-      while (url) {
-        const r = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
-        const json = await r.json();
-        if (!r.ok) throw new Error(json.error?.message || "Graph API error");
-        out.push(...(json.value || []));
-        url = json["@odata.nextLink"] || null;
-      }
-      return out;
+    // One shared calendar — on-call and vacation distinguished by subject
+    const raw = [];
+    let url = `https://graph.microsoft.com/v1.0/me/calendars/${encodeURIComponent(CAL_ID)}/calendarView?startDateTime=${start}T00:00:00&endDateTime=${end}T23:59:59&$top=250&$select=subject,start,end,isAllDay`;
+    while (url) {
+      const r = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+      const json = await r.json();
+      if (!r.ok) throw new Error(json.error?.message || "Graph API error");
+      raw.push(...(json.value || []));
+      url = json["@odata.nextLink"] || null;
     }
 
-    const onCallRaw = await fetchCal(CAL_ID);
-    const vacRaw    = vacCalId ? await fetchCal(vacCalId).catch(() => []) : [];
-
     const firstName = personName.split(" ")[0].toLowerCase();
-    // On-call events for this person (from the On-Call calendar)
-    const myOnCall = onCallRaw.filter(e => {
+    const myOnCall = raw.filter(e => {
       const s = (e.subject || "").toLowerCase();
       return s.includes(firstName) && (s.includes("on call") || s.includes("oncall")) && !s.includes("vacation");
     });
-    // Vacation events for this person (from the Vacation calendar)
-    const myVac = vacRaw.filter(e => (e.subject || "").toLowerCase().includes(firstName));
+    const myVac = raw.filter(e => {
+      const s = (e.subject || "").toLowerCase();
+      return s.includes(firstName) && s.includes("vacation");
+    });
 
     const lines = [
       "BEGIN:VCALENDAR",

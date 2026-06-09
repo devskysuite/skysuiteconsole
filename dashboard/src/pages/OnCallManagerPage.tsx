@@ -156,7 +156,6 @@ export default function OnCallManagerPage() {
   const [addMultiDay,setAddMultiDay]=useState(false);
   const [addEndDate,setAddEndDate]=useState("");
   const [addSubmitting,setAddSubmitting]=useState(false);
-  const [vacCalId,setVacCalId]=useState("");
 
   // Auth user
   useEffect(()=>{ return onAuthStateChanged(auth, u=>{ if(u) setCurrentUser({uid:u.uid,displayName:u.displayName||u.email||"Me"}); }); },[]);
@@ -232,17 +231,6 @@ export default function OnCallManagerPage() {
     })().catch(()=>setLoading(false));
   },[accessToken,year,month,refreshKey]);
 
-  // Resolve the dedicated "Vacation" calendar id (for adding vacation events)
-  useEffect(()=>{
-    if(!accessToken) return;
-    (async()=>{
-      try{
-        const d=await graphFetch(accessToken,"/me/calendars?$top=100");
-        const cal=(d.value||[]).find((c:any)=>(c.name||"").toLowerCase().includes("vacation"));
-        if(cal?.id) setVacCalId(cal.id);
-      }catch{}
-    })();
-  },[accessToken]);
 
   async function connectOutlook() {
     const v=genVerifier(), c=await genChallenge(v);
@@ -482,10 +470,9 @@ export default function OnCallManagerPage() {
   async function submitAddEvent(){
     if(!addModal||!accessToken||!addName.trim()) return;
     const isVac = addType==="vacation";
-    if(isVac && !vacCalId){ window.alert("No Vacation calendar found in Outlook. Create a calendar named \"Vacation\" first."); return; }
     setAddSubmitting(true);
     const subject = isVac ? `${addName.trim()} Vacation` : `${addName.trim()} On Call`;
-    const targetCal = isVac ? vacCalId : CAL_ID;
+    const targetCal = CAL_ID; // one shared calendar; subject distinguishes type
     const startDate = addModal.date;
     const lastDate  = addMultiDay && addEndDate ? addEndDate : startDate;
     try{
@@ -660,9 +647,6 @@ export default function OnCallManagerPage() {
               : <><p style={{fontSize:13,color:"#6b7280",marginBottom:10}}>Sign in with the SkySuite Outlook account to enable calendar features.</p>
                  <button onClick={connectOutlook} style={btnS("#1565c0")}>🔗 Connect Outlook</button></>}
           </div>
-
-          {/* Vacation Calendar picker */}
-          {connected&&<VacationCalPanel accessToken={accessToken} db={db}/>}
 
           {/* On-Call Roster */}
           <div style={{background:"white",borderRadius:12,padding:20,boxShadow:"0 1px 4px rgba(0,0,0,0.07)",marginBottom:16}}>
@@ -907,50 +891,6 @@ function IcsExportPanel({ accessToken, calId, db }: { accessToken:string; calId:
             {busy===name?"⏳ Building…":`⬇ ${name}`}
           </button>
         ))}
-      </div>
-    </div>
-  );
-}
-
-function VacationCalPanel({ accessToken, db }: { accessToken:string; db:any }) {
-  const [cals,setCals]=useState<{id:string;name:string}[]>([]);
-  const [selected,setSelected]=useState("");
-  const [saved,setSaved]=useState(false);
-  const [loading,setLoading]=useState(true);
-
-  useEffect(()=>{
-    if(!accessToken) return;
-    (async()=>{
-      try{
-        const d=await graphFetch(accessToken,"/me/calendars?$top=100");
-        const list=(d.value||[]).map((c:any)=>({id:c.id,name:c.name}));
-        setCals(list);
-        const snap=await getDoc(doc(db,"settings","outlookOnCall"));
-        const cur=snap.data()?.vacationCalId;
-        if(cur) setSelected(cur);
-        else { const v=list.find((c:any)=>c.name.toLowerCase().includes("vacation")); if(v) setSelected(v.id); }
-      }catch{}
-      setLoading(false);
-    })();
-  },[accessToken]);
-
-  async function save(id:string){
-    setSelected(id); setSaved(false);
-    await setDoc(doc(db,"settings","outlookOnCall"),{vacationCalId:id},{merge:true});
-    setSaved(true); setTimeout(()=>setSaved(false),3000);
-  }
-
-  if(loading) return null;
-  return(
-    <div style={{background:"white",borderRadius:12,padding:20,boxShadow:"0 1px 4px rgba(0,0,0,0.07)",marginBottom:16}}>
-      <h2 style={{fontSize:15,fontWeight:700,color:"#0d2e5e",marginBottom:4}}>🏖 Vacation Calendar</h2>
-      <p style={{fontSize:12,color:"#6b7280",marginBottom:12}}>Pick which Outlook calendar vacation events are written to. Choose the one you see in your Outlook so they show up there.</p>
-      <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
-        <select value={selected} onChange={e=>save(e.target.value)} style={{...inp,maxWidth:320}}>
-          <option value="">Select calendar…</option>
-          {cals.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
-        </select>
-        {saved&&<span style={{fontSize:12,color:"#059669",fontWeight:600}}>✅ Saved</span>}
       </div>
     </div>
   );
