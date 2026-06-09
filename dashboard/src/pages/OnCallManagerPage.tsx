@@ -248,13 +248,20 @@ export default function OnCallManagerPage() {
 
   // Handle OAuth callback — exchange the code via a Cloud Function (server-side)
   // so the Web-type Azure app registration doesn't block the cross-origin exchange.
+  // The PKCE verifier is carried in the OAuth `state` param (base64-encoded) rather
+  // than sessionStorage, which can hold a stale verifier from a prior failed attempt
+  // and cause AADSTS50148 on retry.
   useEffect(()=>{
     const params=new URLSearchParams(window.location.search);
     const code=params.get("code");
     if(!code) return;
-    window.history.replaceState({},"",window.location.pathname);
-    const verifier=sessionStorage.getItem("pkce_verifier")||"";
+    // Decode verifier from state; fall back to sessionStorage for any in-flight
+    // auth requests that were started before this change deployed.
+    let verifier="";
+    try{ const st=params.get("state")||""; if(st) verifier=atob(st); } catch{}
+    if(!verifier) verifier=sessionStorage.getItem("pkce_verifier")||"";
     sessionStorage.removeItem("pkce_verifier");
+    window.history.replaceState({},"",window.location.pathname);
     (async()=>{
       try{
         const exchangeCode=httpsCallable(getFunctions(),"exchangeOutlookCode");
@@ -289,8 +296,11 @@ export default function OnCallManagerPage() {
 
   async function connectOutlook() {
     const v=genVerifier(), c=await genChallenge(v);
-    sessionStorage.setItem("pkce_verifier",v);
-    window.location.href=`https://login.microsoftonline.com/${TENANT_ID}/oauth2/v2.0/authorize?client_id=${CLIENT_ID}&response_type=code&redirect_uri=${encodeURIComponent(REDIRECT)}&scope=${encodeURIComponent("Calendars.ReadWrite offline_access")}&response_mode=query&code_challenge=${c}&code_challenge_method=S256&prompt=login`;
+    // Carry the verifier in the OAuth state param (base64) so it survives the
+    // cross-origin redirect without depending on sessionStorage, which retains
+    // stale values from prior failed attempts and causes AADSTS50148 on retry.
+    const state=btoa(v);
+    window.location.href=`https://login.microsoftonline.com/${TENANT_ID}/oauth2/v2.0/authorize?client_id=${CLIENT_ID}&response_type=code&redirect_uri=${encodeURIComponent(REDIRECT)}&scope=${encodeURIComponent("Calendars.ReadWrite offline_access")}&response_mode=query&code_challenge=${c}&code_challenge_method=S256&state=${encodeURIComponent(state)}&prompt=login`;
   }
 
   // ── Calendar Backup ──────────────────────────────────────────────────────────
