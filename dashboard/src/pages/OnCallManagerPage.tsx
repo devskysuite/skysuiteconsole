@@ -982,7 +982,7 @@ function TwilioSettingsPanel({ db }: { db:any }) {
 
 function LockedYearsPanel({ db }: { db:any }) {
   const thisYear = new Date().getFullYear();
-  const years = [thisYear-1, thisYear, thisYear+1, thisYear+2];
+  const years = [thisYear, thisYear+1, thisYear+2];
   const [locked, setLocked] = useState<number[]>([]);
   useEffect(()=>{
     const unsub=onSnapshot(doc(db,"settings","lockedYears"),s=>setLocked(s.data()?.years||[]));
