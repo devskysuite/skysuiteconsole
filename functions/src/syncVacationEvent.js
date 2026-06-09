@@ -21,7 +21,7 @@ async function graph(token, path, method, body) {
 export const syncVacationEvent = onCall({ cors: true }, async (request) => {
   if (!request.auth) throw new HttpsError("unauthenticated", "Login required.");
 
-  const { requestId } = request.data;
+  const { requestId, remove } = request.data;
   if (!requestId) throw new HttpsError("invalid-argument", "requestId required.");
 
   const ref  = db.collection("timeOffRequests").doc(requestId);
@@ -34,6 +34,15 @@ export const syncVacationEvent = onCall({ cors: true }, async (request) => {
     token = await getOutlookAccessToken();
   } catch (e) {
     throw new HttpsError("failed-precondition", e.message);
+  }
+
+  // Forced removal (e.g. request is being deleted) → delete event regardless of status
+  if (remove) {
+    if (r.calendarEventId) {
+      await graph(token, `/me/calendars/${CAL_ID}/events/${r.calendarEventId}`, "DELETE").catch(() => {});
+      await ref.update({ calendarEventId: null }).catch(() => {});
+    }
+    return { action: "removed" };
   }
 
   // APPROVED → ensure event exists

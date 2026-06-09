@@ -175,6 +175,8 @@ export default function TimeOffPage() {
   }
   async function deleteRequest(r: TimeOffRequest) {
     if (!await confirm(`Delete this request from ${r.employeeName}?`)) return;
+    // Remove the Outlook calendar event first (while the doc still exists), then delete the request
+    await callSyncVacation({ requestId: r.id, remove: true }).catch(() => {});
     await deleteDoc(doc(db, "timeOffRequests", r.id));
   }
 

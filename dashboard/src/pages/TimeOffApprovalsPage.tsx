@@ -75,6 +75,8 @@ export default function TimeOffApprovalsPage() {
     if (!await confirm("Remove this time-off request? This cannot be undone.")) return;
     setBusy(id);
     try {
+      // Remove the Outlook calendar event first (while the doc still exists), then delete the request
+      await callSyncVacation({ requestId: id, remove: true }).catch(() => {});
       await deleteDoc(doc(db, "timeOffRequests", id));
     } catch (e: any) {
       toast(`Error: ${e?.message}`, "error");
