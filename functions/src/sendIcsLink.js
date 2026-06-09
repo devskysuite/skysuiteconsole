@@ -1,7 +1,7 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { db } from "./utils/firestore.js";
 
-const ICS_BASE_URL = "webcal://skysuite.ca/api/ics";
+const ICS_BASE_URL = "https://skysuite.ca/api/ics";
 
 export const sendIcsLink = onCall({ cors: true }, async (request) => {
   if (!request.auth) throw new HttpsError("unauthenticated", "Login required.");
@@ -17,11 +17,11 @@ export const sendIcsLink = onCall({ cors: true }, async (request) => {
   const from  = secrets.twilioFrom;
   if (!sid || !token || !from) throw new HttpsError("failed-precondition", "Twilio credentials not configured. Go to Admin → Twilio SMS.");
 
-  const icsUrl = `${ICS_BASE_URL}?name=${encodeURIComponent(personName)}`;
+  const subscribeUrl = `${ICS_BASE_URL}?name=${encodeURIComponent(personName)}&subscribe=1`;
 
   const digits = phone.replace(/\D/g, "");
   const e164 = digits.length === 10 ? `+1${digits}` : `+${digits}`;
-  const body = `Hi ${personName.split(" ")[0]}, here is your SkySuite on-call calendar:\n${icsUrl}\n\nTap the link to add it to your calendar app. – SkySuite`;
+  const body = `Hi ${personName.split(" ")[0]}, tap the link below to subscribe to your SkySuite on-call calendar. It will update automatically:\n${subscribeUrl}\n– SkySuite`;
 
   const smsRes = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
     method: "POST",
@@ -35,5 +35,5 @@ export const sendIcsLink = onCall({ cors: true }, async (request) => {
   const smsJson = await smsRes.json();
   if (!smsRes.ok) throw new HttpsError("internal", smsJson.message || "Twilio error");
 
-  return { sid: smsJson.sid, url: icsUrl };
+  return { sid: smsJson.sid, url: subscribeUrl };
 });

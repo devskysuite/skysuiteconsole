@@ -27,6 +27,20 @@ export const serveIcs = onRequest({ cors: false, invoker: "public" }, async (req
   const personName = req.query.name;
   if (!personName) { res.status(400).send("Missing ?name= parameter"); return; }
 
+  // ?subscribe=1 → serve an HTML page that redirects to webcal://
+  // This makes the SMS link tappable (https) but still triggers calendar subscription
+  if (req.query.subscribe === "1") {
+    const webcalUrl = `webcal://skysuite.ca/api/ics?name=${encodeURIComponent(personName)}`;
+    res.setHeader("Content-Type", "text/html");
+    res.status(200).send(`<!DOCTYPE html><html><head>
+<meta http-equiv="refresh" content="0;url=${webcalUrl}">
+<title>Adding calendar…</title></head><body>
+<p>Opening calendar subscription…</p>
+<p>If it doesn't open automatically, <a href="${webcalUrl}">tap here</a>.</p>
+</body></html>`);
+    return;
+  }
+
   try {
     const accessToken = await getAccessToken();
     const start = new Date().toISOString().slice(0, 10);
