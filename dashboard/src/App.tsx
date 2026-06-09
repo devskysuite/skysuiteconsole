@@ -27,6 +27,7 @@ import DispatchPage from "./pages/DispatchPage";
 import CustomersPage from "./pages/CustomersPage";
 import CustomerDetailPage from "./pages/CustomerDetailPage";
 import PropertiesPage from "./pages/PropertiesPage";
+import PropertyDetailPage from "./pages/PropertyDetailPage";
 import VendorsPage from "./pages/VendorsPage";
 import Nav from "./components/Nav";
 import { ToastProvider } from "./components/Toast";
@@ -130,6 +131,7 @@ export default function App() {
                       <Route path="/customers" element={<CustomersPage />} />
                       <Route path="/customers/:customerId" element={<CustomerDetailPage />} />
                       <Route path="/properties" element={<PropertiesPage />} />
+                      <Route path="/properties/:propertyId" element={<PropertyDetailPage />} />
                       <Route path="/vendors" element={<VendorsPage />} />
                     </Routes>
                 </AppLayout>

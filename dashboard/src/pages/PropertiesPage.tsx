@@ -127,14 +127,14 @@ function PropertyRow({ p, onEdit, onDelete, isAdmin }:
   const tc = p.propertyType ? (TYPE_COLORS[p.propertyType] || TYPE_COLORS.Other) : null;
   return (
     <tr
-      onClick={onEdit}
+      onClick={() => p.id && navigate(`/properties/${p.id}`)}
       style={{ borderBottom: "1px solid #f3f4f6", cursor: "pointer" }}
       onMouseEnter={e => (e.currentTarget.style.background = "#f8fafc")}
       onMouseLeave={e => (e.currentTarget.style.background = "")}
     >
-      {/* Property name — sticky */}
+      {/* Property name — sticky, navigates to detail page */}
       <td style={{ ...td, position: "sticky" as const, left: 0, background: "inherit", zIndex: 1, minWidth: 200, borderRight: "1px solid #f0f0f0" }}>
-        <div style={{ fontWeight: 600, color: "#0d2e5e", fontSize: 13 }}>{p.name}</div>
+        <div style={{ fontWeight: 600, color: "#1565c0", fontSize: 13 }}>{p.name}</div>
       </td>
       {/* Status */}
       <td style={td}>
