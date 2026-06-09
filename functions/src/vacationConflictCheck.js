@@ -8,10 +8,10 @@ function firstName(subject) {
   return (subject || "").replace(/on ?call/ig, "").replace(/vacation/ig, "").replace(/[-–]/g, " ").trim().split(/\s+/)[0]?.toLowerCase() || "";
 }
 
-// Each morning, checks the next 60 days for anyone scheduled on call on a day
-// they're also on vacation, and texts a single alert number with the conflicts.
+// Each morning at 7:00, checks the next 365 days for anyone scheduled on call
+// on a day they're also on vacation, and texts a single alert number.
 export const vacationConflictCheck = onSchedule(
-  { schedule: "every day 07:30", timeZone: "America/Toronto", timeoutSeconds: 120 },
+  { schedule: "every day 07:00", timeZone: "America/Toronto", timeoutSeconds: 300 },
   async () => {
     const cfg = (await db.collection("settings").doc("onCallConfig").get()).data() || {};
     const alertPhone = cfg.alertPhone;
@@ -19,7 +19,7 @@ export const vacationConflictCheck = onSchedule(
 
     const token = await getOutlookAccessToken();
     const start = new Date().toISOString().slice(0, 10);
-    const endD  = new Date(); endD.setDate(endD.getDate() + 60);
+    const endD  = new Date(); endD.setDate(endD.getDate() + 365);
     const end   = endD.toISOString().slice(0, 10);
 
     // Map: date → { oncall:Set<name>, vacation:Set<name> }
