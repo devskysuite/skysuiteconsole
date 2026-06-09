@@ -222,7 +222,7 @@ const btnS  = (bg: string): React.CSSProperties => ({ background: bg, color: "#f
 const pgBtn: React.CSSProperties = { padding: "4px 10px", fontSize: 12, fontWeight: 500, borderRadius: 6, cursor: "pointer", border: "1px solid #d1d5db", background: "#fff", color: "#374151" };
 const lbl: React.CSSProperties  = { display: "block", fontSize: 12, fontWeight: 600, color: "#374151", marginBottom: 4 };
 const inp: React.CSSProperties  = { width: "100%", padding: "8px 12px", border: "1px solid #d1d5db", borderRadius: 8, fontSize: 14, boxSizing: "border-box" as const };
-const th: React.CSSProperties   = { padding: "10px 12px", textAlign: "left" as const, fontSize: 11, fontWeight: 700, color: "#6b7280", textTransform: "uppercase" as const, letterSpacing: 0.4, whiteSpace: "nowrap" as const, background: "#f9fafb", borderBottom: "2px solid #e5e7eb" };
+const th: React.CSSProperties   = { padding: "10px 12px", textAlign: "left" as const, fontSize: 11, fontWeight: 700, color: "#6b7280", textTransform: "uppercase" as const, letterSpacing: 0.4, whiteSpace: "nowrap" as const, background: "#f9fafb", borderBottom: "2px solid #e5e7eb", position: "sticky" as const, top: 96, zIndex: 3 };
 const td: React.CSSProperties   = { padding: "10px 12px", fontSize: 13, color: "#374151", verticalAlign: "middle" as const };
 
 // ── Main page ─────────────────────────────────────────────────────────────────
@@ -410,7 +410,7 @@ export default function VendorsPage() {
           <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1100 }}>
             <thead>
               <tr>
-                <th style={{ ...th, minWidth: 220, position: "sticky" as const, left: 0, zIndex: 2, borderRight: "1px solid #e5e7eb" }}>Vendor</th>
+                <th style={{ ...th, minWidth: 220, position: "sticky" as const, left: 0, top: 96, zIndex: 4, borderRight: "1px solid #e5e7eb" }}>Vendor</th>
                 <th style={th}>Type</th>
                 <th style={{ ...th, minWidth: 150 }}>Contact</th>
                 <th style={{ ...th, minWidth: 130 }}>Phone</th>

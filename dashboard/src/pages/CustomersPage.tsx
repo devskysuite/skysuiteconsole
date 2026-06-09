@@ -321,6 +321,7 @@ const th: React.CSSProperties = {
   padding: "10px 12px", textAlign: "left" as const, fontSize: 11, fontWeight: 700,
   color: "#6b7280", textTransform: "uppercase" as const, letterSpacing: 0.4,
   whiteSpace: "nowrap" as const, background: "#f9fafb", borderBottom: "2px solid #e5e7eb",
+  position: "sticky" as const, top: 96, zIndex: 3,
 };
 const td: React.CSSProperties = { padding: "10px 12px", fontSize: 13, color: "#374151", verticalAlign: "middle" as const };
 
@@ -526,7 +527,7 @@ export default function CustomersPage() {
           <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1520 }}>
             <thead>
               <tr>
-                <th style={{ ...th, minWidth: 200, position: "sticky" as const, left: 0, zIndex: 2, borderRight: "1px solid #e5e7eb" }}>Customer</th>
+                <th style={{ ...th, minWidth: 200, position: "sticky" as const, left: 0, top: 96, zIndex: 4, borderRight: "1px solid #e5e7eb" }}>Customer</th>
                 <th style={th}>Status</th>
                 <th style={th}>Type</th>
                 <th style={{ ...th, textAlign: "center" as const }}># Props</th>
