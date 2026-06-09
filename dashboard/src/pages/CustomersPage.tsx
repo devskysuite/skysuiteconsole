@@ -306,11 +306,15 @@ function CustomerModal({ title, initial, onSave, onClose }:
   );
 }
 
+type PageSize = 25 | 50 | 100 | "all";
+const PAGE_SIZES: PageSize[] = [25, 50, 100, "all"];
+
 // ── Styles ────────────────────────────────────────────────────────────────────
 const btnS = (bg: string): React.CSSProperties => ({
   background: bg, color: "#fff", border: "none", borderRadius: 8,
   padding: "8px 16px", fontSize: 13, fontWeight: 600, cursor: "pointer",
 });
+const pgBtn: React.CSSProperties = { padding: "4px 10px", fontSize: 12, fontWeight: 500, borderRadius: 6, cursor: "pointer", border: "1px solid #d1d5db", background: "#fff", color: "#374151" };
 const lbl: React.CSSProperties = { display: "block", fontSize: 12, fontWeight: 600, color: "#374151", marginBottom: 4 };
 const inp: React.CSSProperties = { width: "100%", padding: "8px 12px", border: "1px solid #d1d5db", borderRadius: 8, fontSize: 14, boxSizing: "border-box" as const };
 const th: React.CSSProperties = {
@@ -327,6 +331,8 @@ export default function CustomersPage() {
   const [loading, setLoading]     = useState(true);
   const [search, setSearch]       = useState("");
   const [filter, setFilter]       = useState<"all"|"warning"|"risk"|"hold">("all");
+  const [pageSize, setPageSize]   = useState<PageSize>(25);
+  const [page, setPage]           = useState(0);
   const [createModal, setCreateModal] = useState(false);
   const [importing, setImporting]     = useState(false);
   const [importProg, setImportProg]   = useState({ done: 0, total: 0 });
@@ -361,6 +367,15 @@ export default function CustomersPage() {
     // Sort descending by customer code (newest first)
     return list.sort((a, b) => parseInt(b.code || "0") - parseInt(a.code || "0"));
   }, [customers, filter, search]);
+
+  // Reset to page 0 whenever filter / search / pageSize changes
+  useEffect(() => { setPage(0); }, [filter, search, pageSize]);
+
+  const totalPages  = pageSize === "all" ? 1 : Math.max(1, Math.ceil(filtered.length / pageSize));
+  const safePage    = Math.min(page, totalPages - 1);
+  const paginated   = pageSize === "all" ? filtered : filtered.slice(safePage * pageSize, safePage * pageSize + pageSize);
+  const rangeStart  = pageSize === "all" ? 1 : safePage * pageSize + 1;
+  const rangeEnd    = pageSize === "all" ? filtered.length : Math.min(safePage * pageSize + pageSize, filtered.length);
 
   const cntWarning = useMemo(() => customers.filter(c => c.outstandingBalance > 0 && c.overdueBalance === 0).length, [customers]);
   const cntRisk    = useMemo(() => customers.filter(c => c.overdueBalance > 0 && c.overdueBalance < 50000).length, [customers]);
@@ -455,8 +470,8 @@ export default function CustomersPage() {
         <FilterTab label="Credit Hold"    count={cntHold}          active={filter === "hold"}    dot="#ef4444" onClick={() => setFilter("hold")} />
       </div>
 
-      {/* Search + count */}
-      <div style={{ padding: "12px 24px", display: "flex", gap: 12, alignItems: "center" }}>
+      {/* Search + rows-per-page */}
+      <div style={{ padding: "12px 24px", display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
         <div style={{ position: "relative", flex: 1, maxWidth: 420 }}>
           <span style={{ position: "absolute", left: 11, top: "50%", transform: "translateY(-50%)", color: "#9ca3af", fontSize: 14, pointerEvents: "none" }}>🔍</span>
           <input
@@ -466,6 +481,16 @@ export default function CustomersPage() {
             onChange={e => setSearch(e.target.value)}
             style={{ width: "100%", padding: "8px 12px 8px 34px", border: "1px solid #d1d5db", borderRadius: 8, fontSize: 13, boxSizing: "border-box" as const }}
           />
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, marginLeft: "auto" }}>
+          <span style={{ fontSize: 12, color: "#6b7280", whiteSpace: "nowrap" }}>Rows per page:</span>
+          <div style={{ display: "flex", gap: 4 }}>
+            {PAGE_SIZES.map(s => (
+              <button key={String(s)} onClick={() => setPageSize(s)} style={{ padding: "4px 10px", fontSize: 12, fontWeight: 600, borderRadius: 6, cursor: "pointer", border: "1px solid " + (pageSize === s ? "#1565c0" : "#d1d5db"), background: pageSize === s ? "#1565c0" : "#fff", color: pageSize === s ? "#fff" : "#374151" }}>
+                {s === "all" ? "All" : s}
+              </button>
+            ))}
+          </div>
         </div>
         <span style={{ fontSize: 13, color: "#9ca3af", whiteSpace: "nowrap" }}>
           {filtered.length.toLocaleString()} customer{filtered.length !== 1 ? "s" : ""}
@@ -519,7 +544,7 @@ export default function CustomersPage() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map(c => (
+              {paginated.map(c => (
                 <CustomerRow
                   key={c.id}
                   c={c}
@@ -532,6 +557,24 @@ export default function CustomersPage() {
           </table>
         )}
       </div>
+
+      {/* Pagination footer */}
+      {filtered.length > 0 && pageSize !== "all" && (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 24px", borderTop: "1px solid #e5e7eb", background: "#fafafa", flexWrap: "wrap", gap: 10 }}>
+          <span style={{ fontSize: 13, color: "#6b7280" }}>
+            Showing {rangeStart.toLocaleString()}–{rangeEnd.toLocaleString()} of {filtered.length.toLocaleString()} customer{filtered.length !== 1 ? "s" : ""}
+          </span>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <button onClick={() => setPage(0)} disabled={safePage === 0} style={{ ...pgBtn, opacity: safePage === 0 ? 0.35 : 1 }} title="First">«</button>
+            <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={safePage === 0} style={{ ...pgBtn, opacity: safePage === 0 ? 0.35 : 1 }}>‹ Prev</button>
+            {Array.from({ length: totalPages }, (_, i) => i).filter(i => Math.abs(i - safePage) <= 2).map(i => (
+              <button key={i} onClick={() => setPage(i)} style={{ ...pgBtn, background: i === safePage ? "#1565c0" : "#fff", color: i === safePage ? "#fff" : "#374151", border: "1px solid " + (i === safePage ? "#1565c0" : "#d1d5db"), fontWeight: i === safePage ? 700 : 500, minWidth: 32 }}>{i + 1}</button>
+            ))}
+            <button onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))} disabled={safePage >= totalPages - 1} style={{ ...pgBtn, opacity: safePage >= totalPages - 1 ? 0.35 : 1 }}>Next ›</button>
+            <button onClick={() => setPage(totalPages - 1)} disabled={safePage >= totalPages - 1} style={{ ...pgBtn, opacity: safePage >= totalPages - 1 ? 0.35 : 1 }} title="Last">»</button>
+          </div>
+        </div>
+      )}
 
       {/* Modals */}
       {createModal && (
