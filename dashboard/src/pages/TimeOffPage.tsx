@@ -144,10 +144,7 @@ export default function TimeOffPage() {
         uid: currentUser.uid, employeeName: currentUser.displayName, employeeEmail: currentUser.email,
         startDate, endDate: effectiveEnd, reason: reason.trim(), status: "PENDING", createdAt: new Date(),
       });
-      try {
-        const idToken = await auth.currentUser?.getIdToken() ?? "";
-        await fetch("/api/send-email", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ idToken, type: "time-off", payload: { employee_name: currentUser.displayName, employee_email: currentUser.email, start_date: startDate, end_date: effectiveEnd, reason: reason.trim() || "No reason provided" } }) });
-      } catch {}
+      // No email — request appears in the Approvals tab for any admin/manager to action.
       setSuccess("Vacation request submitted successfully.");
       setStartDate(""); setEndDate(""); setReason("");
       await loadMyRequests();
