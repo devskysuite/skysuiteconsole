@@ -61,9 +61,25 @@ export const vacationConflictCheck = onSchedule(
     if (!conflicts.length) { console.log("[conflictCheck] No conflicts."); return; }
 
     const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
-    const lines = conflicts.slice(0, 15).map(c => `${cap(c.name)} — ${c.date}`).join("\n");
-    const more = conflicts.length > 15 ? `\n…and ${conflicts.length - 15} more` : "";
-    await sendSms(alertPhone, `⚠️ On-call/vacation conflicts:\n${lines}${more}\n– SkySuite`);
-    console.log(`[conflictCheck] Sent ${conflicts.length} conflict(s) to ${alertPhone}.`);
+
+    // 1. Summary to the single alert number
+    const lines = conflicts.slice(0, 15).map(c => `${cap(c.name)} - ${c.date}`).join("\n");
+    const more = conflicts.length > 15 ? `\n...and ${conflicts.length - 15} more` : "";
+    await sendSms(alertPhone, `On-call/vacation conflicts:\n${lines}${more}\n- SkySuite`).catch(e => console.error("[conflictCheck] alert:", e.message));
+
+    // 2. Text each affected person their own conflict dates (repeats daily until resolved)
+    const usersSnap = await db.collection("users").get();
+    const users = usersSnap.docs.map(d => d.data());
+    const byPerson = {};
+    for (const c of conflicts) { (byPerson[c.name] ||= []).push(c.date); }
+    for (const [name, dates] of Object.entries(byPerson)) {
+      const user = users.find(u => (u.displayName || "").split(" ")[0].toLowerCase() === name && u.phone);
+      if (!user) { console.log(`[conflictCheck] No phone for ${name}.`); continue; }
+      const list = dates.sort().join(", ");
+      try {
+        await sendSms(user.phone, `Heads up ${cap(name)} — you're scheduled on call during your vacation: ${list}. Please arrange a swap. - SkySuite`);
+      } catch (e) { console.error(`[conflictCheck] ${name}:`, e.message); }
+    }
+    console.log(`[conflictCheck] ${conflicts.length} conflict(s); notified ${Object.keys(byPerson).length} people + alert number.`);
   }
 );

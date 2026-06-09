@@ -8,38 +8,9 @@
 
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { db } from "./utils/firestore.js";
+import { getOutlookAccessToken } from "./utils/getOutlookToken.js";
 
-const TENANT_ID = "1c1d62e8-f392-4caa-a8a6-0ce98e0913d9";
-const CLIENT_ID  = "9a1a21f1-40a3-4872-a4d6-888bd51d116d";
-const CAL_ID     = "AAMkADgyOGUwMDUyLTNiZjMtNGQzNi1hNTgwLTQ2M2IzYzE2YmQ5MgBGAAAAAACGxuDePTlOQawDDU8UfW0gBwBxt6lSDH0kQY0tk4wDjNk8AAAAAAEGAABxt6lSDH0kQY0tk4wDjNk8AAALmQObAAA=";
-
-async function getAccessToken() {
-  const snap = await db.collection("settings").doc("outlookOnCall").get();
-  const refreshToken = snap.data()?.refreshToken;
-  if (!refreshToken) throw new Error("No Outlook refresh token in Firestore.");
-
-  const res = await fetch(
-    `https://login.microsoftonline.com/${TENANT_ID}/oauth2/v2.0/token`,
-    {
-      method: "POST",
-      body: new URLSearchParams({
-        client_id: CLIENT_ID,
-        refresh_token: refreshToken,
-        grant_type: "refresh_token",
-        scope: "Calendars.ReadWrite offline_access",
-      }),
-    }
-  );
-  const data = await res.json();
-  if (!data.access_token) throw new Error(`Token refresh failed: ${data.error_description}`);
-
-  // Save updated refresh token
-  await db.collection("settings").doc("outlookOnCall").set(
-    { refreshToken: data.refresh_token },
-    { merge: true }
-  );
-  return data.access_token;
-}
+const CAL_ID = "AAMkADgyOGUwMDUyLTNiZjMtNGQzNi1hNTgwLTQ2M2IzYzE2YmQ5MgBGAAAAAACGxuDePTlOQawDDU8UfW0gBwBxt6lSDH0kQY0tk4wDjNk8AAAAAAEGAABxt6lSDH0kQY0tk4wDjNk8AAALmQObAAA=";
 
 async function graphGet(token, path) {
   const res = await fetch(`https://graph.microsoft.com/v1.0${path}`, {
@@ -92,7 +63,7 @@ export const dailyOnCallFill = onSchedule(
     await db.collection("settings").doc("rotationOrders").set(rotOrders, { merge: true });
 
     // 2. Get access token
-    const token = await getAccessToken();
+    const token = await getOutlookAccessToken();
 
     // 3. Find the 365-day window
     const today = new Date();
