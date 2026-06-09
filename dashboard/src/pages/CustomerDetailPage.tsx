@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   addDoc, collection, deleteDoc, doc,
-  getDoc, onSnapshot, updateDoc, setDoc,
+  getDoc, onSnapshot, query, updateDoc, setDoc, where,
 } from "firebase/firestore";
 import { db } from "../firebase";
 import { useIsAdmin } from "../hooks/useIsAdmin";
@@ -19,8 +19,24 @@ interface Customer {
   email: string; phone: string; tags: string; syncStatus: string;
 }
 interface Property {
-  id?: string; name: string; type: string;
-  address: string; activity: string; jobsCompleted: number;
+  id?: string;
+  name: string;
+  status: string;
+  customerName: string;
+  customerId?: string;
+  propertyType: string;
+  openJobs: number;
+  openJobsValue: number;
+  outstandingBalance: number;
+  overdueBalance: number;
+  propertyAddress: string;
+  accountNumber: string;
+  billingAddress: string;
+  billingCustomer: string;
+  createdBy: string;
+  createdOn: string;
+  customerType: string;
+  tags: string;
 }
 interface Contact {
   id?: string; name: string; role: string; email: string; phone: string;
@@ -100,12 +116,13 @@ export default function CustomerDetailPage() {
     }).catch(() => setLoading(false));
   }, [customerId]);
 
-  // Properties sub-collection
+  // Properties — top-level collection filtered by customerId
   useEffect(() => {
     if (!customerId) return;
-    return onSnapshot(collection(db, "customers", customerId, "properties"), snap => {
-      setProperties(snap.docs.map(d => ({ id: d.id, ...d.data() } as Property)));
-    });
+    return onSnapshot(
+      query(collection(db, "properties"), where("customerId", "==", customerId)),
+      snap => setProperties(snap.docs.map(d => ({ id: d.id, ...d.data() } as Property)))
+    );
   }, [customerId]);
 
   // Contacts sub-collection
@@ -138,19 +155,21 @@ export default function CustomerDetailPage() {
   }
 
   async function saveProperty(data: Property) {
-    if (!customerId) return;
+    if (!customerId || !customer) return;
+    // Always write to top-level properties collection, stamping customerId + customerName
+    const payload: Property = { ...data, customerId, customerName: customer.name };
     if (data.id) {
-      const { id, ...rest } = data;
-      await updateDoc(doc(db, "customers", customerId, "properties", id), rest);
+      const { id: _id, ...rest } = payload;
+      await updateDoc(doc(db, "properties", data.id), rest);
     } else {
-      await addDoc(collection(db, "customers", customerId, "properties"), data);
+      await addDoc(collection(db, "properties"), payload);
     }
     setPropModal(null);
   }
 
   async function deleteProperty(id: string) {
-    if (!customerId || !confirm("Delete this property?")) return;
-    await deleteDoc(doc(db, "customers", customerId, "properties", id));
+    if (!confirm("Delete this property?")) return;
+    await deleteDoc(doc(db, "properties", id));
   }
 
   async function saveContact(data: Contact) {
@@ -320,11 +339,13 @@ export default function CustomerDetailPage() {
                     <thead>
                       <tr style={{ borderBottom: "2px solid #e5e7eb" }}>
                         <th style={th}>Name</th>
-                        <th style={th}>Property Type</th>
+                        <th style={th}>Status</th>
+                        <th style={th}>Type</th>
                         <th style={th}>Property Address</th>
-                        <th style={th}>Jobs Completed</th>
-                        <th style={th}>Activity</th>
-                        <th style={{ ...th, width: 60 }}></th>
+                        <th style={{ ...th, textAlign: "center" as const }}>Open Jobs</th>
+                        <th style={th}>Outstanding</th>
+                        <th style={th}>Overdue</th>
+                        <th style={{ ...th, width: 44 }}></th>
                       </tr>
                     </thead>
                     <tbody>
@@ -333,13 +354,23 @@ export default function CustomerDetailPage() {
                             onMouseEnter={e => (e.currentTarget.style.background = "#f9fafb")}
                             onMouseLeave={e => (e.currentTarget.style.background = "")}>
                           <td style={{ ...td, color: "#1565c0", fontWeight: 600, cursor: "pointer" }} onClick={() => setPropModal(p)}>{p.name}</td>
-                          <td style={td}>{p.type || "—"}</td>
-                          <td style={td}>{p.address || "—"}</td>
-                          <td style={{ ...td, textAlign: "center" as const }}>{p.jobsCompleted ?? 0}</td>
                           <td style={td}>
-                            <span style={{ background: p.activity === "Active" ? "#dcfce7" : "#f3f4f6", color: p.activity === "Active" ? "#166534" : "#6b7280", fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 99 }}>
-                              {p.activity || "Active"}
+                            <span style={{ background: p.status === "Active" ? "#dcfce7" : "#f3f4f6", color: p.status === "Active" ? "#166534" : "#6b7280", fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 99 }}>
+                              {p.status || "Active"}
                             </span>
+                          </td>
+                          <td style={td}>{p.propertyType || "—"}</td>
+                          <td style={{ ...td, maxWidth: 220 }}>
+                            <span title={p.propertyAddress} style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>
+                              {p.propertyAddress || "—"}
+                            </span>
+                          </td>
+                          <td style={{ ...td, textAlign: "center" as const, fontWeight: p.openJobs > 0 ? 700 : 400 }}>{p.openJobs ?? 0}</td>
+                          <td style={{ ...td, color: p.outstandingBalance > 0 ? "#dc2626" : "#374151", fontWeight: p.outstandingBalance > 0 ? 600 : 400 }}>
+                            {p.outstandingBalance > 0 ? fmt$(p.outstandingBalance) : "—"}
+                          </td>
+                          <td style={{ ...td, color: p.overdueBalance > 0 ? "#dc2626" : "#374151", fontWeight: p.overdueBalance > 0 ? 700 : 400 }}>
+                            {p.overdueBalance > 0 ? fmt$(p.overdueBalance) : "—"}
                           </td>
                           <td style={td}>
                             {isAdmin && <button onClick={() => deleteProperty(p.id!)} style={{ background: "none", border: "none", cursor: "pointer", color: "#dc2626", fontSize: 13 }}>✕</button>}
@@ -491,28 +522,37 @@ function EditCustomerModal({ customer, onSave, onClose }:
 // ── Property modal ────────────────────────────────────────────────────────────
 function PropertyModal({ initial, onSave, onClose }:
   { initial?: Property; onSave: (d: Property) => Promise<void>; onClose: () => void }) {
-  const blank: Property = { name: "", type: "", address: "", activity: "Active", jobsCompleted: 0 };
+  const blank: Property = {
+    name: "", status: "Active", customerName: "", customerId: "",
+    propertyType: "", openJobs: 0, openJobsValue: 0,
+    outstandingBalance: 0, overdueBalance: 0,
+    propertyAddress: "", accountNumber: "", billingAddress: "",
+    billingCustomer: "", createdBy: "", createdOn: "", customerType: "", tags: "",
+  };
   const [form, setForm] = useState<Property>({ ...blank, ...initial });
   const [saving, setSaving] = useState(false);
   const set = (k: keyof Property) => (v: string | number) => setForm(f => ({ ...f, [k]: v }));
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} style={{ background: "#fff", borderRadius: 16, padding: 28, width: "100%", maxWidth: 480, boxShadow: "0 8px 40px rgba(0,0,0,0.2)" }}>
-        <h2 style={{ fontSize: 17, fontWeight: 700, color: "#0d2e5e", marginBottom: 18 }}>{initial ? "Edit Property" : "Add Property"}</h2>
-        <div style={{ display: "grid", gap: 12 }}>
-          <div><label style={lbl}>Property Name *</label><input style={inp} value={form.name} onChange={e => set("name")(e.target.value)} placeholder="e.g. Main Building" /></div>
-          <div><label style={lbl}>Property Type</label>
-            <select style={inp} value={form.type} onChange={e => set("type")(e.target.value)}>
-              <option value="">— Select —</option>
-              {["Industrial","Commercial","Residential","Institutional","Other"].map(t => <option key={t}>{t}</option>)}
-            </select>
-          </div>
-          <div><label style={lbl}>Address</label><input style={inp} value={form.address} onChange={e => set("address")(e.target.value)} placeholder="123 Main St, City, ON" /></div>
-          <div><label style={lbl}>Activity</label>
-            <select style={inp} value={form.activity} onChange={e => set("activity")(e.target.value)}>
+      <div onClick={e => e.stopPropagation()} style={{ background: "#fff", borderRadius: 16, padding: 28, width: "100%", maxWidth: 560, maxHeight: "90vh", overflowY: "auto", boxShadow: "0 8px 40px rgba(0,0,0,0.2)" }}>
+        <h2 style={{ fontSize: 17, fontWeight: 700, color: "#0d2e5e", marginBottom: 18 }}>{initial?.id ? "Edit Property" : "Add Property"}</h2>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <div style={{ gridColumn: "1/-1" }}><label style={lbl}>Property Name *</label><input style={inp} value={form.name} onChange={e => set("name")(e.target.value)} placeholder="e.g. Main Building" /></div>
+          <div><label style={lbl}>Status</label>
+            <select style={inp} value={form.status} onChange={e => set("status")(e.target.value)}>
               <option>Active</option><option>Inactive</option>
             </select>
           </div>
+          <div><label style={lbl}>Property Type</label>
+            <select style={inp} value={form.propertyType} onChange={e => set("propertyType")(e.target.value)}>
+              <option value="">— Select —</option>
+              {["Industrial","Commercial","Institutional","Property Manager","Construction","Other"].map(t => <option key={t}>{t}</option>)}
+            </select>
+          </div>
+          <div style={{ gridColumn: "1/-1" }}><label style={lbl}>Property Address</label><textarea style={{ ...inp, minHeight: 48, resize: "vertical", fontFamily: "inherit" }} value={form.propertyAddress} onChange={e => set("propertyAddress")(e.target.value)} /></div>
+          <div style={{ gridColumn: "1/-1" }}><label style={lbl}>Billing Address</label><textarea style={{ ...inp, minHeight: 40, resize: "vertical", fontFamily: "inherit" }} value={form.billingAddress} onChange={e => set("billingAddress")(e.target.value)} /></div>
+          <div><label style={lbl}>Account Number</label><input style={inp} value={form.accountNumber} onChange={e => set("accountNumber")(e.target.value)} /></div>
+          <div><label style={lbl}>Created On</label><input style={inp} value={form.createdOn} onChange={e => set("createdOn")(e.target.value)} placeholder="Jan 1, 2026" /></div>
         </div>
         <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
           <button disabled={!form.name || saving} onClick={async () => { setSaving(true); await onSave(form); setSaving(false); }} style={{ ...btnS("#1565c0"), opacity: !form.name || saving ? 0.5 : 1 }}>

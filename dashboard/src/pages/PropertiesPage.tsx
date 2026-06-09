@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   addDoc, collection, deleteDoc, doc,
-  onSnapshot, setDoc, updateDoc,
+  getDocs, onSnapshot, setDoc, updateDoc,
 } from "firebase/firestore";
 import { db } from "../firebase";
 import { useIsAdmin } from "../hooks/useIsAdmin";
@@ -13,6 +13,7 @@ interface Property {
   name: string;
   status: "Active" | "Inactive";
   customerName: string;
+  customerId?: string;   // Firestore doc ID of the linked customer
   propertyType: string;
   openJobs: number;
   openJobsValue: number;
@@ -141,13 +142,19 @@ function PropertyRow({ p, onEdit, onDelete, isAdmin }:
           {p.status}
         </span>
       </td>
-      {/* Customer */}
+      {/* Customer — direct link if customerId is set, search fallback otherwise */}
       <td style={{ ...td, minWidth: 180 }}>
         {p.customerName
           ? <span
-              onClick={e => { e.stopPropagation(); navigate(`/customers?search=${encodeURIComponent(p.customerName)}`); }}
-              style={{ color: "#1565c0", fontWeight: 500, cursor: "pointer", fontSize: 13 }}>
+              onClick={e => {
+                e.stopPropagation();
+                if (p.customerId) navigate(`/customers/${p.customerId}`);
+                else navigate(`/customers?search=${encodeURIComponent(p.customerName)}`);
+              }}
+              title={p.customerId ? "View customer" : "Search for customer (not yet linked)"}
+              style={{ color: p.customerId ? "#1565c0" : "#f59e0b", fontWeight: 500, cursor: "pointer", fontSize: 13, display: "flex", alignItems: "center", gap: 4 }}>
               {p.customerName}
+              {!p.customerId && <span title="Not linked — run Link Customers to fix" style={{ fontSize: 10 }}>⚠</span>}
             </span>
           : <span style={{ color: "#d1d5db" }}>—</span>}
       </td>
@@ -268,6 +275,7 @@ export default function PropertiesPage() {
   const [editModal, setEditModal]     = useState<Property | null>(null);
   const [importing, setImporting]     = useState(false);
   const [importProg, setImportProg]   = useState({ done: 0, total: 0 });
+  const [linking,   setLinking]       = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   // Real-time Firestore
@@ -335,6 +343,40 @@ export default function PropertiesPage() {
     e.target.value = "";
   }
 
+  // ── Link properties → customers by name matching ─────────────────────────
+  async function linkCustomers() {
+    setLinking(true);
+    try {
+      // Build a lowercase-name → customerId map from all customers
+      const custSnap = await getDocs(collection(db, "customers"));
+      const nameMap = new Map<string, string>();
+      custSnap.docs.forEach(d => {
+        const name = (d.data().name || "").trim().toLowerCase();
+        if (name) nameMap.set(name, d.id);
+      });
+
+      // For every property with a customerName but no customerId, try to match
+      const propSnap = await getDocs(collection(db, "properties"));
+      let linked = 0;
+      for (const d of propSnap.docs) {
+        const data = d.data();
+        const cName = (data.customerName || "").trim().toLowerCase();
+        if (!data.customerId && cName) {
+          const cId = nameMap.get(cName);
+          if (cId) {
+            await updateDoc(doc(db, "properties", d.id), { customerId: cId });
+            linked++;
+          }
+        }
+      }
+      alert(`Done — linked ${linked} propert${linked !== 1 ? "ies" : "y"} to customers.`);
+    } catch (err) {
+      console.error("Linking failed:", err);
+      alert("Linking failed — see console.");
+    }
+    setLinking(false);
+  }
+
   // ── Export CSV ────────────────────────────────────────────────────────────
   function exportCSV() {
     const hdrs = ["Property","Status","Customer","Property Type","Open Jobs","Open Jobs Value","Outstanding Balance","Overdue Balance","Property Address","Account Number","Billing Address","Billing Customer","Created By","Created On","Customer Type","Tags"];
@@ -378,6 +420,11 @@ export default function PropertiesPage() {
                 {importing ? `Importing… ${importProg.done}/${importProg.total}` : "↑ Import CSV"}
               </button>
             </>
+          )}
+          {isAdmin && (
+            <button onClick={linkCustomers} disabled={linking} title="Match property customerName to Firestore customers and stamp customerId" style={{ ...btnS("#059669"), opacity: linking ? 0.6 : 1 }}>
+              {linking ? "Linking…" : "🔗 Link Customers"}
+            </button>
           )}
           <button onClick={exportCSV} disabled={!filtered.length} style={{ ...btnS("#6b7280"), opacity: filtered.length ? 1 : 0.4 }}>↓ Export</button>
           {isAdmin && <button onClick={() => setCreateModal(true)} style={{ ...btnS("#1565c0"), fontWeight: 700 }}>+ Add Property</button>}
