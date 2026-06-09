@@ -287,13 +287,13 @@ export default function TimeOffPage() {
 
         {/* ── Tab buttons — identical to On-Call ── */}
         <div style={{ display: "flex", alignItems: "center", borderBottom: "2px solid #f0f0f0", marginBottom: 20 }}>
-          <TabBtn label="📅 Calendar"          active={view==="month"}       onClick={()=>setView("month")} />
-          <TabBtn label="📋 List View"         active={view==="list"}        onClick={()=>setView("list")} />
-          <TabBtn label="✏️ Request Vacation"  active={view==="request"}     onClick={()=>setView("request")} />
-          <TabBtn label="🗂 My Requests"       active={view==="my-requests"} onClick={()=>setView("my-requests")} />
+          <TabBtn label="Calendar"          active={view==="month"}       onClick={()=>setView("month")} />
+          <TabBtn label="List View"         active={view==="list"}        onClick={()=>setView("list")} />
+          <TabBtn label="Request Vacation"  active={view==="request"}     onClick={()=>setView("request")} />
+          <TabBtn label="My Requests"       active={view==="my-requests"} onClick={()=>setView("my-requests")} />
           {canApprove && (
             <TabBtn
-              label={`✅ Approvals${pendingCount > 0 ? ` (${pendingCount})` : ""}`}
+              label={`Approvals${pendingCount > 0 ? ` (${pendingCount})` : ""}`}
               active={view==="approvals"}
               onClick={()=>setView("approvals")}
             />
@@ -313,7 +313,7 @@ export default function TimeOffPage() {
         {view === "month" && (
           <div style={{ display: "flex", gap: 16, marginBottom: 14, flexWrap: "wrap", alignItems: "center" }}>
             <span style={{ background: "#f97316", color: "#fff", fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 99 }}>Vacation</span>
-            {isAdminRole(role) && <span style={{ fontSize: 11, color: "#9ca3af" }}>Click a day to add a vacation · tap a 🏖 to edit or delete it</span>}
+            {isAdminRole(role) && <span style={{ fontSize: 11, color: "#9ca3af" }}>Click a day to add a vacation · tap a vacation to edit or delete it</span>}
           </div>
         )}
 
@@ -458,8 +458,8 @@ export default function TimeOffPage() {
                       <td style={{ ...td, whiteSpace: "nowrap" }}>
                         {r.status === "PENDING" && (
                           <>
-                            <button onClick={() => approveRequest(r)} style={{ ...btnS("#059669"), fontSize: 12, padding: "4px 10px", marginRight: 6 }}>✅ Approve</button>
-                            <button onClick={() => denyRequest(r)}    style={{ ...btnS("#dc2626"), fontSize: 12, padding: "4px 10px" }}>❌ Deny</button>
+                            <button onClick={() => approveRequest(r)} style={{ ...btnS("#059669"), fontSize: 12, padding: "4px 10px", marginRight: 6 }}>Approve</button>
+                            <button onClick={() => denyRequest(r)}    style={{ ...btnS("#dc2626"), fontSize: 12, padding: "4px 10px" }}>Deny</button>
                           </>
                         )}
                         {r.status !== "PENDING" && (

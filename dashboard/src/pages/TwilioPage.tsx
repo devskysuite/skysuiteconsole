@@ -96,7 +96,7 @@ export default function TwilioPage() {
 
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 4 }}>
           <button style={s.btn} onClick={save} disabled={saving || !sid || !token || !from}>
-            {saving ? "Saving…" : "💾 Save"}
+            {saving ? "Saving…" : "Save"}
           </button>
           {saved && <span style={{ fontSize: 13, color: "#059669", fontWeight: 600 }}>✅ Saved</span>}
         </div>
@@ -122,7 +122,7 @@ export default function TwilioPage() {
 
         <button style={{ ...s.btn, backgroundColor: "#16a34a" }} onClick={sendTest}
           disabled={testing || !testPhone.trim()}>
-          {testing ? "Sending…" : "📤 Send Test"}
+          {testing ? "Sending…" : "Send Test"}
         </button>
 
         {testResult && (

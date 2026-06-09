@@ -529,7 +529,7 @@ export default function OnCallManagerPage() {
         <h1 style={{fontSize:24,fontWeight:800,color:"#0d2e5e"}}>On-Call Manager</h1>
         <div style={{display:"flex",gap:10,alignItems:"center"}}>
           {connected ? <span style={{fontSize:13,color:"#059669",fontWeight:600}}>✅ Connected</span>
-            : <button onClick={connectOutlook} style={btnS("#1565c0")}>🔗 Connect Outlook</button>}
+            : <button onClick={connectOutlook} style={btnS("#1565c0")}>Connect Outlook</button>}
         </div>
       </div>
 
@@ -537,10 +537,10 @@ export default function OnCallManagerPage() {
 
       {/* Tabs */}
       <div style={{display:"flex",gap:4,marginBottom:20,borderBottom:"2px solid #e5e7eb"}}>
-        <TabBtn label="📅 Calendar" active={tab==="calendar"} onClick={()=>switchTab("calendar")}/>
-        <TabBtn label={`🔄 Swaps${pendingCount>0?` (${pendingCount})`:""}`} active={tab==="swaps"} onClick={()=>switchTab("swaps")}/>
-        {roleAtLeast(role||"user",statVisMinRole)&&<TabBtn label="🎉 Stat Holidays" active={tab==="stats"} onClick={()=>switchTab("stats")}/>}
-        {isAdmin&&<TabBtn label="⚙ Setup" active={tab==="setup"} onClick={()=>switchTab("setup")}/>}
+        <TabBtn label="Calendar" active={tab==="calendar"} onClick={()=>switchTab("calendar")}/>
+        <TabBtn label={`Swaps${pendingCount>0?` (${pendingCount})`:""}`} active={tab==="swaps"} onClick={()=>switchTab("swaps")}/>
+        {roleAtLeast(role||"user",statVisMinRole)&&<TabBtn label="Stat Holidays" active={tab==="stats"} onClick={()=>switchTab("stats")}/>}
+        {isAdmin&&<TabBtn label="Setup" active={tab==="setup"} onClick={()=>switchTab("setup")}/>}
       </div>
 
       {/* ── CALENDAR TAB ── */}
@@ -609,8 +609,8 @@ export default function OnCallManagerPage() {
                       {s.reason&&<span> · "{s.reason}"</span>}
                     </div>
                     <div style={{display:"flex",gap:8}}>
-                      <button onClick={()=>resolveSwap(s,true)} style={btnS("#059669")}>✅ Accept</button>
-                      <button onClick={()=>resolveSwap(s,false)} style={btnS("#dc2626")}>❌ Decline</button>
+                      <button onClick={()=>resolveSwap(s,true)} style={btnS("#059669")}>Accept</button>
+                      <button onClick={()=>resolveSwap(s,false)} style={btnS("#dc2626")}>Decline</button>
                     </div>
                   </div>))}
               </>}
@@ -651,10 +651,10 @@ export default function OnCallManagerPage() {
             {connected
               ? <div style={{display:"flex",alignItems:"center",gap:12}}>
                   <span style={{fontSize:13,color:"#059669",fontWeight:600}}>✅ Connected to Outlook</span>
-                  <button onClick={connectOutlook} style={{...btnS("#6b7280"),fontSize:12,padding:"5px 14px"}}>🔄 Reconnect</button>
+                  <button onClick={connectOutlook} style={{...btnS("#6b7280"),fontSize:12,padding:"5px 14px"}}>Reconnect</button>
                 </div>
               : <><p style={{fontSize:13,color:"#6b7280",marginBottom:10}}>Sign in with the SkySuite Outlook account to enable calendar features.</p>
-                 <button onClick={connectOutlook} style={btnS("#1565c0")}>🔗 Connect Outlook</button></>}
+                 <button onClick={connectOutlook} style={btnS("#1565c0")}>Connect Outlook</button></>}
           </div>
 
           {/* Conflict Alerts */}
@@ -707,9 +707,9 @@ export default function OnCallManagerPage() {
             </div>
 
             <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
-              <button onClick={()=>runRotation("preview")}   disabled={!connected} style={btnS("#6b7280")}>👁 Preview</button>
-              <button onClick={()=>runRotation("push")}      disabled={!connected} style={btnS("#1565c0")}>⬆ Fill 365 Days</button>
-              <button onClick={()=>setRebalanceModal(true)} disabled={!connected} style={btnS("#f97316")}>⚖ Rebalance</button>
+              <button onClick={()=>runRotation("preview")}   disabled={!connected} style={btnS("#6b7280")}>Preview</button>
+              <button onClick={()=>runRotation("push")}      disabled={!connected} style={btnS("#1565c0")}>Fill 365 Days</button>
+              <button onClick={()=>setRebalanceModal(true)} disabled={!connected} style={btnS("#f97316")}>Rebalance</button>
             </div>
           </div>
 
@@ -720,7 +720,7 @@ export default function OnCallManagerPage() {
           <div style={{background:"white",borderRadius:12,padding:20,boxShadow:"0 1px 4px rgba(0,0,0,0.07)",marginTop:16}}>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:4}}>
               <h2 style={{fontSize:15,fontWeight:700,color:"#0d2e5e",margin:0}}>🗄 Calendar Backups</h2>
-              <button onClick={async()=>{await backupCalendar("manual");window.location.reload();}} disabled={!connected} style={{...btnS("#6b7280"),fontSize:12,padding:"5px 14px"}}>📸 Backup Now</button>
+              <button onClick={async()=>{await backupCalendar("manual");window.location.reload();}} disabled={!connected} style={{...btnS("#6b7280"),fontSize:12,padding:"5px 14px"}}>Backup Now</button>
             </div>
             <p style={{fontSize:12,color:"#6b7280",marginBottom:14}}>Auto-saved before every swap, push, or rebalance. Last 10 kept. Click ↩ Restore to roll back.</p>
             <BackupsList db={db} onRestore={restoreBackup} connected={connected}/>
@@ -737,8 +737,8 @@ export default function OnCallManagerPage() {
 
             <label style={lbl}>Type</label>
             <div style={{display:"flex",gap:10,marginBottom:14}}>
-              <button onClick={()=>setAddType("oncall")} style={{flex:1,padding:"8px",borderRadius:8,fontWeight:700,fontSize:13,cursor:"pointer",border:`2px solid ${addType==="oncall"?"#1565c0":"#d1d5db"}`,background:addType==="oncall"?"#eff6ff":"#fff",color:addType==="oncall"?"#1565c0":"#374151"}}>📞 On Call</button>
-              <button onClick={()=>setAddType("vacation")} style={{flex:1,padding:"8px",borderRadius:8,fontWeight:700,fontSize:13,cursor:"pointer",border:`2px solid ${addType==="vacation"?"#f97316":"#d1d5db"}`,background:addType==="vacation"?"#fff7ed":"#fff",color:addType==="vacation"?"#ea580c":"#374151"}}>🏖 Vacation</button>
+              <button onClick={()=>setAddType("oncall")} style={{flex:1,padding:"8px",borderRadius:8,fontWeight:700,fontSize:13,cursor:"pointer",border:`2px solid ${addType==="oncall"?"#1565c0":"#d1d5db"}`,background:addType==="oncall"?"#eff6ff":"#fff",color:addType==="oncall"?"#1565c0":"#374151"}}>On Call</button>
+              <button onClick={()=>setAddType("vacation")} style={{flex:1,padding:"8px",borderRadius:8,fontWeight:700,fontSize:13,cursor:"pointer",border:`2px solid ${addType==="vacation"?"#f97316":"#d1d5db"}`,background:addType==="vacation"?"#fff7ed":"#fff",color:addType==="vacation"?"#ea580c":"#374151"}}>Vacation</button>
             </div>
 
             <label style={lbl}>Person</label>
@@ -778,12 +778,12 @@ export default function OnCallManagerPage() {
               <button
                 style={{...btnS("#1565c0"),fontSize:15,padding:"12px"}}
                 onClick={()=>{setRebalanceModal(false);runRotation("rebalance",`${today.getFullYear()}-01-01`);}}>
-                📅 Current Year ({today.getFullYear()})
+                Current Year ({today.getFullYear()})
               </button>
               <button
                 style={{...btnS("#059669"),fontSize:15,padding:"12px"}}
                 onClick={()=>{setRebalanceModal(false);runRotation("rebalance",`${today.getFullYear()+1}-01-01`);}}>
-                📅 Next Year ({today.getFullYear()+1})
+                Next Year ({today.getFullYear()+1})
               </button>
               <button
                 style={{...btnS("#6b7280"),fontSize:15,padding:"12px"}}
@@ -926,7 +926,7 @@ function OnCallAlertsPanel({ db }: { db:any }) {
       <p style={{fontSize:12,color:"#6b7280",marginBottom:12}}>Each morning the system checks the next 60 days for anyone scheduled on call during their vacation, and texts this number. Also: the on-call person gets a daily reminder text automatically.</p>
       <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
         <input type="tel" value={phone} onChange={e=>setPhone(e.target.value)} placeholder="905-555-1234" style={{...inp,maxWidth:200}}/>
-        <button onClick={save} style={btnS("#1565c0")}>💾 Save</button>
+        <button onClick={save} style={btnS("#1565c0")}>Save</button>
         {saved&&<span style={{fontSize:12,color:"#059669",fontWeight:600}}>✅ Saved</span>}
       </div>
     </div>
@@ -978,7 +978,7 @@ function TwilioSettingsPanel({ db }: { db:any }) {
           <input style={inp} type="text" value={from} onChange={e=>setFrom(e.target.value)} placeholder="+12895551234"/>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:12,marginTop:4}}>
-          <button onClick={save} disabled={saving||!sid||!token||!from} style={btnS("#1565c0")}>{saving?"Saving…":"💾 Save"}</button>
+          <button onClick={save} disabled={saving||!sid||!token||!from} style={btnS("#1565c0")}>{saving?"Saving…":"Save"}</button>
           {saved&&<span style={{fontSize:13,color:"#059669",fontWeight:600}}>✅ Saved</span>}
         </div>
       </div>
@@ -1006,7 +1006,7 @@ function LockedYearsPanel({ db }: { db:any }) {
         {years.map(y=>{
           const isLocked=locked.includes(y);
           return <button key={y} onClick={()=>toggle(y)} style={{padding:"8px 18px",borderRadius:8,fontWeight:700,fontSize:14,cursor:"pointer",border:`2px solid ${isLocked?"#dc2626":"#d1d5db"}`,background:isLocked?"#fef2f2":"#f9fafb",color:isLocked?"#dc2626":"#374151"}}>
-            {isLocked?"🔒":"🔓"} {y}
+            {y}{isLocked?" (Locked)":""}
           </button>;
         })}
       </div>
@@ -1031,7 +1031,7 @@ function BackupsList({ db, onRestore, connected }: { db:any; onRestore:(b:any)=>
             <div style={{fontSize:11,color:"#9ca3af"}}>{b.createdAt?.toDate?.().toLocaleString()} · {b.trigger}</div>
           </div>
           <button onClick={()=>onRestore(b)} disabled={!connected} style={{fontSize:12,padding:"4px 12px",borderRadius:6,background:"transparent",border:"1px solid #f97316",color:"#ea580c",cursor:"pointer",fontWeight:600}}>
-            ↩ Restore
+            Restore
           </button>
         </div>
       ))}
@@ -1130,7 +1130,7 @@ function RotationOrderDisplay({ db, accessToken }: { db: any; accessToken: strin
     <div>
       <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
         <button onClick={loadFromCalendar} disabled={loading} style={{ ...btnS("#6b7280"), fontSize: 12, padding: "5px 14px" }}>
-          {loading ? "Refreshing…" : "🔄 Refresh"}
+          {loading ? "Refreshing…" : "Refresh"}
         </button>
       </div>
 
@@ -1385,7 +1385,7 @@ function OnCallRoster({ db, allUsers, onSaved }: { db: any; allUsers: UserInfo[]
         })}
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <button onClick={save} disabled={saving} style={btnS("#059669")}>{saving ? "Saving..." : "💾 Save Roster"}</button>
+        <button onClick={save} disabled={saving} style={btnS("#059669")}>{saving ? "Saving..." : "Save Roster"}</button>
         <span style={{ fontSize: 12, color: "#6b7280" }}>{roster.length} selected</span>
         {saved && <span style={{ fontSize: 12, color: "#059669", fontWeight: 600 }}>✅ Saved!</span>}
       </div>

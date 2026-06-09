@@ -521,7 +521,7 @@ export default function UsersPage() {
                   style={{ ...styles.actionBtn, fontSize: 10, padding: "2px 6px", borderColor: "#d1d5db", color: "#6b7280" }}
                   onClick={() => { setAddingEmailId(u.id); setAddEmailValue(u.email || ""); }}
                   title="Change email"
-                >✏️</button>
+                >Edit</button>
               )}
             </div>
           ) : isOwner ? (
@@ -576,7 +576,7 @@ export default function UsersPage() {
                 disabled={resetLoading === u.id}
                 title="Send password reset email"
               >
-                {resetLoading === u.id ? "…" : "🔑 Reset"}
+                {resetLoading === u.id ? "…" : "Reset Password"}
               </button>
             )}
 
@@ -588,7 +588,7 @@ export default function UsersPage() {
                 disabled={smsLoading === u.id}
                 title="Send test SMS"
               >
-                {smsLoading === u.id ? "…" : "📱 Test SMS"}
+                {smsLoading === u.id ? "…" : "Test SMS"}
               </button>
             )}
 
@@ -600,7 +600,7 @@ export default function UsersPage() {
                 disabled={icsLoading === u.id}
                 title="Download on-call ICS calendar"
               >
-                {icsLoading === u.id ? "…" : "📅 ICS"}
+                {icsLoading === u.id ? "…" : "Download ICS"}
               </button>
             )}
 
@@ -612,7 +612,7 @@ export default function UsersPage() {
                 disabled={icsLinkLoading === u.id}
                 title="Text ICS calendar download link to this person"
               >
-                {icsLinkLoading === u.id ? "…" : "📅 Text ICS"}
+                {icsLinkLoading === u.id ? "…" : "Text ICS"}
               </button>
             )}
 
@@ -624,7 +624,7 @@ export default function UsersPage() {
                 disabled={mfaLoading === u.id}
                 title="Reset two-factor authentication — user will re-enroll on next login"
               >
-                {mfaLoading === u.id ? "…" : "🔐 Reset 2FA"}
+                {mfaLoading === u.id ? "…" : "Reset 2FA"}
               </button>
             )}
 
