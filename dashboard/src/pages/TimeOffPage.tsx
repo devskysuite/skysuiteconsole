@@ -314,7 +314,7 @@ export default function TimeOffPage() {
         {/* ── Legend ── */}
         {view === "month" && (
           <div style={{ display: "flex", gap: 16, marginBottom: 14, flexWrap: "wrap", alignItems: "center" }}>
-            <span style={{ background: "#f97316", color: "#fff", fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 99 }}>🏖 Vacation</span>
+            <span style={{ background: "#f97316", color: "#fff", fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 99 }}>Vacation</span>
             {isAdminRole(role) && <span style={{ fontSize: 11, color: "#9ca3af" }}>Click a day to add a vacation · tap a 🏖 to edit or delete it</span>}
           </div>
         )}
@@ -342,7 +342,7 @@ export default function TimeOffPage() {
                             title={admin ? "Tap to edit or delete" : undefined}
                             onClick={admin ? (e) => { e.stopPropagation(); openEdit(v); } : undefined}
                             style={{ fontSize: 11, fontWeight: 600, background: "#f97316", color: "white", borderRadius: 4, padding: "2px 5px", marginBottom: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: admin ? "pointer" : "default" }}>
-                            🏖 Vacation - {v.name}
+                            Vacation - {v.name}
                           </div>
                         ))}
                       </>}

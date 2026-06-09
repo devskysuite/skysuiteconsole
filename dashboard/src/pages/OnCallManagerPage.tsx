@@ -544,7 +544,7 @@ export default function OnCallManagerPage() {
             <button onClick={()=>{let m=month+1,y=year;if(m>11){m=0;y++;}setMonth(m);setYear(y);}} style={navS}>▶</button>
           </div>
           <div style={{display:"flex",gap:16,marginBottom:14,flexWrap:"wrap",alignItems:"center"}}>
-            <span style={{background:"#1565c0",color:"#fff",fontSize:11,fontWeight:600,padding:"2px 8px",borderRadius:99}}>📞 On Call</span>
+            <span style={{background:"#1565c0",color:"#fff",fontSize:11,fontWeight:600,padding:"2px 8px",borderRadius:99}}>On Call</span>
             {connected&&<span style={{fontSize:11,color:"#9ca3af"}}>Click your on-call day to request a swap{isAdmin?" · tap ＋ to add an event":""}</span>}
           </div>
           {loading&&<div style={{textAlign:"center",padding:40,color:"#9ca3af"}}>⏳ Loading...</div>}
@@ -569,7 +569,7 @@ export default function OnCallManagerPage() {
                       </div>
                       {dayEvs.map(ev=>{const c=pillStyle(ev.subject);const n=getName(ev.subject);return(
                         <div key={ev.id} style={{fontSize:11,fontWeight:600,background:c.bg,color:c.color,borderRadius:4,padding:"2px 5px",marginBottom:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
-                          {c.prefix}{n}
+                          {n}
                         </div>);})}
                       {clickableOncall&&<div style={{fontSize:9,color:"#1565c0",marginTop:2}}>tap to swap</div>}
                     </>}
