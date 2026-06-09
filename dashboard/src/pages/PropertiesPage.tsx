@@ -164,30 +164,52 @@ function PropertyRow({ p, onEdit, onDelete, isAdmin }:
           ? <span style={{ ...tc, fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 99, whiteSpace: "nowrap" }}>{p.propertyType}</span>
           : <span style={{ color: "#d1d5db" }}>—</span>}
       </td>
-      {/* Open jobs */}
-      <td style={{ ...td, textAlign: "center" as const, fontWeight: p.openJobs > 0 ? 700 : 400 }}>{p.openJobs}</td>
-      {/* Outstanding */}
+      {/* Open Jobs */}
+      <td style={{ ...td, textAlign: "center" as const, fontWeight: p.openJobs > 0 ? 700 : 400 }}>{p.openJobs || "—"}</td>
+      {/* Open Jobs Value */}
+      <td style={{ ...td, color: p.openJobsValue > 0 ? "#374151" : "#9ca3af", fontWeight: p.openJobsValue > 0 ? 500 : 400 }}>
+        {p.openJobsValue > 0 ? fmt$(p.openJobsValue) : "—"}
+      </td>
+      {/* Outstanding Balance */}
       <td style={{ ...td, color: p.outstandingBalance > 0 ? "#dc2626" : "#374151", fontWeight: p.outstandingBalance > 0 ? 600 : 400 }}>
-        {fmt$(p.outstandingBalance)}
+        {p.outstandingBalance > 0 ? fmt$(p.outstandingBalance) : "—"}
       </td>
-      {/* Overdue */}
+      {/* Overdue Balance */}
       <td style={{ ...td, color: p.overdueBalance > 0 ? "#dc2626" : "#374151", fontWeight: p.overdueBalance > 0 ? 700 : 400 }}>
-        {fmt$(p.overdueBalance)}
+        {p.overdueBalance > 0 ? fmt$(p.overdueBalance) : "—"}
       </td>
-      {/* Property address */}
-      <td style={{ ...td, maxWidth: 240 }}>
-        <span title={p.propertyAddress} style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "#6b7280", fontSize: 12 }}>
+      {/* Property Address */}
+      <td style={{ ...td, minWidth: 220 }}>
+        <span title={p.propertyAddress} style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "#6b7280", fontSize: 12, maxWidth: 220 }}>
           {p.propertyAddress || "—"}
         </span>
       </td>
-      {/* Billing address */}
-      <td style={{ ...td, maxWidth: 200 }}>
-        <span title={p.billingAddress} style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "#6b7280", fontSize: 12 }}>
+      {/* Account Number */}
+      <td style={{ ...td, whiteSpace: "nowrap", color: "#6b7280", fontSize: 12 }}>{p.accountNumber || "—"}</td>
+      {/* Billing Address */}
+      <td style={{ ...td, minWidth: 180 }}>
+        <span title={p.billingAddress} style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "#6b7280", fontSize: 12, maxWidth: 180 }}>
           {p.billingAddress || "—"}
         </span>
       </td>
+      {/* Billing Customer */}
+      <td style={{ ...td, whiteSpace: "nowrap", fontSize: 12, color: "#374151" }}>{p.billingCustomer || "—"}</td>
+      {/* Created By */}
+      <td style={{ ...td, whiteSpace: "nowrap", color: "#9ca3af", fontSize: 12 }}>{p.createdBy || "—"}</td>
       {/* Created On */}
       <td style={{ ...td, whiteSpace: "nowrap", color: "#9ca3af", fontSize: 12 }}>{p.createdOn || "—"}</td>
+      {/* Customer Type */}
+      <td style={td}>
+        {p.customerType
+          ? <span style={{ ...(TYPE_COLORS[p.customerType] || TYPE_COLORS.Other), fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 99, whiteSpace: "nowrap" as const }}>{p.customerType}</span>
+          : <span style={{ color: "#d1d5db" }}>—</span>}
+      </td>
+      {/* Tags */}
+      <td style={{ ...td, maxWidth: 160 }}>
+        <span title={p.tags} style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "#6b7280", fontSize: 12 }}>
+          {p.tags || "—"}
+        </span>
+      </td>
       {/* Actions */}
       <td style={{ ...td, whiteSpace: "nowrap" }} onClick={e => e.stopPropagation()}>
         {isAdmin && (
@@ -256,7 +278,8 @@ const btnS  = (bg: string): React.CSSProperties => ({ background: bg, color: "#f
 const pgBtn: React.CSSProperties = { padding: "4px 10px", fontSize: 12, fontWeight: 500, borderRadius: 6, cursor: "pointer", border: "1px solid #d1d5db", background: "#fff", color: "#374151" };
 const lbl: React.CSSProperties = { display: "block", fontSize: 12, fontWeight: 600, color: "#374151", marginBottom: 4 };
 const inp: React.CSSProperties = { width: "100%", padding: "8px 12px", border: "1px solid #d1d5db", borderRadius: 8, fontSize: 14, boxSizing: "border-box" as const };
-const th: React.CSSProperties = { padding: "10px 12px", textAlign: "left" as const, fontSize: 11, fontWeight: 700, color: "#6b7280", textTransform: "uppercase" as const, letterSpacing: 0.4, whiteSpace: "nowrap" as const, background: "#f9fafb", borderBottom: "2px solid #e5e7eb", position: "sticky" as const, top: 96, zIndex: 3 };
+// top:0 — sticky is relative to the inner scroll container, not the viewport
+const th: React.CSSProperties = { padding: "10px 12px", textAlign: "left" as const, fontSize: 11, fontWeight: 700, color: "#6b7280", textTransform: "uppercase" as const, letterSpacing: 0.4, whiteSpace: "nowrap" as const, background: "#f9fafb", borderBottom: "2px solid #e5e7eb", position: "sticky" as const, top: 0, zIndex: 3 };
 const td: React.CSSProperties = { padding: "10px 12px", fontSize: 13, color: "#374151", verticalAlign: "middle" as const };
 
 type PageSize = 25 | 50 | 100 | "all";
@@ -404,10 +427,13 @@ export default function PropertiesPage() {
   }
 
   return (
-    <div style={{ minHeight: "100vh", paddingBottom: 40 }}>
+    // Flex column fills exactly the viewport below the 96px nav.
+    // The table wrapper (flex:1) becomes the scroll container for both axes,
+    // which lets position:sticky top:0 work reliably on the <th> elements.
+    <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 96px)" }}>
 
       {/* Header */}
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", padding: "20px 24px 16px", flexWrap: "wrap", gap: 12 }}>
+      <div style={{ flexShrink: 0, display: "flex", alignItems: "flex-start", justifyContent: "space-between", padding: "20px 24px 16px", flexWrap: "wrap", gap: 12 }}>
         <div>
           <div style={{ fontSize: 12, color: "#9ca3af", fontWeight: 500, marginBottom: 4, textTransform: "uppercase", letterSpacing: 0.5 }}>Directory</div>
           <h1 style={{ fontSize: 26, fontWeight: 800, color: "#0d2e5e", margin: 0 }}>Properties</h1>
@@ -432,14 +458,14 @@ export default function PropertiesPage() {
       </div>
 
       {/* Filter tabs */}
-      <div style={{ display: "flex", borderBottom: "2px solid #e5e7eb", padding: "0 24px", overflowX: "auto" }}>
+      <div style={{ flexShrink: 0, display: "flex", borderBottom: "2px solid #e5e7eb", padding: "0 24px", overflowX: "auto" }}>
         <FilterTab label="All Properties"  count={properties.length}  active={filter === "all"}         onClick={() => setFilter("all")} />
         <FilterTab label="Outstanding"     count={cntOutstanding}     active={filter === "outstanding"} dot="#f59e0b" onClick={() => setFilter("outstanding")} />
         <FilterTab label="Overdue"         count={cntOverdue}         active={filter === "overdue"}     dot="#ef4444" onClick={() => setFilter("overdue")} />
       </div>
 
       {/* Search + rows-per-page */}
-      <div style={{ padding: "12px 24px", display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+      <div style={{ flexShrink: 0, padding: "12px 24px", display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
         <div style={{ position: "relative", flex: 1, maxWidth: 420 }}>
           <span style={{ position: "absolute", left: 11, top: "50%", transform: "translateY(-50%)", color: "#9ca3af", fontSize: 14, pointerEvents: "none" }}>🔍</span>
           <input
@@ -475,8 +501,9 @@ export default function PropertiesPage() {
         </span>
       </div>
 
-      {/* Table */}
-      <div style={{ overflowX: "auto", overflowY: "clip", borderTop: "1px solid #e5e7eb", background: "#fff" }}>
+      {/* Table — flex:1 fills remaining height; overflow:auto handles both axes.
+           Sticky headers use top:0 (relative to THIS scroll container, not the viewport). */}
+      <div style={{ flex: 1, overflow: "auto", minHeight: 0, borderTop: "1px solid #e5e7eb", background: "#fff" }}>
         {loading ? (
           <div style={{ textAlign: "center", padding: 80, color: "#9ca3af" }}>Loading properties…</div>
         ) : properties.length === 0 ? (
@@ -496,19 +523,25 @@ export default function PropertiesPage() {
         ) : filtered.length === 0 ? (
           <div style={{ textAlign: "center", padding: 60, color: "#9ca3af" }}>No properties match your search or filter.</div>
         ) : (
-          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1400 }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 2100 }}>
             <thead>
               <tr>
-                <th style={{ ...th, minWidth: 200, position: "sticky" as const, left: 0, top: 96, zIndex: 4, borderRight: "1px solid #e5e7eb" }}>Property</th>
+                <th style={{ ...th, minWidth: 200, position: "sticky" as const, left: 0, top: 0, zIndex: 4, borderRight: "1px solid #e5e7eb" }}>Property</th>
                 <th style={th}>Status</th>
                 <th style={{ ...th, minWidth: 180 }}>Customer</th>
-                <th style={th}>Type</th>
-                <th style={{ ...th, textAlign: "center" as const }}>Jobs</th>
-                <th style={th}>Outstanding</th>
-                <th style={th}>Overdue</th>
-                <th style={{ ...th, minWidth: 240 }}>Property Address</th>
-                <th style={{ ...th, minWidth: 200 }}>Billing Address</th>
-                <th style={th}>Created On</th>
+                <th style={{ ...th, minWidth: 120 }}>Property Type</th>
+                <th style={{ ...th, textAlign: "center" as const }}>Open Jobs</th>
+                <th style={{ ...th, minWidth: 120 }}>Open Jobs Value</th>
+                <th style={{ ...th, minWidth: 130 }}>Outstanding Balance</th>
+                <th style={{ ...th, minWidth: 120 }}>Overdue Balance</th>
+                <th style={{ ...th, minWidth: 220 }}>Property Address</th>
+                <th style={{ ...th, minWidth: 110 }}>Account Number</th>
+                <th style={{ ...th, minWidth: 180 }}>Billing Address</th>
+                <th style={{ ...th, minWidth: 160 }}>Billing Customer</th>
+                <th style={{ ...th, minWidth: 100 }}>Created By</th>
+                <th style={{ ...th, minWidth: 100 }}>Created On</th>
+                <th style={{ ...th, minWidth: 120 }}>Customer Type</th>
+                <th style={{ ...th, minWidth: 140 }}>Tags</th>
                 <th style={{ ...th, width: 44 }}></th>
               </tr>
             </thead>
@@ -527,9 +560,9 @@ export default function PropertiesPage() {
         )}
       </div>
 
-      {/* Pagination footer */}
+      {/* Pagination footer — flexShrink:0 keeps it anchored at the bottom */}
       {filtered.length > 0 && pageSize !== "all" && (
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 24px", borderTop: "1px solid #e5e7eb", background: "#fafafa", flexWrap: "wrap", gap: 10 }}>
+        <div style={{ flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 24px", borderTop: "1px solid #e5e7eb", background: "#fafafa", flexWrap: "wrap", gap: 10 }}>
           <span style={{ fontSize: 13, color: "#6b7280" }}>
             Showing {rangeStart.toLocaleString()}–{rangeEnd.toLocaleString()} of {filtered.length.toLocaleString()} propert{filtered.length !== 1 ? "ies" : "y"}
           </span>
