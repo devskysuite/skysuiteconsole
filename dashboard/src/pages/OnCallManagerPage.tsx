@@ -27,7 +27,13 @@ async function refreshToken(rt: string) {
     method:"POST", body: new URLSearchParams({ client_id:CLIENT_ID, refresh_token:rt, grant_type:"refresh_token", scope:"Calendars.ReadWrite offline_access" })
   });
   const d = await r.json();
-  return d.access_token ? { access:d.access_token, refresh:d.refresh_token||rt } : null;
+  // expires_in is seconds (typically 3600); store with a 5-min buffer so we
+  // never hand out a token that's about to expire mid-session
+  return d.access_token ? {
+    access:    d.access_token,
+    refresh:   d.refresh_token || rt,
+    expiresAt: Date.now() + ((d.expires_in || 3600) - 300) * 1000,
+  } : null;
 }
 
 async function graphFetch(token:string, path:string, method="GET", body?:any) {
@@ -192,13 +198,38 @@ export default function OnCallManagerPage() {
   },[]);
 
   // Load shared Outlook token from Firestore (one admin logs in once; all users share it)
+  // Strategy: cache the access token + expiry in Firestore so most loads never call Microsoft.
+  // Only refresh when the cached access token is expired/missing — this eliminates the race
+  // condition where multiple simultaneous users each try to rotate the same refresh token,
+  // which causes Microsoft to invalidate it and everyone loses connection.
   useEffect(()=>{
     async function load() {
       try {
         const snap=await getDoc(doc(db,"settings","outlookOnCall"));
         if(snap.exists()&&snap.data().refreshToken) {
-          const t=await refreshToken(snap.data().refreshToken);
-          if(t){ setAccessToken(t.access); setConnected(true); try{await setDoc(doc(db,"settings","outlookOnCall"),{refreshToken:t.refresh},{merge:true});}catch{} }
+          const data=snap.data();
+          const now=Date.now();
+          // Use cached access token if it still has >5 min remaining (buffer already baked in)
+          if(data.accessToken && data.tokenExpiresAt && data.tokenExpiresAt > now) {
+            setAccessToken(data.accessToken);
+            setConnected(true);
+          } else {
+            // Access token missing or expired — refresh it (rare: once per hour max)
+            const t=await refreshToken(data.refreshToken);
+            if(t){
+              setAccessToken(t.access);
+              setConnected(true);
+              // Persist new access token + expiry + rotated refresh token so the
+              // next user to load gets the cached version without calling Microsoft
+              try{
+                await setDoc(doc(db,"settings","outlookOnCall"),{
+                  refreshToken:  t.refresh,
+                  accessToken:   t.access,
+                  tokenExpiresAt: t.expiresAt,
+                },{merge:true});
+              }catch{}
+            }
+          }
         }
       } catch {}
       try {
@@ -225,7 +256,12 @@ export default function OnCallManagerPage() {
       const d=await r.json();
       if(d.access_token){
         setAccessToken(d.access_token); setConnected(true);
-        try{await setDoc(doc(db,"settings","outlookOnCall"),{refreshToken:d.refresh_token},{merge:true});}catch{}
+        const expiresAt=Date.now()+((d.expires_in||3600)-300)*1000;
+        try{await setDoc(doc(db,"settings","outlookOnCall"),{
+          refreshToken:  d.refresh_token,
+          accessToken:   d.access_token,
+          tokenExpiresAt: expiresAt,
+        },{merge:true});}catch{}
       } else { setError("Auth failed: "+(d.error_description||JSON.stringify(d))); }
     })();
   },[]);
