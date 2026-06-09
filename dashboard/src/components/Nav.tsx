@@ -9,6 +9,7 @@ import { useRole, canApproveTimeOff } from "../hooks/useRole";
 const BASE_LINKS = [
   { to: "/dashboard", label: "Tools" },
   { to: "/on-call",   label: "On-Call" },
+  { to: "/dispatch",  label: "Dispatch" },
 ];
 
 const RESOURCE_ITEMS = [

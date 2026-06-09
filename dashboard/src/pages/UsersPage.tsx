@@ -31,6 +31,7 @@ type AppUser = {
   ext?: string;
   role?: string;
   onCall?: boolean;
+  showInDispatch?: boolean;
   createdAt?: any;
 };
 
@@ -377,6 +378,16 @@ export default function UsersPage() {
     }
   }
 
+  async function toggleDispatch(u: AppUser) {
+    if (!isOwner) return;
+    try {
+      await updateDoc(doc(db, "users", u.id), { showInDispatch: !u.showInDispatch });
+      await loadUsers();
+    } catch (e: any) {
+      toast(`Error updating dispatch: ${e?.message}`, "error");
+    }
+  }
+
   async function changeRole(u: AppUser, newRole: string) {
     if (!isOwner || newRole === (u.role || "user")) return;
     const roleLabels: Record<string, string> = { owner: "Owner", admin: "Admin", manager: "Manager", user: "User" };
@@ -613,6 +624,19 @@ export default function UsersPage() {
                 title="Text ICS calendar download link to this person"
               >
                 {icsLinkLoading === u.id ? "…" : "Text ICS"}
+              </button>
+            )}
+
+            {/* Show in Dispatch toggle */}
+            {isOwner && (
+              <button
+                style={{ ...styles.actionBtn, ...(u.showInDispatch
+                  ? { borderColor: "#1565c0", color: "#fff", background: "#1565c0" }
+                  : { borderColor: "#1565c0", color: "#1565c0" }) }}
+                onClick={() => toggleDispatch(u)}
+                title="Show this technician on the Dispatch board"
+              >
+                {u.showInDispatch ? "✓ On Dispatch" : "Add to Dispatch"}
               </button>
             )}
 
