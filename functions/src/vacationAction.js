@@ -79,6 +79,21 @@ export const vacationAction = onCall({ cors: true }, async (request) => {
     return { id: created?.id || null };
   }
 
+  if (action === "edit") {
+    const { eventId, eventCalId, startDate, endDate } = request.data;
+    if (!eventId || !startDate) throw new HttpsError("invalid-argument", "eventId and startDate required.");
+    const endD = new Date(endDate || startDate);
+    endD.setDate(endD.getDate() + 1); // Graph all-day end is exclusive
+    const endExclusive = endD.toISOString().slice(0, 10);
+    const target = eventCalId || calId;
+    await graph(token, `/me/calendars/${target}/events/${eventId}`, "PATCH", {
+      start: { dateTime: `${startDate}T00:00:00`, timeZone: "America/Toronto" },
+      end:   { dateTime: `${endExclusive}T00:00:00`, timeZone: "America/Toronto" },
+      isAllDay: true,
+    });
+    return { ok: true };
+  }
+
   if (action === "delete") {
     const { eventId, eventCalId } = request.data;
     if (!eventId) throw new HttpsError("invalid-argument", "eventId required.");

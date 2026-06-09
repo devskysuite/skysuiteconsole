@@ -118,31 +118,60 @@ export default function TimeOffPage() {
     }).catch(() => {});
   }, []);
 
-  // Add/delete vacation directly from the calendar grid (admins)
-  const [vacAddModal, setVacAddModal] = useState<{ date: string } | null>(null);
+  // Add vacation (click a day) / edit-delete vacation (tap a pill) — admins
+  const [vacAddModal, setVacAddModal] = useState<{ start: string } | null>(null);
   const [vacName, setVacName]   = useState("");
-  const [vacMulti, setVacMulti] = useState(false);
+  const [vacStart, setVacStart] = useState("");
   const [vacEnd, setVacEnd]     = useState("");
   const [vacBusy, setVacBusy]   = useState(false);
 
+  const [vacEditModal, setVacEditModal] = useState<{ id: string; name: string; calId?: string } | null>(null);
+  const [editStart, setEditStart] = useState("");
+  const [editEnd, setEditEnd]     = useState("");
+
+  function openAdd(date: string) {
+    setVacName(""); setVacStart(date); setVacEnd(date); setVacAddModal({ start: date });
+  }
+
   async function addVacationDay() {
-    if (!vacAddModal || !vacName) return;
-    if (vacMulti && vacEnd && vacEnd < vacAddModal.date) { toast("End date can't be before start.", "error"); return; }
+    if (!vacName || !vacStart) return;
+    if (vacEnd && vacEnd < vacStart) { toast("End date can't be before start.", "error"); return; }
     setVacBusy(true);
     try {
-      await callVacation({ action: "add", personName: vacName, startDate: vacAddModal.date, endDate: vacMulti && vacEnd ? vacEnd : vacAddModal.date });
-      setVacAddModal(null); setVacName(""); setVacMulti(false); setVacEnd("");
+      await callVacation({ action: "add", personName: vacName, startDate: vacStart, endDate: vacEnd || vacStart });
+      setVacAddModal(null);
       await loadVacations();
     } catch (e: any) { toast(e?.message ?? "Failed to add vacation.", "error"); }
     setVacBusy(false);
   }
 
-  async function deleteVacationDay(ev: { id: string; name: string; calId?: string }) {
-    if (!await confirm(`Delete ${ev.name}'s vacation?`)) return;
+  function openEdit(p: { id: string; name: string; calId?: string; start: string; lastDay: string }) {
+    setVacEditModal({ id: p.id, name: p.name, calId: p.calId });
+    setEditStart(p.start); setEditEnd(p.lastDay);
+  }
+
+  async function saveEditVacation() {
+    if (!vacEditModal || !editStart) return;
+    if (editEnd && editEnd < editStart) { toast("End date can't be before start.", "error"); return; }
+    setVacBusy(true);
     try {
-      await callVacation({ action: "delete", eventId: ev.id, eventCalId: ev.calId });
+      await callVacation({ action: "edit", eventId: vacEditModal.id, eventCalId: vacEditModal.calId, startDate: editStart, endDate: editEnd || editStart });
+      setVacEditModal(null);
+      await loadVacations();
+    } catch (e: any) { toast(e?.message ?? "Failed to update vacation.", "error"); }
+    setVacBusy(false);
+  }
+
+  async function deleteEditVacation() {
+    if (!vacEditModal) return;
+    if (!await confirm(`Delete ${vacEditModal.name}'s vacation?`)) return;
+    setVacBusy(true);
+    try {
+      await callVacation({ action: "delete", eventId: vacEditModal.id, eventCalId: vacEditModal.calId });
+      setVacEditModal(null);
       await loadVacations();
     } catch (e: any) { toast(e?.message ?? "Failed to delete vacation.", "error"); }
+    setVacBusy(false);
   }
 
   async function loadMyRequests() {
@@ -218,16 +247,19 @@ export default function TimeOffPage() {
   for (let i = 0; i < first; i++) grid.push("");
   for (let d = 1; d <= daysInMonth; d++) grid.push(`${year}-${String(month+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`);
 
-  // Vacation map: date → [{id,name,calId}]
-  const vacByDate: Record<string, { id: string; name: string; calId?: string }[]> = {};
+  // Vacation map: date → [{id,name,calId,start,lastDay}]
+  type VacPill = { id: string; name: string; calId?: string; start: string; lastDay: string };
+  const vacByDate: Record<string, VacPill[]> = {};
   events.forEach((ev: any) => {
     let cur = new Date(ev.start + "T12:00:00");
-    const end = new Date(ev.end + "T12:00:00");
+    const end = new Date(ev.end + "T12:00:00"); // exclusive
+    const lastD = new Date(end); lastD.setDate(lastD.getDate() - 1);
+    const lastDay = lastD.toISOString().slice(0, 10);
     const name = ev.subject.replace(/vacation\s*[-–]?\s*/i, "").replace(/[-–]\s*vacation/i, "").trim();
     while (cur < end) {
       const d = cur.toISOString().slice(0, 10);
       if (!vacByDate[d]) vacByDate[d] = [];
-      if (!vacByDate[d].some(x => x.id === ev.id)) vacByDate[d].push({ id: ev.id, name, calId: ev.calId });
+      if (!vacByDate[d].some(x => x.id === ev.id)) vacByDate[d].push({ id: ev.id, name, calId: ev.calId, start: ev.start, lastDay });
       cur.setDate(cur.getDate() + 1);
     }
   });
@@ -283,7 +315,7 @@ export default function TimeOffPage() {
         {view === "month" && (
           <div style={{ display: "flex", gap: 16, marginBottom: 14, flexWrap: "wrap", alignItems: "center" }}>
             <span style={{ background: "#f97316", color: "#fff", fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 99 }}>🏖 Vacation</span>
-            {isAdminRole(role) && <span style={{ fontSize: 11, color: "#9ca3af" }}>Tap ＋ on a day to add a vacation · tap a 🏖 to delete it</span>}
+            {isAdminRole(role) && <span style={{ fontSize: 11, color: "#9ca3af" }}>Click a day to add a vacation · tap a 🏖 to edit or delete it</span>}
           </div>
         )}
 
@@ -299,18 +331,18 @@ export default function TimeOffPage() {
                   const isToday = date === todayStr;
                   const admin = isAdminRole(role);
                   return (
-                    <div key={i} style={{ minHeight: 110, background: isToday ? "#fff8f0" : "#fafafa", border: isToday ? "2px solid #f97316" : "1px solid #e5e7eb", borderRadius: 6, padding: 6 }}>
+                    <div key={i}
+                      onClick={admin && date ? () => openAdd(date) : undefined}
+                      title={admin && date ? "Click to add a vacation" : undefined}
+                      style={{ minHeight: 110, background: isToday ? "#fff8f0" : "#fafafa", border: isToday ? "2px solid #f97316" : "1px solid #e5e7eb", borderRadius: 6, padding: 6, cursor: admin && date ? "pointer" : "default" }}>
                       {date && <>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 2 }}>
-                          <span style={{ fontSize: 12, fontWeight: isToday ? 800 : 500, color: isToday ? "#f97316" : "#374151" }}>{parseInt(date.slice(8))}</span>
-                          {admin && <button title="Add vacation" onClick={() => { setVacAddModal({ date }); setVacName(""); setVacMulti(false); setVacEnd(date); }} style={{ background: "none", border: "none", color: "#f97316", fontSize: 14, fontWeight: 700, cursor: "pointer", lineHeight: 1, padding: 0 }}>＋</button>}
-                        </div>
+                        <div style={{ fontSize: 12, fontWeight: isToday ? 800 : 500, color: isToday ? "#f97316" : "#374151", marginBottom: 2 }}>{parseInt(date.slice(8))}</div>
                         {dayVacs.map(v => (
                           <div key={v.id}
-                            title={admin ? "Tap to delete this vacation" : undefined}
-                            onClick={admin ? () => deleteVacationDay(v) : undefined}
+                            title={admin ? "Tap to edit or delete" : undefined}
+                            onClick={admin ? (e) => { e.stopPropagation(); openEdit(v); } : undefined}
                             style={{ fontSize: 11, fontWeight: 600, background: "#f97316", color: "white", borderRadius: 4, padding: "2px 5px", marginBottom: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: admin ? "pointer" : "default" }}>
-                            🏖 {v.name}{admin ? " ✕" : ""}
+                            🏖 {v.name}
                           </div>
                         ))}
                       </>}
@@ -450,10 +482,10 @@ export default function TimeOffPage() {
 
       </div>
 
-      {/* ── Add Vacation modal (from calendar grid) ── */}
+      {/* ── Add Vacation modal (click a day) ── */}
       {vacAddModal && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <div style={{ background: "white", borderRadius: 16, padding: 28, width: "100%", maxWidth: 400, boxShadow: "0 8px 40px rgba(0,0,0,0.2)" }}>
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setVacAddModal(null)}>
+          <div onClick={e => e.stopPropagation()} style={{ background: "white", borderRadius: 16, padding: 28, width: "100%", maxWidth: 400, boxShadow: "0 8px 40px rgba(0,0,0,0.2)" }}>
             <h2 style={{ fontSize: 18, fontWeight: 700, color: "#0d2e5e", marginBottom: 16 }}>🏖 Add Vacation</h2>
 
             <label style={lbl}>Person</label>
@@ -462,21 +494,50 @@ export default function TimeOffPage() {
               {vacPeople.map(p => <option key={p} value={p}>{p}</option>)}
             </select>
 
-            <label style={lbl}>{vacMulti ? "Start date" : "Date"}</label>
-            <input type="date" value={vacAddModal.date} onChange={e => setVacAddModal({ date: e.target.value })} style={{ ...inp, marginBottom: 14, width: "100%" }} />
-
-            <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#374151", marginBottom: vacMulti ? 10 : 14, cursor: "pointer" }}>
-              <input type="checkbox" checked={vacMulti} onChange={e => { setVacMulti(e.target.checked); if (e.target.checked && !vacEnd) setVacEnd(vacAddModal.date); }} style={{ width: 15, height: 15 }} />
-              Multiple days
-            </label>
-            {vacMulti && <>
-              <label style={lbl}>End date</label>
-              <input type="date" value={vacEnd} min={vacAddModal.date} onChange={e => setVacEnd(e.target.value)} style={{ ...inp, marginBottom: 14, width: "100%" }} />
-            </>}
+            <div style={{ display: "flex", gap: 12, marginBottom: 16 }}>
+              <div style={{ flex: 1 }}>
+                <label style={lbl}>Start date</label>
+                <input type="date" value={vacStart} onChange={e => setVacStart(e.target.value)} style={{ ...inp, width: "100%" }} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={lbl}>End date</label>
+                <input type="date" value={vacEnd} min={vacStart} onChange={e => setVacEnd(e.target.value)} style={{ ...inp, width: "100%" }} />
+              </div>
+            </div>
+            <p style={{ fontSize: 11, color: "#9ca3af", marginTop: -8, marginBottom: 14 }}>Same start &amp; end = a single day.</p>
 
             <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
               <button disabled={!vacName || vacBusy} onClick={addVacationDay} style={{ background: "#f97316", color: "#fff", border: "none", borderRadius: 8, padding: "10px 20px", fontSize: 14, fontWeight: 600, cursor: "pointer", opacity: (!vacName || vacBusy) ? 0.5 : 1 }}>{vacBusy ? "Adding…" : "Add Vacation"}</button>
               <button onClick={() => setVacAddModal(null)} style={{ background: "#6b7280", color: "#fff", border: "none", borderRadius: 8, padding: "10px 20px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Edit / Delete Vacation modal (tap a pill) ── */}
+      {vacEditModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setVacEditModal(null)}>
+          <div onClick={e => e.stopPropagation()} style={{ background: "white", borderRadius: 16, padding: 28, width: "100%", maxWidth: 400, boxShadow: "0 8px 40px rgba(0,0,0,0.2)" }}>
+            <h2 style={{ fontSize: 18, fontWeight: 700, color: "#0d2e5e", marginBottom: 4 }}>🏖 {vacEditModal.name}'s Vacation</h2>
+            <p style={{ fontSize: 13, color: "#6b7280", marginBottom: 16 }}>Change the dates or delete this vacation.</p>
+
+            <div style={{ display: "flex", gap: 12, marginBottom: 20 }}>
+              <div style={{ flex: 1 }}>
+                <label style={lbl}>Start date</label>
+                <input type="date" value={editStart} onChange={e => setEditStart(e.target.value)} style={{ ...inp, width: "100%" }} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={lbl}>End date</label>
+                <input type="date" value={editEnd} min={editStart} onChange={e => setEditEnd(e.target.value)} style={{ ...inp, width: "100%" }} />
+              </div>
+            </div>
+
+            <div style={{ display: "flex", gap: 10, justifyContent: "space-between" }}>
+              <button disabled={vacBusy} onClick={deleteEditVacation} style={{ background: "transparent", border: "1px solid #fca5a5", color: "#dc2626", borderRadius: 8, padding: "10px 18px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>Delete</button>
+              <div style={{ display: "flex", gap: 10 }}>
+                <button onClick={() => setVacEditModal(null)} style={{ background: "#6b7280", color: "#fff", border: "none", borderRadius: 8, padding: "10px 18px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>Cancel</button>
+                <button disabled={vacBusy || !editStart} onClick={saveEditVacation} style={{ background: "#f97316", color: "#fff", border: "none", borderRadius: 8, padding: "10px 18px", fontSize: 14, fontWeight: 600, cursor: "pointer", opacity: (vacBusy || !editStart) ? 0.5 : 1 }}>{vacBusy ? "Saving…" : "Save"}</button>
+              </div>
             </div>
           </div>
         </div>
