@@ -160,7 +160,7 @@ export default function DispatchPage() {
         </div>
       ) : (
         <div style={s.boardWrap}>
-          <div style={{ ...s.grid, gridTemplateColumns: `180px repeat(${days.length}, minmax(180px, 1fr))` }}>
+          <div style={{ ...s.grid, gridTemplateColumns: `150px repeat(${days.length}, minmax(120px, 1fr))` }}>
             {/* Header row */}
             <div style={s.cornerCell}>Technician</div>
             {days.map(d => {
@@ -343,13 +343,13 @@ const s: Record<string, any> = {
   dateInput: { border: "none", borderRadius: 8, padding: "6px 10px", fontSize: 13, fontWeight: 600 },
   todayBtn: { background: "#1565c0", color: "#fff", border: "none", borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 800, cursor: "pointer" },
   boardWrap: { overflowX: "auto", border: "1px solid #e5e7eb", borderRadius: 12, background: "#fff" },
-  grid: { display: "grid", minWidth: 900 },
+  grid: { display: "grid", minWidth: 990, width: "100%" },
   cornerCell: { position: "sticky", left: 0, zIndex: 2, background: "#f8fafc", borderBottom: "2px solid #e5e7eb", borderRight: "1px solid #e5e7eb", padding: "10px 12px", fontSize: 12, fontWeight: 800, color: "#6b7280", textTransform: "uppercase" },
-  dayHead: { borderBottom: "2px solid #e5e7eb", borderRight: "1px solid #f0f0f0", padding: "10px 12px", fontSize: 13, fontWeight: 700, color: "#374151", textAlign: "center" },
+  dayHead: { borderBottom: "2px solid #e5e7eb", borderRight: "1px solid #f0f0f0", padding: "14px 12px", fontSize: 14, fontWeight: 700, color: "#374151", textAlign: "center" },
   techCell: { position: "sticky", left: 0, zIndex: 1, background: "#fff", borderBottom: "1px solid #f0f0f0", borderRight: "1px solid #e5e7eb", padding: "12px", display: "flex", alignItems: "center", gap: 10 },
   avatar: { width: 32, height: 32, borderRadius: "50%", background: "#e8f0ff", color: "#1565c0", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 800, flexShrink: 0 },
-  cell: { minHeight: 92, borderBottom: "1px solid #f0f0f0", borderRight: "1px solid #f0f0f0", padding: 6, cursor: "pointer", background: "#fafafa" },
-  visit: { border: "1px solid", borderRadius: 6, padding: "5px 7px", marginBottom: 5, cursor: "pointer", boxShadow: "0 1px 2px rgba(0,0,0,0.06)" },
+  cell: { minHeight: 180, borderBottom: "1px solid #f0f0f0", borderRight: "1px solid #f0f0f0", padding: 6, cursor: "pointer", background: "#fafafa" },
+  visit: { border: "1px solid", borderRadius: 7, padding: "7px 9px", marginBottom: 6, cursor: "pointer", boxShadow: "0 1px 2px rgba(0,0,0,0.06)" },
   priHigh: { fontSize: 8, fontWeight: 800, background: "#dc2626", color: "#fff", borderRadius: 3, padding: "1px 4px" },
   flag: { fontSize: 11, color: "#dc2626" },
   footer: { display: "flex", gap: 6, flexWrap: "wrap", marginTop: 12, padding: "10px 4px", borderTop: "1px solid #eee" },
