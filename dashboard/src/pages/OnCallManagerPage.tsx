@@ -1064,9 +1064,9 @@ function RotationOrderDisplay({ db, accessToken }: { db: any; accessToken: strin
     if (!accessToken) return;
     setLoading(true);
     try {
-      // Fetch all on-call events for this year and next
+      // Fetch all on-call events for this year and the next two
       const allEvs: {date: string; name: string}[] = [];
-      for (const yr of [thisYear, thisYear + 1]) {
+      for (const yr of [thisYear, thisYear + 1, thisYear + 2]) {
         let url = `https://graph.microsoft.com/v1.0/me/calendars/${CAL_ID}/calendarView?startDateTime=${yr}-01-01T00:00:00&endDateTime=${yr}-12-31T23:59:59&$top=999&$select=subject,start&$orderby=start/dateTime`;
         while (url) {
           const d = await (await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } })).json();
@@ -1095,7 +1095,7 @@ function RotationOrderDisplay({ db, accessToken }: { db: any; accessToken: strin
       // Derive rotation cycle per year (unique names in first-appearance order)
       const newOrders: Record<string, string[]> = {};
       const errs: string[] = [];
-      for (const yr of [thisYear, thisYear + 1]) {
+      for (const yr of [thisYear, thisYear + 1, thisYear + 2]) {
         const yrEvs = dedupedEvs.filter(e => e.date.startsWith(String(yr)));
         const seen = new Set<string>(), cycle: string[] = [];
         yrEvs.forEach(e => { if (!seen.has(e.name)) { seen.add(e.name); cycle.push(e.name); } });
@@ -1109,6 +1109,19 @@ function RotationOrderDisplay({ db, accessToken }: { db: any; accessToken: strin
         });
       }
 
+      // For years with no calendar events yet (e.g. far-future like 2028),
+      // show the saved/shuffled order if any, else the roster — so the year can
+      // be projected and shuffled before it's ever filled.
+      const cfgSnap = await getDoc(doc(db, "settings", "onCallConfig")).catch(() => null);
+      const roster: string[] = cfgSnap?.data()?.employees || [];
+      const ordSnap = await getDoc(doc(db, "settings", "rotationOrders")).catch(() => null);
+      const saved: Record<string, string[]> = ordSnap?.data() || {};
+      for (const yr of [thisYear, thisYear + 1, thisYear + 2]) {
+        if (!newOrders[String(yr)]?.length) {
+          newOrders[String(yr)] = saved[String(yr)]?.length ? saved[String(yr)] : roster;
+        }
+      }
+
       setOrders(newOrders);
       setErrors(errs);
 
@@ -1119,8 +1132,6 @@ function RotationOrderDisplay({ db, accessToken }: { db: any; accessToken: strin
       const lockedYears: number[] = lockSnap?.data()?.years || [];
       setLocked(lockedYears);
       if (lockedYears.length) {
-        const ordSnap = await getDoc(doc(db, "settings", "rotationOrders")).catch(() => null);
-        const saved: Record<string, string[]> = ordSnap?.data() || {};
         const fixes: Record<string, string[]> = {};
         for (const y of lockedYears) {
           const cal = newOrders[String(y)];
@@ -1172,14 +1183,15 @@ function RotationOrderDisplay({ db, accessToken }: { db: any; accessToken: strin
       )}
 
       {/* Year cards */}
-      {[thisYear, thisYear + 1].map(y => {
+      {[thisYear, thisYear + 1, thisYear + 2].map(y => {
         const cycle = orders[String(y)] || [];
         const isCurrent = y === thisYear;
         const isLocked = locked.includes(y);
+        const yearLabel = isCurrent ? "(Current Year)" : y === thisYear + 1 ? "(Next Year)" : "(Projected)";
         return (
           <div key={y} style={{ marginBottom: 16, background: "#f8fafc", borderRadius: 10, padding: "14px 16px", border: "1px solid #e2e8f0" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
-              <span style={{ fontSize: 14, fontWeight: 700, color: "#0d2e5e" }}>{y} {isCurrent ? "(Current Year)" : "(Next Year)"}</span>
+              <span style={{ fontSize: 14, fontWeight: 700, color: "#0d2e5e" }}>{y} {yearLabel}</span>
               {isCurrent && <span style={{ fontSize: 11, color: "#9ca3af", fontWeight: 600 }}>Read from calendar</span>}
               {isLocked && <span style={{ fontSize: 11, color: "#dc2626", fontWeight: 700 }}>Locked</span>}
               {!isCurrent && !isLocked && cycle.length > 0 && (
