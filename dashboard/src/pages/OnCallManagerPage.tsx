@@ -1,8 +1,11 @@
 import { useEffect, useState } from "react";
 import { doc, getDoc, setDoc, collection, addDoc, onSnapshot, updateDoc, serverTimestamp, query, getDocs, orderBy, limit, deleteDoc, where } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
+import { getFunctions, httpsCallable } from "firebase/functions";
 import { db, auth } from "../firebase";
 import { useRole, isAdminRole } from "../hooks/useRole";
+
+const callConflictCheckNow = httpsCallable(getFunctions(), "conflictCheckNow");
 
 // ── Graph API config ────────────────────────────────────────────────────────
 const TENANT_ID = "1c1d62e8-f392-4caa-a8a6-0ce98e0913d9"; // skysuite ca tenant
@@ -887,12 +890,12 @@ function IcsExportPanel({ accessToken, calId, db }: { accessToken:string; calId:
   if(!roster.length)return null;
   return(
     <div style={{background:"white",borderRadius:12,padding:20,boxShadow:"0 1px 4px rgba(0,0,0,0.07)",marginTop:16}}>
-      <h2 style={{fontSize:15,fontWeight:700,color:"#0d2e5e",margin:"0 0 4px"}}>📅 ICS Calendars</h2>
+      <h2 style={{fontSize:15,fontWeight:700,color:"#0d2e5e",margin:"0 0 4px"}}>ICS Calendars</h2>
       <p style={{fontSize:12,color:"#6b7280",marginBottom:14}}>Download a personal .ics file for each person — includes their on-call days and approved vacation. Import into any calendar app.</p>
       <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
         {roster.map(name=>(
           <button key={name} onClick={()=>downloadIcs(name)} disabled={busy===name} style={{...btnS(busy===name?"#9ca3af":"#1565c0"),fontSize:13,padding:"7px 14px"}}>
-            {busy===name?"⏳ Building…":`⬇ ${name}`}
+            {busy===name?"Building…":name}
           </button>
         ))}
       </div>
@@ -904,6 +907,8 @@ function OnCallAlertsPanel({ db }: { db:any }) {
   const [phone,setPhone]=useState("");
   const [saved,setSaved]=useState(false);
   const [loaded,setLoaded]=useState(false);
+  const [running,setRunning]=useState(false);
+  const [runResult,setRunResult]=useState("");
   useEffect(()=>{
     getDoc(doc(db,"settings","onCallConfig")).then(s=>{ setPhone(s.data()?.alertPhone||""); setLoaded(true); }).catch(()=>setLoaded(true));
   },[]);
@@ -911,16 +916,29 @@ function OnCallAlertsPanel({ db }: { db:any }) {
     await setDoc(doc(db,"settings","onCallConfig"),{alertPhone:phone.trim()},{merge:true});
     setSaved(true); setTimeout(()=>setSaved(false),3000);
   }
+  async function runNow(){
+    setRunning(true); setRunResult("");
+    try{
+      const res:any=await callConflictCheckNow({});
+      const d=res?.data||{};
+      if(d.ok===false){ setRunResult(`⚠️ ${d.reason||"Could not run."}`); }
+      else if(!d.conflicts?.length){ setRunResult("✅ No conflicts found — sent confirmation to the alert number."); }
+      else { setRunResult(`Found ${d.conflicts.length} conflict day(s) across ${d.people} person(s) — texted the alert number only.`); }
+    }catch(e:any){ setRunResult(`Error: ${e?.message||"failed"}`); }
+    setRunning(false);
+  }
   if(!loaded) return null;
   return(
     <div style={{background:"white",borderRadius:12,padding:20,boxShadow:"0 1px 4px rgba(0,0,0,0.07)",marginBottom:16}}>
       <h2 style={{fontSize:15,fontWeight:700,color:"#0d2e5e",marginBottom:4}}>Conflict Alerts</h2>
-      <p style={{fontSize:12,color:"#6b7280",marginBottom:12}}>Each morning the system checks the next 60 days for anyone scheduled on call during their vacation, and texts this number. Also: the on-call person gets a daily reminder text automatically.</p>
+      <p style={{fontSize:12,color:"#6b7280",marginBottom:12}}>Each morning the system checks the next 365 days for anyone scheduled on call during their vacation, and texts this number. Also: the on-call person gets a daily reminder text automatically.</p>
       <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
         <input type="tel" value={phone} onChange={e=>setPhone(e.target.value)} placeholder="905-555-1234" style={{...inp,maxWidth:200}}/>
         <button onClick={save} style={btnS("#1565c0")}>Save</button>
-        {saved&&<span style={{fontSize:12,color:"#059669",fontWeight:600}}>✅ Saved</span>}
+        <button onClick={runNow} disabled={running} style={btnS("#6b7280")}>{running?"Checking…":"Run now (admin only)"}</button>
+        {saved&&<span style={{fontSize:12,color:"#059669",fontWeight:600}}>Saved</span>}
       </div>
+      {runResult&&<p style={{fontSize:12,color:"#374151",marginTop:10}}>{runResult}</p>}
     </div>
   );
 }
