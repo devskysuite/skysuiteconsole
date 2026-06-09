@@ -55,12 +55,27 @@ function IconSliders() {
     </svg>
   );
 }
+function IconBuilding() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="2" width="18" height="20" rx="1"/>
+      <line x1="3" y1="9" x2="21" y2="9"/>
+      <line x1="3" y1="15" x2="21" y2="15"/>
+      <line x1="9" y1="9" x2="9" y2="22"/>
+      <line x1="15" y1="9" x2="15" y2="22"/>
+    </svg>
+  );
+}
 
 // ── Nav data ──────────────────────────────────────────────────────────────────
 const BASE_LINKS = [
   { to: "/dashboard", label: "Tools" },
   { to: "/on-call",   label: "On-Call" },
   { to: "/dispatch",  label: "Dispatch" },
+];
+
+const DIRECTORY_ITEMS: { to: string; label: string; icon: React.ReactNode }[] = [
+  { to: "/customers", label: "Customers", icon: <IconBuilding /> },
 ];
 
 const RESOURCE_ITEMS: { to: string; label: string; icon: React.ReactNode }[] = [
@@ -94,9 +109,11 @@ export default function Nav() {
   const canApprove = canApproveTimeOff(role);
   const [menuOpen, setMenuOpen] = useState(false);
   const [resourcesMenuOpen, setResourcesMenuOpen] = useState(false);
+  const [directoryMenuOpen, setDirectoryMenuOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const dropdownRef    = useRef<HTMLDivElement>(null);
   const resourcesRef   = useRef<HTMLDivElement>(null);
+  const directoryRef   = useRef<HTMLDivElement>(null);
   const [userName, setUserName] = useState("");
   const [pendingTimeOff, setPendingTimeOff] = useState(0);
 
@@ -129,6 +146,7 @@ export default function Nav() {
     function handleClickOutside(e: MouseEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) setMenuOpen(false);
       if (resourcesRef.current && !resourcesRef.current.contains(e.target as Node)) setResourcesMenuOpen(false);
+      if (directoryRef.current && !directoryRef.current.contains(e.target as Node)) setDirectoryMenuOpen(false);
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
@@ -137,6 +155,7 @@ export default function Nav() {
   useEffect(() => {
     setMenuOpen(false);
     setResourcesMenuOpen(false);
+    setDirectoryMenuOpen(false);
     setMobileMenuOpen(false);
   }, [pathname]);
 
@@ -179,6 +198,28 @@ export default function Nav() {
           Vacation
           {pendingTimeOff > 0 && <span style={styles.badge}>{pendingTimeOff}</span>}
         </Link>
+
+        {/* Directory dropdown */}
+        <div ref={directoryRef} style={{ position: "relative" }}>
+          <button
+            style={{ ...styles.dropBtn, ...(DIRECTORY_ITEMS.some(i => pathname === i.to || pathname.startsWith(i.to + "/")) ? styles.linkActive : {}) }}
+            onClick={() => setDirectoryMenuOpen(v => !v)}
+          >
+            Directory <Caret open={directoryMenuOpen} />
+          </button>
+          {directoryMenuOpen && (
+            <div style={styles.dropdown}>
+              <div style={styles.dropdownInner}>
+                {DIRECTORY_ITEMS.map(item => (
+                  <Link key={item.to} to={item.to} style={{ ...styles.dropdownItem, ...(pathname === item.to || pathname.startsWith(item.to + "/") ? styles.dropdownItemActive : {}) }}>
+                    <span style={{ ...styles.itemIcon, color: pathname.startsWith(item.to) ? "#1565c0" : "#6b7280" }}>{item.icon}</span>
+                    {item.label}
+                  </Link>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* Resources dropdown */}
         <div ref={resourcesRef} style={{ position: "relative" }}>
@@ -234,6 +275,7 @@ export default function Nav() {
     <div className={`mobile-nav-panel${mobileMenuOpen ? " open" : ""}`}>
       {BASE_LINKS.map(l => <Link key={l.to} to={l.to} className="mobile-nav-link">{l.label}</Link>)}
       <Link to="/time-off" className="mobile-nav-link">Vacation</Link>
+      {DIRECTORY_ITEMS.map(item => <Link key={item.to} to={item.to} className="mobile-nav-link">{item.label}</Link>)}
       {RESOURCE_ITEMS.map(item => <Link key={item.to} to={item.to} className="mobile-nav-link">{item.label}</Link>)}
       {isAdmin && ADMIN_ITEMS.map(item => <Link key={item.to} to={item.to} className="mobile-nav-link">{item.label}</Link>)}
       <button
