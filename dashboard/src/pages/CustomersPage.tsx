@@ -14,6 +14,7 @@ interface Customer {
   code: string;
   status: "Active" | "Inactive";
   numberOfProperties: number;
+  creditLimit: number;
   openJobs: number;
   openJobsValue: number;
   outstandingBalance: number;
@@ -73,6 +74,7 @@ function csvRowToCustomer(headers: string[], row: string[]): Omit<Customer, "id"
     code: g("Customer Code"),
     status: (g("Status") || "Active") as "Active" | "Inactive",
     numberOfProperties: parseInt(g("Number of Properties")) || 0,
+    creditLimit: parseMoney(g("Credit Limit")),
     openJobs: parseInt(g("Open Jobs")) || 0,
     openJobsValue: parseMoney(g("Open Jobs Value")),
     outstandingBalance: parseMoney(g("Outstanding Balance")),
@@ -140,46 +142,61 @@ function CustomerRow({ c, onEdit, onDelete, isAdmin }:
       onMouseEnter={e => (e.currentTarget.style.background = "#f8fafc")}
       onMouseLeave={e => (e.currentTarget.style.background = "")}
     >
-      {/* Name + code — sticky left */}
-      <td style={{ ...td, position: "sticky" as const, left: 0, background: "inherit", zIndex: 1, minWidth: 200, borderRight: "1px solid #f0f0f0" }}>
+      {/* Customer name — sticky left */}
+      <td style={{ ...td, position: "sticky" as const, left: 0, background: "inherit", zIndex: 1, minWidth: 220, borderRight: "1px solid #f0f0f0" }}>
         <div style={{ fontWeight: 600, color: "#0d2e5e", fontSize: 13 }}>{c.name}</div>
-        <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 1 }}>#{c.code}</div>
       </td>
+      {/* Customer Code */}
+      <td style={{ ...td, color: "#6b7280", fontSize: 12, whiteSpace: "nowrap" as const }}>{c.code ? `#${c.code}` : "—"}</td>
       {/* Status */}
       <td style={td}>
         <span style={{ background: "#dcfce7", color: "#166534", fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 99 }}>
           {c.status}
         </span>
       </td>
-      {/* Type badge */}
-      <td style={td}>
-        {tc && (
-          <span style={{ ...tc, fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 99, whiteSpace: "nowrap" }}>
-            {c.customerType}
-          </span>
-        )}
-      </td>
-      {/* # Properties */}
+      {/* Number of Properties */}
       <td style={{ ...td, textAlign: "center" as const, color: "#6b7280" }}>{c.numberOfProperties || "—"}</td>
+      {/* Credit Limit */}
+      <td style={td}>{c.creditLimit ? fmt$(c.creditLimit) : "—"}</td>
       {/* Open Jobs */}
       <td style={{ ...td, textAlign: "center" as const, fontWeight: c.openJobs > 0 ? 700 : 400 }}>{c.openJobs}</td>
-      {/* Outstanding */}
+      {/* Open Jobs Value */}
+      <td style={td}>{c.openJobsValue ? fmt$(c.openJobsValue) : "—"}</td>
+      {/* Outstanding Balance */}
       <td style={{ ...td, color: c.outstandingBalance > 0 ? "#dc2626" : "#374151", fontWeight: c.outstandingBalance > 0 ? 600 : 400 }}>
         {fmt$(c.outstandingBalance)}
       </td>
-      {/* Overdue */}
+      {/* Overdue Balance */}
       <td style={{ ...td, color: c.overdueBalance > 0 ? "#dc2626" : "#374151", fontWeight: c.overdueBalance > 0 ? 700 : 400 }}>
         {fmt$(c.overdueBalance)}
       </td>
-      {/* Last payment */}
+      {/* Last Payment */}
       <td style={td}>{c.lastPayment ? fmt$(c.lastPayment) : "—"}</td>
-      {/* Last payment date */}
-      <td style={{ ...td, whiteSpace: "nowrap", color: "#6b7280", fontSize: 12 }}>{c.lastPaymentDate || "—"}</td>
-      {/* Billing address */}
+      {/* Last Payment Date */}
+      <td style={{ ...td, whiteSpace: "nowrap" as const, color: "#6b7280", fontSize: 12 }}>{c.lastPaymentDate || "—"}</td>
+      {/* Billing Address */}
       <td style={{ ...td, maxWidth: 220 }}>
         <span title={c.billingAddress} style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "#6b7280", fontSize: 12 }}>
           {c.billingAddress || "—"}
         </span>
+      </td>
+      {/* Business Address */}
+      <td style={{ ...td, maxWidth: 220 }}>
+        <span title={c.businessAddress} style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "#6b7280", fontSize: 12 }}>
+          {c.businessAddress || "—"}
+        </span>
+      </td>
+      {/* Created By */}
+      <td style={{ ...td, color: "#6b7280", fontSize: 12, whiteSpace: "nowrap" as const }}>{c.createdBy || "—"}</td>
+      {/* Created On */}
+      <td style={{ ...td, whiteSpace: "nowrap" as const, color: "#9ca3af", fontSize: 12 }}>{c.createdOn || "—"}</td>
+      {/* Customer Type */}
+      <td style={td}>
+        {tc && (
+          <span style={{ ...tc, fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 99, whiteSpace: "nowrap" as const }}>
+            {c.customerType}
+          </span>
+        )}
       </td>
       {/* Email */}
       <td style={{ ...td, maxWidth: 190 }}>
@@ -191,17 +208,11 @@ function CustomerRow({ c, onEdit, onDelete, isAdmin }:
           : <span style={{ color: "#d1d5db" }}>—</span>}
       </td>
       {/* Phone */}
-      <td style={{ ...td, whiteSpace: "nowrap", fontSize: 12, color: "#374151" }}>{c.phone || <span style={{ color: "#d1d5db" }}>—</span>}</td>
-      {/* Created on */}
-      <td style={{ ...td, whiteSpace: "nowrap", color: "#9ca3af", fontSize: 12 }}>{c.createdOn || "—"}</td>
-      {/* Sync */}
-      <td style={td}>
-        <span style={{ background: "#dcfce7", color: "#166534", fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 99, whiteSpace: "nowrap" }}>
-          {c.syncStatus || "In Sync"}
-        </span>
-      </td>
+      <td style={{ ...td, whiteSpace: "nowrap" as const, fontSize: 12, color: "#374151" }}>{c.phone || <span style={{ color: "#d1d5db" }}>—</span>}</td>
+      {/* Tags */}
+      <td style={{ ...td, fontSize: 12, color: "#6b7280" }}>{c.tags || "—"}</td>
       {/* Actions */}
-      <td style={{ ...td, whiteSpace: "nowrap" }} onClick={e => e.stopPropagation()}>
+      <td style={{ ...td, whiteSpace: "nowrap" as const }} onClick={e => e.stopPropagation()}>
         {isAdmin && (
           <button
             onClick={onDelete}
@@ -209,6 +220,12 @@ function CustomerRow({ c, onEdit, onDelete, isAdmin }:
             style={{ background: "none", border: "none", cursor: "pointer", color: "#dc2626", fontSize: 13, padding: "3px 7px", borderRadius: 6, lineHeight: 1 }}
           >✕</button>
         )}
+      </td>
+      {/* Sync Status */}
+      <td style={td}>
+        <span style={{ background: "#dcfce7", color: "#166534", fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 99, whiteSpace: "nowrap" as const }}>
+          {c.syncStatus || "In Sync"}
+        </span>
       </td>
     </tr>
   );
@@ -219,7 +236,7 @@ function CustomerModal({ title, initial, onSave, onClose }:
   { title: string; initial?: Customer; onSave: (d: Omit<Customer, "id">) => Promise<void>; onClose: () => void }) {
   const blank: Omit<Customer, "id"> = {
     name: "", code: "", status: "Active", numberOfProperties: 0,
-    openJobs: 0, openJobsValue: 0, outstandingBalance: 0, overdueBalance: 0,
+    creditLimit: 0, openJobs: 0, openJobsValue: 0, outstandingBalance: 0, overdueBalance: 0,
     lastPayment: 0, lastPaymentDate: "", billingAddress: "", businessAddress: "",
     createdBy: "", createdOn: "", customerType: "", email: "", phone: "", tags: "", syncStatus: "In Sync",
   };
@@ -321,7 +338,7 @@ const th: React.CSSProperties = {
   padding: "10px 12px", textAlign: "left" as const, fontSize: 11, fontWeight: 700,
   color: "#6b7280", textTransform: "uppercase" as const, letterSpacing: 0.4,
   whiteSpace: "nowrap" as const, background: "#f9fafb", borderBottom: "2px solid #e5e7eb",
-  position: "sticky" as const, top: 96, zIndex: 3,
+  position: "sticky" as const, top: 0, zIndex: 3,
 };
 const td: React.CSSProperties = { padding: "10px 12px", fontSize: 13, color: "#374151", verticalAlign: "middle" as const };
 
@@ -407,9 +424,9 @@ export default function CustomersPage() {
 
   // ── Export CSV ────────────────────────────────────────────────────────────
   function exportCSV() {
-    const hdrs = ["Customer","Customer Code","Status","Number of Properties","Open Jobs","Open Jobs Value","Outstanding Balance","Overdue Balance","Last Payment","Last Payment Date","Billing Address","Business Address","Created By","Created On","Customer Type","Email","Phone","Tags","Sync Status"];
+    const hdrs = ["Customer","Customer Code","Status","Number of Properties","Credit Limit","Open Jobs","Open Jobs Value","Outstanding Balance","Overdue Balance","Last Payment","Last Payment Date","Billing Address","Business Address","Created By","Created On","Customer Type","Email","Phone","Tags","Sync Status"];
     const esc = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
-    const rows = filtered.map(c => [c.name,c.code,c.status,c.numberOfProperties,c.openJobs,c.openJobsValue,c.outstandingBalance,c.overdueBalance,c.lastPayment,c.lastPaymentDate,c.billingAddress,c.businessAddress,c.createdBy,c.createdOn,c.customerType,c.email,c.phone,c.tags,c.syncStatus].map(esc).join(","));
+    const rows = filtered.map(c => [c.name,c.code,c.status,c.numberOfProperties,c.creditLimit,c.openJobs,c.openJobsValue,c.outstandingBalance,c.overdueBalance,c.lastPayment,c.lastPaymentDate,c.billingAddress,c.businessAddress,c.createdBy,c.createdOn,c.customerType,c.email,c.phone,c.tags,c.syncStatus].map(esc).join(","));
     const csv = [hdrs.map(esc).join(","), ...rows].join("\r\n");
     const a = document.createElement("a");
     a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
@@ -429,10 +446,10 @@ export default function CustomersPage() {
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div style={{ minHeight: "100vh", paddingBottom: 40 }}>
+    <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 96px)" }}>
 
       {/* Header */}
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", padding: "20px 24px 16px", marginBottom: 0, flexWrap: "wrap", gap: 12 }}>
+      <div style={{ flexShrink: 0, display: "flex", alignItems: "flex-start", justifyContent: "space-between", padding: "20px 24px 16px", marginBottom: 0, flexWrap: "wrap", gap: 12 }}>
         <div>
           <div style={{ fontSize: 12, color: "#9ca3af", fontWeight: 500, marginBottom: 4, textTransform: "uppercase", letterSpacing: 0.5 }}>Directory</div>
           <h1 style={{ fontSize: 26, fontWeight: 800, color: "#0d2e5e", margin: 0 }}>Customers</h1>
@@ -464,7 +481,7 @@ export default function CustomersPage() {
       </div>
 
       {/* Filter tabs */}
-      <div style={{ display: "flex", borderBottom: "2px solid #e5e7eb", marginBottom: 0, overflowX: "auto", padding: "0 24px" }}>
+      <div style={{ flexShrink: 0, display: "flex", borderBottom: "2px solid #e5e7eb", marginBottom: 0, overflowX: "auto", padding: "0 24px" }}>
         <FilterTab label="All Customers" count={customers.length} active={filter === "all"}                   onClick={() => setFilter("all")} />
         <FilterTab label="Credit Warning" count={cntWarning}      active={filter === "warning"} dot="#f59e0b" onClick={() => setFilter("warning")} />
         <FilterTab label="Credit Risk"    count={cntRisk}          active={filter === "risk"}    dot="#f97316" onClick={() => setFilter("risk")} />
@@ -472,7 +489,7 @@ export default function CustomersPage() {
       </div>
 
       {/* Search + rows-per-page */}
-      <div style={{ padding: "12px 24px", display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+      <div style={{ flexShrink: 0, padding: "12px 24px", display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
         <div style={{ position: "relative", flex: 1, maxWidth: 420 }}>
           <span style={{ position: "absolute", left: 11, top: "50%", transform: "translateY(-50%)", color: "#9ca3af", fontSize: 14, pointerEvents: "none" }}>🔍</span>
           <input
@@ -499,7 +516,7 @@ export default function CustomersPage() {
       </div>
 
       {/* Table */}
-      <div style={{ overflowX: "auto", overflowY: "clip", borderTop: "1px solid #e5e7eb", background: "#fff" }}>
+      <div style={{ flex: 1, overflow: "auto", minHeight: 0, borderTop: "1px solid #e5e7eb", background: "#fff" }}>
         {loading ? (
           <div style={{ textAlign: "center", padding: 80, color: "#9ca3af" }}>Loading customers…</div>
 
@@ -524,24 +541,30 @@ export default function CustomersPage() {
           </div>
 
         ) : (
-          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1520 }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 2400 }}>
             <thead>
               <tr>
-                <th style={{ ...th, minWidth: 200, position: "sticky" as const, left: 0, top: 96, zIndex: 4, borderRight: "1px solid #e5e7eb" }}>Customer</th>
+                <th style={{ ...th, minWidth: 220, position: "sticky" as const, left: 0, top: 0, zIndex: 4, borderRight: "1px solid #e5e7eb" }}>Customer</th>
+                <th style={{ ...th, minWidth: 120 }}>Customer Code</th>
                 <th style={th}>Status</th>
-                <th style={th}>Type</th>
-                <th style={{ ...th, textAlign: "center" as const }}># Props</th>
-                <th style={{ ...th, textAlign: "center" as const }}>Jobs</th>
-                <th style={th}>Outstanding</th>
-                <th style={th}>Overdue</th>
+                <th style={{ ...th, textAlign: "center" as const }}>Number of Properties</th>
+                <th style={th}>Credit Limit</th>
+                <th style={{ ...th, textAlign: "center" as const }}>Open Jobs</th>
+                <th style={th}>Open Jobs Value</th>
+                <th style={th}>Outstanding Balance</th>
+                <th style={th}>Overdue Balance</th>
                 <th style={th}>Last Payment</th>
-                <th style={th}>Last Pmt Date</th>
+                <th style={{ ...th, minWidth: 130 }}>Last Payment Date</th>
                 <th style={{ ...th, minWidth: 220 }}>Billing Address</th>
+                <th style={{ ...th, minWidth: 220 }}>Business Address</th>
+                <th style={th}>Created By</th>
+                <th style={th}>Created On</th>
+                <th style={th}>Customer Type</th>
                 <th style={{ ...th, minWidth: 190 }}>Email</th>
                 <th style={{ ...th, minWidth: 130 }}>Phone</th>
-                <th style={th}>Created On</th>
-                <th style={th}>Sync</th>
+                <th style={th}>Tags</th>
                 <th style={{ ...th, width: 44 }}></th>
+                <th style={th}>Sync Status</th>
               </tr>
             </thead>
             <tbody>
@@ -561,7 +584,7 @@ export default function CustomersPage() {
 
       {/* Pagination footer */}
       {filtered.length > 0 && pageSize !== "all" && (
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 24px", borderTop: "1px solid #e5e7eb", background: "#fafafa", flexWrap: "wrap", gap: 10 }}>
+        <div style={{ flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 24px", borderTop: "1px solid #e5e7eb", background: "#fafafa", flexWrap: "wrap", gap: 10 }}>
           <span style={{ fontSize: 13, color: "#6b7280" }}>
             Showing {rangeStart.toLocaleString()}–{rangeEnd.toLocaleString()} of {filtered.length.toLocaleString()} customer{filtered.length !== 1 ? "s" : ""}
           </span>
