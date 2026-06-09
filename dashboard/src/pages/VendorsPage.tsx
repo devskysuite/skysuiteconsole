@@ -133,12 +133,20 @@ function VendorRow({ v, onEdit, onDelete, isAdmin }:
           ? <a href={`mailto:${v.email}`} onClick={e => e.stopPropagation()} style={{ color: "#1565c0", textDecoration: "none", fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const, display: "block", maxWidth: 200 }}>{v.email}</a>
           : <span style={{ color: "#d1d5db" }}>—</span>}
       </td>
-      {/* Address */}
-      <td style={{ ...td, maxWidth: 260 }}>
-        <span title={fullAddr} style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const, color: "#6b7280", fontSize: 12 }}>
-          {fullAddr || <span style={{ color: "#d1d5db" }}>—</span>}
+      {/* City */}
+      <td style={{ ...td, color: "#6b7280", fontSize: 12, whiteSpace: "nowrap" as const }}>{v.city || "—"}</td>
+      {/* State/Province */}
+      <td style={{ ...td, color: "#6b7280", fontSize: 12, whiteSpace: "nowrap" as const }}>{v.stateProvince || "—"}</td>
+      {/* Address Line 1 */}
+      <td style={{ ...td, maxWidth: 200 }}>
+        <span title={v.addressLine1} style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const, color: "#6b7280", fontSize: 12 }}>
+          {v.addressLine1 || "—"}
         </span>
       </td>
+      {/* Address Line 2 */}
+      <td style={{ ...td, maxWidth: 180, color: "#6b7280", fontSize: 12 }}>{v.addressLine2 || "—"}</td>
+      {/* Zip/Postal Code */}
+      <td style={{ ...td, color: "#6b7280", fontSize: 12, whiteSpace: "nowrap" as const }}>{v.zipPostal || "—"}</td>
       {/* Notes */}
       <td style={{ ...td, maxWidth: 200 }}>
         {v.notes
@@ -151,6 +159,12 @@ function VendorRow({ v, onEdit, onDelete, isAdmin }:
       <td style={td}>
         <span style={{ background: v.status === "Active" ? "#dcfce7" : "#f3f4f6", color: v.status === "Active" ? "#166534" : "#6b7280", fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 99 }}>
           {v.status}
+        </span>
+      </td>
+      {/* Sync Status */}
+      <td style={td}>
+        <span style={{ background: "#dcfce7", color: "#166534", fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 99, whiteSpace: "nowrap" as const }}>
+          {v.syncStatus || "In Sync"}
         </span>
       </td>
       {/* Actions */}
@@ -330,7 +344,7 @@ export default function VendorsPage() {
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 96px)" }}>
+    <div style={{ display: "flex", flexDirection: "column", flex: 1 }}>
 
       {/* Header */}
       <div style={{ flexShrink: 0, display: "flex", alignItems: "flex-start", justifyContent: "space-between", padding: "20px 24px 16px", flexWrap: "wrap", gap: 12 }}>
@@ -407,18 +421,23 @@ export default function VendorsPage() {
         ) : filtered.length === 0 ? (
           <div style={{ textAlign: "center", padding: 60, color: "#9ca3af" }}>No vendors match your search or filter.</div>
         ) : (
-          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1100 }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1900 }}>
             <thead>
               <tr>
                 <th style={{ ...th, minWidth: 220, position: "sticky" as const, left: 0, top: 0, zIndex: 4, borderRight: "1px solid #e5e7eb" }}>Vendor</th>
-                <th style={th}>Type</th>
-                <th style={{ ...th, minWidth: 150 }}>Contact</th>
+                <th style={th}>Vendor Type</th>
+                <th style={{ ...th, minWidth: 150 }}>Default Contact</th>
                 <th style={{ ...th, minWidth: 130 }}>Phone</th>
                 <th style={{ ...th, minWidth: 200 }}>Email</th>
-                <th style={{ ...th, minWidth: 260 }}>Address</th>
+                <th style={{ ...th, minWidth: 120 }}>City</th>
+                <th style={{ ...th, minWidth: 130 }}>State/Province</th>
+                <th style={{ ...th, minWidth: 200 }}>Address Line 1</th>
+                <th style={{ ...th, minWidth: 180 }}>Address Line 2</th>
+                <th style={{ ...th, minWidth: 140 }}>Zip/Postal Code</th>
                 <th style={{ ...th, minWidth: 180 }}>Notes</th>
                 <th style={th}>Created On</th>
                 <th style={th}>Status</th>
+                <th style={th}>Sync Status</th>
                 <th style={{ ...th, width: 44 }}></th>
               </tr>
             </thead>

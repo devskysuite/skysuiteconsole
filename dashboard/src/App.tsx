@@ -58,22 +58,24 @@ import { useLocation } from "react-router-dom";
 function AppLayout({ children }: { children: React.ReactNode }) {
   const { pathname } = useLocation();
   const fullWidth = pathname.startsWith("/dispatch") || pathname.startsWith("/on-call") || pathname.startsWith("/time-off") || pathname.startsWith("/customers") || pathname.startsWith("/properties") || pathname.startsWith("/vendors");
-  // Exact directory list pages — need a bounded, non-scrolling wrapper so that
-  // the inner flex+overflow:auto container is the sole scroll context and
-  // position:sticky on <th top:0> works correctly.
+  // Exact directory list pages — render a flex-column wrapper so the page component
+  // can use flex:1 on its outer div and the inner overflow:auto table wrapper
+  // becomes the sole scroll context, making position:sticky on <th top:0> work.
   const isDirectoryList = pathname === "/customers" || pathname === "/properties" || pathname === "/vendors";
+  if (isDirectoryList) {
+    return (
+      <>
+        <Nav />
+        <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 96px)" }}>
+          {children}
+        </div>
+      </>
+    );
+  }
   return (
     <>
       <Nav />
-      <div
-        className="page-content"
-        style={{
-          padding: fullWidth ? "0" : "24px 32px",
-          maxWidth: fullWidth ? "100%" : 1100,
-          margin: "0 auto",
-          ...(isDirectoryList ? { height: "calc(100vh - 96px)", overflow: "hidden" } : {}),
-        }}
-      >
+      <div className="page-content" style={{ padding: fullWidth ? "0" : "24px 32px", maxWidth: fullWidth ? "100%" : 1100, margin: "0 auto" }}>
         {children}
       </div>
     </>

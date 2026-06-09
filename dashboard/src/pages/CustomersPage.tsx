@@ -446,7 +446,7 @@ export default function CustomersPage() {
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 96px)" }}>
+    <div style={{ display: "flex", flexDirection: "column", flex: 1 }}>
 
       {/* Header */}
       <div style={{ flexShrink: 0, display: "flex", alignItems: "flex-start", justifyContent: "space-between", padding: "20px 24px 16px", marginBottom: 0, flexWrap: "wrap", gap: 12 }}>

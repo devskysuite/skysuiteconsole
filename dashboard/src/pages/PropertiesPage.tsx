@@ -427,10 +427,10 @@ export default function PropertiesPage() {
   }
 
   return (
-    // Flex column fills exactly the viewport below the 96px nav.
-    // The table wrapper (flex:1) becomes the scroll container for both axes,
+    // flex:1 fills the height-constrained flex-column wrapper provided by AppLayout.
+    // The table wrapper (flex:1 inside) becomes the scroll container for both axes,
     // which lets position:sticky top:0 work reliably on the <th> elements.
-    <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 96px)" }}>
+    <div style={{ display: "flex", flexDirection: "column", flex: 1 }}>
 
       {/* Header */}
       <div style={{ flexShrink: 0, display: "flex", alignItems: "flex-start", justifyContent: "space-between", padding: "20px 24px 16px", flexWrap: "wrap", gap: 12 }}>
