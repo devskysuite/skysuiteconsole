@@ -376,10 +376,10 @@ export default function OnCallManagerPage() {
 
   async function runRotation(action:"preview"|"push"|"rebalance", rebalanceFrom?:string) {
     if(!accessToken) return;
-    const rotDays=parseInt((document.getElementById("rot-days") as HTMLSelectElement)?.value||"1");
 
-    // 365-day rolling window from today (UTC arithmetic — DST-safe)
-    const today=new Date().toISOString().slice(0,10);
+    // 365-day rolling window from today. "today" is the America/Toronto local
+    // date so an evening run doesn't roll over to tomorrow (UTC).
+    const today=new Date().toLocaleDateString("en-CA",{timeZone:"America/Toronto"});
     const startDate=action==="rebalance"&&rebalanceFrom?rebalanceFrom:today;
     const endDate=new Date(today+"T00:00:00Z"); endDate.setUTCDate(endDate.getUTCDate()+364);
     const endStr=endDate.toISOString().slice(0,10);
@@ -402,19 +402,12 @@ export default function OnCallManagerPage() {
     // tickProgress after first await so React has committed the startProgress update
     tickProgress(action==="preview"?"Building preview…":action==="rebalance"?"Fetching events to rebalance…":"Fetching existing events…",0,365);
 
-    // Fetch existing on-call events. For push we also look back ~21 days before
-    // the start so a leading gap can be seeded from the prior day's person.
-    const fetchStartD=new Date(startDate+"T00:00:00Z");
-    if(action==="push") fetchStartD.setUTCDate(fetchStartD.getUTCDate()-21);
-    const fetchStart=fetchStartD.toISOString().slice(0,10);
+    // Fetch existing on-call events in the window
     const existingEvs:any[]=[];
-    let url=`https://graph.microsoft.com/v1.0/me/calendars/${CAL_ID}/calendarView?startDateTime=${fetchStart}T00:00:00&endDateTime=${endStr}T23:59:59&$top=999&$select=id,subject,start&$orderby=start/dateTime`;
+    let url=`https://graph.microsoft.com/v1.0/me/calendars/${CAL_ID}/calendarView?startDateTime=${startDate}T00:00:00&endDateTime=${endStr}T23:59:59&$top=999&$select=id,subject,start&$orderby=start/dateTime`;
     while(url){ const d=await graphFetch(accessToken,url.replace("https://graph.microsoft.com/v1.0","")); (d.value||[]).filter((e:any)=>{const s=(e.subject||"").toLowerCase();return(s.includes("on call")||s.includes("oncall"))&&!s.includes("vacation");}).forEach((e:any)=>existingEvs.push(e)); url=d["@odata.nextLink"]||""; }
 
-    // Map every existing on-call day to its person (for gap-filling that follows neighbors)
-    const personByDate=new Map<string,string>();
-    existingEvs.forEach((e:any)=>{ const dd=e.start?.date||e.start?.dateTime?.slice(0,10); if(dd) personByDate.set(dd, getName(e.subject)); });
-    const occupied=new Set(personByDate.keys());
+    const occupied=new Set(existingEvs.map((e:any)=>e.start?.date||e.start?.dateTime?.slice(0,10)));
 
     if(action==="rebalance"){
       // Check if the target year is locked
@@ -437,48 +430,26 @@ export default function OnCallManagerPage() {
 
     if(action==="preview"){finishProgress(`${existingEvs.length} days assigned, ${364-existingEvs.length} gaps. Push to fill.`);return;}
 
-    // Build the list of events to add. All date math is in UTC (setUTCDate /
-    // toISOString) so DST changes never skip or duplicate a day.
+    // Build events. ONE deterministic, date-anchored formula is used by push,
+    // rebalance, AND the nightly cloud job so they always agree:
+    //   person(day) = orderFor(year)[ daysSinceJan1(year) % rosterLength ]
+    // Each year restarts its order at index 0 on Jan 1. All date math is UTC so
+    // DST never skips/duplicates a day. Push only fills empty days; rebalance
+    // cleared everything above so it rebuilds the whole window.
     const toAdd:any[]=[];
     const jan1=(y:number)=>Date.UTC(y,0,1);
     tickProgress(`Building schedule…`, 0, 365);
-
-    if(action==="rebalance"){
-      // Fresh deterministic rebuild: each year restarts its order at index 0 on
-      // Jan 1, advancing one slot every rotDays days. Uses that year's saved order.
-      let cur=new Date(startDate+"T00:00:00Z");
-      while(cur.toISOString().slice(0,10)<=endStr){
-        const d=cur.toISOString().slice(0,10);
-        if(!occupied.has(d)){
-          const y=cur.getUTCFullYear(); const ord=orderFor(y);
-          const since=Math.floor((cur.getTime()-jan1(y))/86400000);
-          const person=ord[Math.floor(since/rotDays)%ord.length];
-          const end2=new Date(cur); end2.setUTCDate(end2.getUTCDate()+rotDays);
-          toAdd.push({subject:`${person} On Call`,start:{dateTime:`${d}T00:00:00`,timeZone:"America/Toronto"},end:{dateTime:`${end2.toISOString().slice(0,10)}T00:00:00`,timeZone:"America/Toronto"},isAllDay:true});
-        }
-        cur.setUTCDate(cur.getUTCDate()+rotDays);
-      }
-    } else {
-      // PUSH: fill gaps so each lands on the person who FOLLOWS the previous
-      // scheduled day — keeps the rotation continuous with what's already there.
-      let cur=new Date(fetchStart+"T00:00:00Z");
-      let lastIdx=-1;
-      while(cur.toISOString().slice(0,10)<=endStr){
-        const d=cur.toISOString().slice(0,10);
+    let cur=new Date(startDate+"T00:00:00Z");
+    while(cur.toISOString().slice(0,10)<=endStr){
+      const d=cur.toISOString().slice(0,10);
+      if(!occupied.has(d)){
         const y=cur.getUTCFullYear(); const ord=orderFor(y);
-        if(personByDate.has(d)){
-          const nm=personByDate.get(d) as string;
-          const i=ord.findIndex(n=>n.toLowerCase()===nm.toLowerCase());
-          if(i>=0) lastIdx=i;
-        } else if(d>=startDate){
-          const nextIdx=lastIdx>=0?(lastIdx+1)%ord.length:0;
-          const person=ord[nextIdx];
-          const end2=new Date(cur); end2.setUTCDate(end2.getUTCDate()+1);
-          toAdd.push({subject:`${person} On Call`,start:{dateTime:`${d}T00:00:00`,timeZone:"America/Toronto"},end:{dateTime:`${end2.toISOString().slice(0,10)}T00:00:00`,timeZone:"America/Toronto"},isAllDay:true});
-          personByDate.set(d,person); lastIdx=nextIdx;
-        }
-        cur.setUTCDate(cur.getUTCDate()+1);
+        const since=Math.floor((cur.getTime()-jan1(y))/86400000);
+        const person=ord[((since%ord.length)+ord.length)%ord.length];
+        const end2=new Date(cur); end2.setUTCDate(end2.getUTCDate()+1);
+        toAdd.push({subject:`${person} On Call`,start:{dateTime:`${d}T00:00:00`,timeZone:"America/Toronto"},end:{dateTime:`${end2.toISOString().slice(0,10)}T00:00:00`,timeZone:"America/Toronto"},isAllDay:true});
       }
+      cur.setUTCDate(cur.getUTCDate()+1);
     }
 
 
@@ -714,15 +685,7 @@ export default function OnCallManagerPage() {
             {/* Year rotation orders display */}
             <RotationOrderDisplay db={db} accessToken={accessToken}/>
 
-            <div style={{display:"flex",gap:12,flexWrap:"wrap",alignItems:"flex-end",margin:"16px 0"}}>
-              <div><label style={lbl}>Days per person</label>
-                <select id="rot-days" style={{...inp,maxWidth:120}}>
-                  <option value="1">1 day</option><option value="2">2 days</option><option value="7">7 days</option><option value="14">14 days</option>
-                </select>
-              </div>
-            </div>
-
-            <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+            <div style={{display:"flex",gap:10,flexWrap:"wrap",marginTop:16}}>
               <button onClick={()=>runRotation("preview")}   disabled={!connected} style={btnS("#6b7280")}>Preview</button>
               <button onClick={()=>runRotation("push")}      disabled={!connected} style={btnS("#1565c0")}>Fill 365 Days</button>
               <button onClick={()=>setRebalanceModal(true)} disabled={!connected} style={btnS("#f97316")}>Rebalance</button>

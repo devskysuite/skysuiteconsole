@@ -89,24 +89,21 @@ export const dailyOnCallFill = onSchedule(
     }
     console.log(`Existing on-call days: ${occupied.size}`);
 
-    // 5. Find gaps and build events to create
+    // 5. Find gaps and build events to create.
+    // Deterministic, date-anchored rotation — IDENTICAL to the dashboard's push
+    // and rebalance: person(day) = order(year)[ daysSinceJan1(year) % len ].
+    // Each year restarts its order at index 0 on Jan 1. UTC math is DST-safe.
     const toAdd = [];
-    let cur = new Date(todayStr + "T12:00:00");
-    let globalIdx = 0; // continuous index across all days
-
-    // Figure out where we are in the rotation by counting from Jan 1 of this year
-    const yearStart = new Date(`${today.getFullYear()}-01-01T12:00:00`);
-    const daysSinceYearStart = Math.floor((cur - yearStart) / 86400000);
-    const yearOrder = getOrderForYear(today.getFullYear());
-    globalIdx = daysSinceYearStart;
+    let cur = new Date(todayStr + "T00:00:00Z");
 
     while (cur.toISOString().slice(0, 10) <= endStr) {
       const d = cur.toISOString().slice(0, 10);
-      const yr = cur.getFullYear();
+      const yr = cur.getUTCFullYear();
       const order = getOrderForYear(yr);
 
       if (!occupied.has(d)) {
-        const name = order[globalIdx % order.length];
+        const since = Math.floor((cur.getTime() - Date.UTC(yr, 0, 1)) / 86400000);
+        const name = order[((since % order.length) + order.length) % order.length];
         const nextDay = addDays(d, 1);
         toAdd.push({
           subject: `${name} On Call`,
@@ -115,8 +112,7 @@ export const dailyOnCallFill = onSchedule(
           isAllDay: true,
         });
       }
-      globalIdx++;
-      cur.setDate(cur.getDate() + 1);
+      cur.setUTCDate(cur.getUTCDate() + 1);
     }
 
     if (toAdd.length === 0) {
