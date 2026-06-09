@@ -6,8 +6,7 @@ const CLIENT_ID = "9a1a21f1-40a3-4872-a4d6-888bd51d116d";
 export async function getOutlookAccessToken() {
   const snap = await db.collection("settings").doc("outlookOnCall").get();
   const data = snap.data() || {};
-  const refreshToken  = data.refreshToken;
-  const clientSecret  = data.clientSecret;
+  const refreshToken = data.refreshToken;
 
   if (!refreshToken) throw new Error("No Outlook connection. Go to On-Call Manager → Setup → Connect Outlook.");
 
@@ -17,11 +16,16 @@ export async function getOutlookAccessToken() {
     refresh_token: refreshToken,
     scope:         "Calendars.ReadWrite offline_access",
   };
-  if (clientSecret) params.client_secret = clientSecret;
 
   const res = await fetch(`https://login.microsoftonline.com/${TENANT_ID}/oauth2/v2.0/token`, {
     method:  "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      // SPA-issued refresh tokens may only be redeemed via cross-origin requests
+      // (AADSTS9002327). Supplying an Origin header satisfies that requirement
+      // for server-side redemption.
+      "Origin": "https://skysuite.ca",
+    },
     body:    new URLSearchParams(params).toString(),
   });
   const json = await res.json();
