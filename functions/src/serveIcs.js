@@ -1,5 +1,6 @@
 import { onRequest } from "firebase-functions/v2/https";
 import { getOutlookAccessToken } from "./utils/getOutlookToken.js";
+import { db } from "./utils/firestore.js";
 
 const CAL_ID = "AAMkADgyOGUwMDUyLTNiZjMtNGQzNi1hNTgwLTQ2M2IzYzE2YmQ5MgBGAAAAAACGxuDePTlOQawDDU8UfW0gBwBxt6lSDH0kQY0tk4wDjNk8AAAAAAEGAABxt6lSDH0kQY0tk4wDjNk8AAALmQObAAA=";
 
@@ -71,6 +72,28 @@ export const serveIcs = onRequest({ cors: false, invoker: "public" }, async (req
         "END:VEVENT"
       );
     }
+
+    // Merge approved vacation from Firestore
+    const vSnap = await db.collection("timeOffRequests").where("status", "==", "APPROVED").get();
+    const vacations = vSnap.docs.map(d => d.data()).filter(r => {
+      const en = (r.employeeName || "").toLowerCase();
+      return en === personName.toLowerCase() || en.split(" ")[0] === firstName;
+    });
+    vacations.forEach((r, i) => {
+      const s = (r.startDate || "").replace(/-/g, "");
+      if (!s) return;
+      const enD = new Date(r.endDate || r.startDate); enD.setDate(enD.getDate() + 1);
+      const en = enD.toISOString().slice(0, 10).replace(/-/g, "");
+      lines.push(
+        "BEGIN:VEVENT",
+        `UID:vacation-${firstName}-${s}-${i}@skysuite.ca`,
+        `DTSTART;VALUE=DATE:${s}`,
+        `DTEND;VALUE=DATE:${en}`,
+        `SUMMARY:${escapeIcs(personName)} Vacation`,
+        "END:VEVENT"
+      );
+    });
+
     lines.push("END:VCALENDAR");
 
     const slug = personName.toLowerCase().replace(/\s+/g, "-");
