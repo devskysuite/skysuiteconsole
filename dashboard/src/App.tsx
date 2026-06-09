@@ -58,7 +58,7 @@ function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <>
       <Nav />
-      <div className="page-content" style={{ padding: isDispatch ? "16px" : "24px 32px", maxWidth: fullWidth ? "100%" : 1100, margin: "0 auto" }}>
+      <div className="page-content" style={{ padding: isDispatch ? "0" : "24px 32px", maxWidth: fullWidth ? "100%" : 1100, margin: "0 auto" }}>
         {children}
       </div>
     </>
