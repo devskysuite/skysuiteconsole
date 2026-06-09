@@ -648,6 +648,9 @@ export default function OnCallManagerPage() {
                  <button onClick={connectOutlook} style={btnS("#1565c0")}>🔗 Connect Outlook</button></>}
           </div>
 
+          {/* Conflict Alerts */}
+          <OnCallAlertsPanel db={db}/>
+
           {/* On-Call Roster */}
           <div style={{background:"white",borderRadius:12,padding:20,boxShadow:"0 1px 4px rgba(0,0,0,0.07)",marginBottom:16}}>
             <h2 style={{fontSize:15,fontWeight:700,color:"#0d2e5e",marginBottom:4}}>👥 On-Call Roster</h2>
@@ -891,6 +894,31 @@ function IcsExportPanel({ accessToken, calId, db }: { accessToken:string; calId:
             {busy===name?"⏳ Building…":`⬇ ${name}`}
           </button>
         ))}
+      </div>
+    </div>
+  );
+}
+
+function OnCallAlertsPanel({ db }: { db:any }) {
+  const [phone,setPhone]=useState("");
+  const [saved,setSaved]=useState(false);
+  const [loaded,setLoaded]=useState(false);
+  useEffect(()=>{
+    getDoc(doc(db,"settings","onCallConfig")).then(s=>{ setPhone(s.data()?.alertPhone||""); setLoaded(true); }).catch(()=>setLoaded(true));
+  },[]);
+  async function save(){
+    await setDoc(doc(db,"settings","onCallConfig"),{alertPhone:phone.trim()},{merge:true});
+    setSaved(true); setTimeout(()=>setSaved(false),3000);
+  }
+  if(!loaded) return null;
+  return(
+    <div style={{background:"white",borderRadius:12,padding:20,boxShadow:"0 1px 4px rgba(0,0,0,0.07)",marginBottom:16}}>
+      <h2 style={{fontSize:15,fontWeight:700,color:"#0d2e5e",marginBottom:4}}>Conflict Alerts</h2>
+      <p style={{fontSize:12,color:"#6b7280",marginBottom:12}}>Each morning the system checks the next 60 days for anyone scheduled on call during their vacation, and texts this number. Also: the on-call person gets a daily reminder text automatically.</p>
+      <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+        <input type="tel" value={phone} onChange={e=>setPhone(e.target.value)} placeholder="905-555-1234" style={{...inp,maxWidth:200}}/>
+        <button onClick={save} style={btnS("#1565c0")}>💾 Save</button>
+        {saved&&<span style={{fontSize:12,color:"#059669",fontWeight:600}}>✅ Saved</span>}
       </div>
     </div>
   );

@@ -10,3 +10,5 @@ export { serveIcs } from "./src/serveIcs.js";
 export { syncVacationEvent } from "./src/syncVacationEvent.js";
 export { notifyApproversSms } from "./src/notifyApproversSms.js";
 export { vacationAction } from "./src/vacationAction.js";
+export { oncallReminderSms } from "./src/oncallReminderSms.js";
+export { vacationConflictCheck } from "./src/vacationConflictCheck.js";
