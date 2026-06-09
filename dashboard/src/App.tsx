@@ -58,10 +58,22 @@ import { useLocation } from "react-router-dom";
 function AppLayout({ children }: { children: React.ReactNode }) {
   const { pathname } = useLocation();
   const fullWidth = pathname.startsWith("/dispatch") || pathname.startsWith("/on-call") || pathname.startsWith("/time-off") || pathname.startsWith("/customers") || pathname.startsWith("/properties") || pathname.startsWith("/vendors");
+  // Exact directory list pages — need a bounded, non-scrolling wrapper so that
+  // the inner flex+overflow:auto container is the sole scroll context and
+  // position:sticky on <th top:0> works correctly.
+  const isDirectoryList = pathname === "/customers" || pathname === "/properties" || pathname === "/vendors";
   return (
     <>
       <Nav />
-      <div className="page-content" style={{ padding: fullWidth ? "0" : "24px 32px", maxWidth: fullWidth ? "100%" : 1100, margin: "0 auto" }}>
+      <div
+        className="page-content"
+        style={{
+          padding: fullWidth ? "0" : "24px 32px",
+          maxWidth: fullWidth ? "100%" : 1100,
+          margin: "0 auto",
+          ...(isDirectoryList ? { height: "calc(100vh - 96px)", overflow: "hidden" } : {}),
+        }}
+      >
         {children}
       </div>
     </>
