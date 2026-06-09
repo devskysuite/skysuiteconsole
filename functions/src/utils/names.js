@@ -21,18 +21,20 @@ export function findUserByFirstName(users, fn) {
 }
 
 // Expand a Graph event into the list of YYYY-MM-DD days it covers.
-// All-day events have an exclusive end.date; timed events' end is inclusive of
+// All-day events have an EXCLUSIVE end (next-day midnight); Microsoft Graph
+// returns them as midnight dateTimes with isAllDay:true (NOT a `date` field),
+// so detect all-day via the isAllDay flag. Timed events' end is inclusive of
 // the start day (so a same-day timed event still yields one day).
 export function eventDays(e) {
   const startStr = e.start?.date || e.start?.dateTime?.slice(0, 10);
   if (!startStr) return [];
-  const isAllDay = !!e.start?.date;
+  const isAllDay = e.isAllDay === true || !!e.start?.date;
   const endStr = e.end?.date || e.end?.dateTime?.slice(0, 10) || startStr;
   const cur = new Date(startStr + "T12:00:00");
   const last = new Date(endStr + "T12:00:00");
   if (isAllDay) last.setDate(last.getDate() - 1); // exclusive end -> last inclusive day
-  const days = [];
   if (isNaN(cur) || isNaN(last) || last < cur) return [startStr];
+  const days = [];
   let guard = 0;
   for (let d = new Date(cur); d <= last && guard < 800; d.setDate(d.getDate() + 1), guard++) {
     days.push(d.toISOString().slice(0, 10));

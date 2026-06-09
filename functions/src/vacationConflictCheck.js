@@ -24,7 +24,7 @@ export const vacationConflictCheck = onSchedule(
     // Map: date → { oncall:Set<name>, vacation:Set<name> }
     const byDate = {};
     const headers = { Authorization: `Bearer ${token}`, Prefer: `outlook.timezone="${TZ}"` };
-    let url = `https://graph.microsoft.com/v1.0/me/calendars/${encodeURIComponent(SHARED_CAL_ID)}/calendarView?startDateTime=${start}T00:00:00&endDateTime=${end}T23:59:59&$top=999&$select=subject,start,end`;
+    let url = `https://graph.microsoft.com/v1.0/me/calendars/${encodeURIComponent(SHARED_CAL_ID)}/calendarView?startDateTime=${start}T00:00:00&endDateTime=${end}T23:59:59&$top=999&$select=subject,start,end,isAllDay`;
     while (url) {
       const res = await fetch(url, { headers });
       const json = await res.json();
