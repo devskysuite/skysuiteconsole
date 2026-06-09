@@ -59,7 +59,7 @@ export const vacationAction = onCall({ cors: true }, async (request) => {
     endD.setDate(endD.getDate() + 1); // Graph all-day end is exclusive
     const endExclusive = endD.toISOString().slice(0, 10);
     const created = await graph(token, `/me/calendars/${calId}/events`, "POST", {
-      subject: `${personName} Vacation`,
+      subject: `Vacation - ${personName}`,
       start: { dateTime: `${startDate}T00:00:00`, timeZone: "America/Toronto" },
       end:   { dateTime: `${endExclusive}T00:00:00`, timeZone: "America/Toronto" },
       isAllDay: true,

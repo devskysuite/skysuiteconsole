@@ -342,7 +342,7 @@ export default function TimeOffPage() {
                             title={admin ? "Tap to edit or delete" : undefined}
                             onClick={admin ? (e) => { e.stopPropagation(); openEdit(v); } : undefined}
                             style={{ fontSize: 11, fontWeight: 600, background: "#f97316", color: "white", borderRadius: 4, padding: "2px 5px", marginBottom: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: admin ? "pointer" : "default" }}>
-                            🏖 {v.name}
+                            🏖 Vacation - {v.name}
                           </div>
                         ))}
                       </>}

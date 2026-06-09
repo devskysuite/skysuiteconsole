@@ -53,7 +53,7 @@ export const syncVacationEvent = onCall({ cors: true }, async (request) => {
     const endDate = endD.toISOString().slice(0, 10);
 
     const created = await graph(token, `/me/calendars/${vacCalId}/events`, "POST", {
-      subject: `${name} Vacation`,
+      subject: `Vacation - ${name}`,
       start: { dateTime: `${r.startDate}T00:00:00`, timeZone: "America/Toronto" },
       end:   { dateTime: `${endDate}T00:00:00`,     timeZone: "America/Toronto" },
       isAllDay: true,

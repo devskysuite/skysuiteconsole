@@ -471,7 +471,7 @@ export default function OnCallManagerPage() {
     if(!addModal||!accessToken||!addName.trim()) return;
     const isVac = addType==="vacation";
     setAddSubmitting(true);
-    const subject = isVac ? `${addName.trim()} Vacation` : `${addName.trim()} On Call`;
+    const subject = isVac ? `Vacation - ${addName.trim()}` : `${addName.trim()} On Call`;
     const targetCal = CAL_ID; // one shared calendar; subject distinguishes type
     const startDate = addModal.date;
     const lastDate  = addMultiDay && addEndDate ? addEndDate : startDate;

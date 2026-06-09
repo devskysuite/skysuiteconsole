@@ -99,7 +99,7 @@ export const serveIcs = onRequest({ cors: false, invoker: "public" }, async (req
       const e2 = (ev.end?.date   || ev.end?.dateTime?.slice(0, 10)   || "").replace(/-/g, "") || s;
       if (!s) continue;
       vacationDates.add(s);
-      pushEvent({ uid, start: s, end: e2, summary: ev.subject || `${personName} Vacation`, isVacation: true });
+      pushEvent({ uid, start: s, end: e2, summary: ev.subject || `Vacation - ${personName}`, isVacation: true });
     }
 
     // Merge approved vacation from Firestore (for any not already on the Outlook calendar)
@@ -113,7 +113,7 @@ export const serveIcs = onRequest({ cors: false, invoker: "public" }, async (req
       if (!s || vacationDates.has(s)) return;
       const enD = new Date(r.endDate || r.startDate); enD.setDate(enD.getDate() + 1);
       const en = enD.toISOString().slice(0, 10).replace(/-/g, "");
-      pushEvent({ uid: `vacation-${firstName}-${s}-${i}@skysuite.ca`, start: s, end: en, summary: `${personName} Vacation`, isVacation: true });
+      pushEvent({ uid: `vacation-${firstName}-${s}-${i}@skysuite.ca`, start: s, end: en, summary: `Vacation - ${personName}`, isVacation: true });
     });
 
     lines.push("END:VCALENDAR");
