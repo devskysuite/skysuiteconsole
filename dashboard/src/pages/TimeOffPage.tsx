@@ -13,6 +13,7 @@ const callNotifyApprovers  = httpsCallable(getFunctions(), "notifyApproversSms")
 import { useToast } from "../components/Toast";
 import { useRole, canApproveTimeOff, isAdminRole } from "../hooks/useRole";
 import TimeOffNotifySettings from "../components/TimeOffNotifySettings";
+import VacationManager from "../components/VacationManager";
 import { fmtISODate, timeOffStatusBadge } from "../utils/formatting";
 import type { TimeOffRequest } from "../types";
 
@@ -22,7 +23,7 @@ const CAL_ID     = "AAMkADgyOGUwMDUyLTNiZjMtNGQzNi1hNTgwLTQ2M2IzYzE2YmQ5MgBGAAAA
 const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 const DAYS   = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
 
-type View = "month" | "list" | "request" | "my-requests" | "approvals";
+type View = "month" | "list" | "request" | "my-requests" | "approvals" | "manage-vacation";
 
 export default function TimeOffPage() {
   const { confirm } = useToast();
@@ -235,6 +236,9 @@ export default function TimeOffPage() {
               onClick={()=>setView("approvals")}
             />
           )}
+          {isAdminRole(role) && (
+            <TabBtn label="🏖 Manage Vacation" active={view==="manage-vacation"} onClick={()=>setView("manage-vacation")} />
+          )}
         </div>
 
         {/* ── Month nav ── */}
@@ -402,6 +406,11 @@ export default function TimeOffPage() {
               </table>
             )}
           </div>
+        )}
+
+        {/* ── Manage Vacation (admins only) ── */}
+        {view === "manage-vacation" && isAdminRole(role) && (
+          <VacationManager />
         )}
 
       </div>
