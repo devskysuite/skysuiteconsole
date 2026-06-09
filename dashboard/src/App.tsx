@@ -53,11 +53,12 @@ import { useLocation } from "react-router-dom";
 
 function AppLayout({ children }: { children: React.ReactNode }) {
   const { pathname } = useLocation();
-  const fullWidth = pathname.startsWith("/on-call") || pathname.startsWith("/time-off");
+  const isDispatch = pathname.startsWith("/dispatch");
+  const fullWidth = isDispatch || pathname.startsWith("/on-call") || pathname.startsWith("/time-off");
   return (
     <>
       <Nav />
-      <div className="page-content" style={{ padding: "24px 32px", maxWidth: fullWidth ? "100%" : 1100, margin: "0 auto" }}>
+      <div className="page-content" style={{ padding: isDispatch ? "16px" : "24px 32px", maxWidth: fullWidth ? "100%" : 1100, margin: "0 auto" }}>
         {children}
       </div>
     </>
