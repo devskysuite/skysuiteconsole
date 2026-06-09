@@ -10,6 +10,7 @@ import { auth, db } from "../firebase";
 
 const callSyncVacation     = httpsCallable(getFunctions(), "syncVacationEvent");
 const callNotifyApprovers  = httpsCallable(getFunctions(), "notifyApproversSms");
+const callVacation         = httpsCallable(getFunctions(), "vacationAction");
 import { useToast } from "../components/Toast";
 import { useRole, canApproveTimeOff, isAdminRole } from "../hooks/useRole";
 import TimeOffNotifySettings from "../components/TimeOffNotifySettings";
@@ -26,7 +27,7 @@ const DAYS   = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
 type View = "month" | "list" | "request" | "my-requests" | "approvals" | "manage-vacation";
 
 export default function TimeOffPage() {
-  const { confirm } = useToast();
+  const { toast, confirm } = useToast();
   const role = useRole();
   const canApprove = canApproveTimeOff(role);
 
@@ -97,24 +98,52 @@ export default function TimeOffPage() {
     })();
   }, []);
 
-  // Fetch calendar events
-  useEffect(() => {
-    if (!token) return;
+  // Load vacation events from the dedicated Vacation calendar (server-side)
+  async function loadVacations() {
     setCalLoading(true);
-    const start = new Date(year, month, 1).toISOString().slice(0, 10);
-    const end   = new Date(year, month + 1, 1).toISOString().slice(0, 10);
-    (async () => {
-      const evs: any[] = [];
-      let url = `https://graph.microsoft.com/v1.0/me/calendars/${CAL_ID}/calendarView?startDateTime=${start}T00:00:00&endDateTime=${end}T00:00:00&$top=999&$select=id,subject,start,end`;
-      while (url) {
-        const d = await (await fetch(url, { headers: { Authorization: `Bearer ${token}` } })).json();
-        (d.value || []).filter((e: any) => e.subject?.toLowerCase().includes("vacation"))
-          .forEach((e: any) => evs.push({ id: e.id, subject: e.subject, start: e.start?.date || e.start?.dateTime?.slice(0, 10) || "", end: e.end?.date || e.end?.dateTime?.slice(0, 10) || "" }));
-        url = d["@odata.nextLink"] || "";
-      }
-      setEvents(evs); setCalLoading(false);
-    })().catch(() => setCalLoading(false));
-  }, [token, year, month]);
+    try {
+      const res: any = await callVacation({ action: "list" });
+      setEvents(res?.data?.events || []);
+    } catch { setEvents([]); }
+    setCalLoading(false);
+  }
+  useEffect(() => { loadVacations(); }, []);
+
+  // People list for the add-vacation picker (admins)
+  const [vacPeople, setVacPeople] = useState<string[]>([]);
+  useEffect(() => {
+    getDocs(collection(db, "users")).then(snap => {
+      const names = snap.docs.map(d => d.data().displayName).filter(Boolean) as string[];
+      setVacPeople(Array.from(new Set(names)).sort((a, b) => a.localeCompare(b)));
+    }).catch(() => {});
+  }, []);
+
+  // Add/delete vacation directly from the calendar grid (admins)
+  const [vacAddModal, setVacAddModal] = useState<{ date: string } | null>(null);
+  const [vacName, setVacName]   = useState("");
+  const [vacMulti, setVacMulti] = useState(false);
+  const [vacEnd, setVacEnd]     = useState("");
+  const [vacBusy, setVacBusy]   = useState(false);
+
+  async function addVacationDay() {
+    if (!vacAddModal || !vacName) return;
+    if (vacMulti && vacEnd && vacEnd < vacAddModal.date) { toast("End date can't be before start.", "error"); return; }
+    setVacBusy(true);
+    try {
+      await callVacation({ action: "add", personName: vacName, startDate: vacAddModal.date, endDate: vacMulti && vacEnd ? vacEnd : vacAddModal.date });
+      setVacAddModal(null); setVacName(""); setVacMulti(false); setVacEnd("");
+      await loadVacations();
+    } catch (e: any) { toast(e?.message ?? "Failed to add vacation.", "error"); }
+    setVacBusy(false);
+  }
+
+  async function deleteVacationDay(ev: { id: string; name: string }) {
+    if (!await confirm(`Delete ${ev.name}'s vacation?`)) return;
+    try {
+      await callVacation({ action: "delete", eventId: ev.id });
+      await loadVacations();
+    } catch (e: any) { toast(e?.message ?? "Failed to delete vacation.", "error"); }
+  }
 
   async function loadMyRequests() {
     if (!currentUser) return;
@@ -189,16 +218,16 @@ export default function TimeOffPage() {
   for (let i = 0; i < first; i++) grid.push("");
   for (let d = 1; d <= daysInMonth; d++) grid.push(`${year}-${String(month+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`);
 
-  // Vacation map: date → [names]
-  const vacMap: Record<string, string[]> = {};
+  // Vacation map: date → [{id,name}]
+  const vacByDate: Record<string, { id: string; name: string }[]> = {};
   events.forEach(ev => {
     let cur = new Date(ev.start + "T12:00:00");
     const end = new Date(ev.end + "T12:00:00");
     const name = ev.subject.replace(/vacation\s*[-–]?\s*/i, "").replace(/[-–]\s*vacation/i, "").trim();
     while (cur < end) {
       const d = cur.toISOString().slice(0, 10);
-      if (!vacMap[d]) vacMap[d] = [];
-      if (!vacMap[d].includes(name)) vacMap[d].push(name);
+      if (!vacByDate[d]) vacByDate[d] = [];
+      if (!vacByDate[d].some(x => x.id === ev.id)) vacByDate[d].push({ id: ev.id, name });
       cur.setDate(cur.getDate() + 1);
     }
   });
@@ -254,7 +283,7 @@ export default function TimeOffPage() {
         {view === "month" && (
           <div style={{ display: "flex", gap: 16, marginBottom: 14, flexWrap: "wrap", alignItems: "center" }}>
             <span style={{ background: "#f97316", color: "#fff", fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 99 }}>🏖 Vacation</span>
-            {!token && <span style={{ fontSize: 11, color: "#9ca3af" }}>Connect Outlook in On-Call Setup to see team vacations</span>}
+            {isAdminRole(role) && <span style={{ fontSize: 11, color: "#9ca3af" }}>Tap ＋ on a day to add a vacation · tap a 🏖 to delete it</span>}
           </div>
         )}
 
@@ -262,20 +291,26 @@ export default function TimeOffPage() {
         {view === "month" && (
           <>
             {calLoading && <div style={{ textAlign: "center", padding: 40, color: "#9ca3af" }}>⏳ Loading...</div>}
-            {!token && !calLoading && <div style={{ textAlign: "center", padding: 40, color: "#9ca3af" }}>Connect Outlook in On-Call Setup to view vacations.</div>}
-            {token && !calLoading && (
+            {!calLoading && (
               <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 3 }}>
                 {DAYS.map(d => <div key={d} style={{ textAlign: "center", fontSize: 12, fontWeight: 700, color: "#6b7280", padding: "8px 0", textTransform: "uppercase" }}>{d}</div>)}
                 {grid.map((date, i) => {
-                  const names = date ? (vacMap[date] || []) : [];
+                  const dayVacs = date ? (vacByDate[date] || []) : [];
                   const isToday = date === todayStr;
+                  const admin = isAdminRole(role);
                   return (
                     <div key={i} style={{ minHeight: 110, background: isToday ? "#fff8f0" : "#fafafa", border: isToday ? "2px solid #f97316" : "1px solid #e5e7eb", borderRadius: 6, padding: 6 }}>
                       {date && <>
-                        <div style={{ fontSize: 12, fontWeight: isToday ? 800 : 500, color: isToday ? "#f97316" : "#374151", marginBottom: 2 }}>{parseInt(date.slice(8))}</div>
-                        {names.map(n => (
-                          <div key={n} style={{ fontSize: 11, fontWeight: 600, background: "#f97316", color: "white", borderRadius: 4, padding: "2px 5px", marginBottom: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                            🏖 {n}
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 2 }}>
+                          <span style={{ fontSize: 12, fontWeight: isToday ? 800 : 500, color: isToday ? "#f97316" : "#374151" }}>{parseInt(date.slice(8))}</span>
+                          {admin && <button title="Add vacation" onClick={() => { setVacAddModal({ date }); setVacName(""); setVacMulti(false); setVacEnd(date); }} style={{ background: "none", border: "none", color: "#f97316", fontSize: 14, fontWeight: 700, cursor: "pointer", lineHeight: 1, padding: 0 }}>＋</button>}
+                        </div>
+                        {dayVacs.map(v => (
+                          <div key={v.id}
+                            title={admin ? "Tap to delete this vacation" : undefined}
+                            onClick={admin ? () => deleteVacationDay(v) : undefined}
+                            style={{ fontSize: 11, fontWeight: 600, background: "#f97316", color: "white", borderRadius: 4, padding: "2px 5px", marginBottom: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: admin ? "pointer" : "default" }}>
+                            🏖 {v.name}{admin ? " ✕" : ""}
                           </div>
                         ))}
                       </>}
@@ -414,6 +449,38 @@ export default function TimeOffPage() {
         )}
 
       </div>
+
+      {/* ── Add Vacation modal (from calendar grid) ── */}
+      {vacAddModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ background: "white", borderRadius: 16, padding: 28, width: "100%", maxWidth: 400, boxShadow: "0 8px 40px rgba(0,0,0,0.2)" }}>
+            <h2 style={{ fontSize: 18, fontWeight: 700, color: "#0d2e5e", marginBottom: 16 }}>🏖 Add Vacation</h2>
+
+            <label style={lbl}>Person</label>
+            <select value={vacName} onChange={e => setVacName(e.target.value)} style={{ ...inp, marginBottom: 14, width: "100%" }}>
+              <option value="">Select person…</option>
+              {vacPeople.map(p => <option key={p} value={p}>{p}</option>)}
+            </select>
+
+            <label style={lbl}>{vacMulti ? "Start date" : "Date"}</label>
+            <input type="date" value={vacAddModal.date} onChange={e => setVacAddModal({ date: e.target.value })} style={{ ...inp, marginBottom: 14, width: "100%" }} />
+
+            <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#374151", marginBottom: vacMulti ? 10 : 14, cursor: "pointer" }}>
+              <input type="checkbox" checked={vacMulti} onChange={e => { setVacMulti(e.target.checked); if (e.target.checked && !vacEnd) setVacEnd(vacAddModal.date); }} style={{ width: 15, height: 15 }} />
+              Multiple days
+            </label>
+            {vacMulti && <>
+              <label style={lbl}>End date</label>
+              <input type="date" value={vacEnd} min={vacAddModal.date} onChange={e => setVacEnd(e.target.value)} style={{ ...inp, marginBottom: 14, width: "100%" }} />
+            </>}
+
+            <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
+              <button disabled={!vacName || vacBusy} onClick={addVacationDay} style={{ background: "#f97316", color: "#fff", border: "none", borderRadius: 8, padding: "10px 20px", fontSize: 14, fontWeight: 600, cursor: "pointer", opacity: (!vacName || vacBusy) ? 0.5 : 1 }}>{vacBusy ? "Adding…" : "Add Vacation"}</button>
+              <button onClick={() => setVacAddModal(null)} style={{ background: "#6b7280", color: "#fff", border: "none", borderRadius: 8, padding: "10px 20px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
