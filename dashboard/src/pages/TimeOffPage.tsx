@@ -223,19 +223,30 @@ export default function TimeOffPage() {
     finally { setBusy(false); }
   }
 
+  // Switch tabs and refresh that tab's data so it never shows stale info.
+  function switchView(v: View) {
+    setView(v);
+    if (v === "month" || v === "list") loadVacations();
+    if (v === "my-requests") loadMyRequests();
+  }
+
   async function approveRequest(r: TimeOffRequest) {
     await updateDoc(doc(db, "timeOffRequests", r.id), { status: "APPROVED" });
-    callSyncVacation({ requestId: r.id }).catch(() => {});
+    // Wait for the Outlook event to be created, then refresh the calendar so it shows immediately
+    await callSyncVacation({ requestId: r.id }).catch(() => {});
+    await loadVacations();
   }
   async function denyRequest(r: TimeOffRequest) {
     await updateDoc(doc(db, "timeOffRequests", r.id), { status: "DENIED" });
-    callSyncVacation({ requestId: r.id }).catch(() => {});
+    await callSyncVacation({ requestId: r.id }).catch(() => {});
+    await loadVacations();
   }
   async function deleteRequest(r: TimeOffRequest) {
     if (!await confirm(`Delete this request from ${r.employeeName}?`)) return;
     // Remove the Outlook calendar event first (while the doc still exists), then delete the request
     await callSyncVacation({ requestId: r.id, remove: true }).catch(() => {});
     await deleteDoc(doc(db, "timeOffRequests", r.id));
+    await loadVacations();
   }
 
   // Calendar grid
@@ -287,15 +298,15 @@ export default function TimeOffPage() {
 
         {/* ── Tab buttons — identical to On-Call ── */}
         <div style={{ display: "flex", alignItems: "center", borderBottom: "2px solid #f0f0f0", marginBottom: 20 }}>
-          <TabBtn label="Calendar"          active={view==="month"}       onClick={()=>setView("month")} />
-          <TabBtn label="List View"         active={view==="list"}        onClick={()=>setView("list")} />
-          <TabBtn label="Request Vacation"  active={view==="request"}     onClick={()=>setView("request")} />
-          <TabBtn label="My Requests"       active={view==="my-requests"} onClick={()=>setView("my-requests")} />
+          <TabBtn label="Calendar"          active={view==="month"}       onClick={()=>switchView("month")} />
+          <TabBtn label="List View"         active={view==="list"}        onClick={()=>switchView("list")} />
+          <TabBtn label="Request Vacation"  active={view==="request"}     onClick={()=>switchView("request")} />
+          <TabBtn label="My Requests"       active={view==="my-requests"} onClick={()=>switchView("my-requests")} />
           {canApprove && (
             <TabBtn
               label={`Approvals${pendingCount > 0 ? ` (${pendingCount})` : ""}`}
               active={view==="approvals"}
-              onClick={()=>setView("approvals")}
+              onClick={()=>switchView("approvals")}
             />
           )}
         </div>
