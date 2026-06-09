@@ -149,6 +149,13 @@ export default function OnCallManagerPage() {
   const [swapSubmitting,setSwapSubmitting]=useState(false);
   const [targetFutureEvents,setTargetFutureEvents]=useState<CalEvent[]>([]);
   const [rosterNames,setRosterNames]=useState<string[]>([]);
+  // Add-event modal
+  const [addModal,setAddModal]=useState<{date:string}|null>(null);
+  const [addName,setAddName]=useState("");
+  const [addType,setAddType]=useState<"oncall"|"vacation">("oncall");
+  const [addMultiDay,setAddMultiDay]=useState(false);
+  const [addEndDate,setAddEndDate]=useState("");
+  const [addSubmitting,setAddSubmitting]=useState(false);
 
   // Auth user
   useEffect(()=>{ return onAuthStateChanged(auth, u=>{ if(u) setCurrentUser({uid:u.uid,displayName:u.displayName||u.email||"Me"}); }); },[]);
@@ -458,6 +465,33 @@ export default function OnCallManagerPage() {
     finishProgress(`✅ Done! ${pushed} events created.`);
   }
 
+  // Admin: add an on-call or vacation event (one day or a range) from the calendar grid
+  async function submitAddEvent(){
+    if(!addModal||!accessToken||!addName.trim()) return;
+    setAddSubmitting(true);
+    const subject = addType==="vacation" ? `${addName.trim()} Vacation` : `${addName.trim()} On Call`;
+    const startDate = addModal.date;
+    const lastDate  = addMultiDay && addEndDate ? addEndDate : startDate;
+    try{
+      // One all-day event per day so each day shows on the grid
+      const days:string[]=[];
+      let d=new Date(startDate); const last=new Date(lastDate);
+      while(d<=last){ days.push(d.toISOString().slice(0,10)); d.setDate(d.getDate()+1); }
+      for(const day of days){
+        const nx=new Date(day); nx.setDate(nx.getDate()+1);
+        await graphFetch(accessToken,`/me/calendars/${CAL_ID}/events`,"POST",{
+          subject,
+          start:{dateTime:`${day}T00:00:00`,timeZone:"America/Toronto"},
+          end:{dateTime:`${nx.toISOString().slice(0,10)}T00:00:00`,timeZone:"America/Toronto"},
+          isAllDay:true
+        });
+      }
+      setAddModal(null); setAddName(""); setAddType("oncall"); setAddMultiDay(false); setAddEndDate("");
+      setRefreshKey(k=>k+1);
+    }catch{ window.alert("Failed to add event. Try again."); }
+    setAddSubmitting(false);
+  }
+
   // Admin: delete a vacation event straight from the calendar grid
   async function deleteVacationEvent(ev:CalEvent){
     if(!isAdmin||!accessToken) return;
@@ -532,7 +566,10 @@ export default function OnCallManagerPage() {
                   <div key={i} style={{minHeight:110,background:isToday?"#eff6ff":"#fafafa",border:isToday?"2px solid #1565c0":"1px solid #e5e7eb",borderRadius:6,padding:6,cursor:clickableOncall?"pointer":"default"}}
                     onClick={()=>{ if(clickableOncall&&connected) setSwapModal({event:clickableOncall}); }}>
                     {date&&<>
-                      <div style={{fontSize:12,fontWeight:isToday?800:500,color:isToday?"#1565c0":"#374151",marginBottom:2}}>{parseInt(date.slice(8))}</div>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:2}}>
+                        <span style={{fontSize:12,fontWeight:isToday?800:500,color:isToday?"#1565c0":"#374151"}}>{parseInt(date.slice(8))}</span>
+                        {isAdmin&&connected&&<button title="Add event" onClick={(e)=>{e.stopPropagation();setAddModal({date});setAddName("");setAddType("oncall");setAddMultiDay(false);setAddEndDate(date);}} style={{background:"none",border:"none",color:"#1565c0",fontSize:14,fontWeight:700,cursor:"pointer",lineHeight:1,padding:0}}>＋</button>}
+                      </div>
                       {dayEvs.map(ev=>{const c=pillStyle(ev.subject);const n=getName(ev.subject);return(
                         <div key={ev.id} style={{fontSize:11,fontWeight:600,background:c.bg,color:c.color,borderRadius:4,padding:"2px 5px",marginBottom:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
                           {c.prefix}{n}
@@ -689,6 +726,44 @@ export default function OnCallManagerPage() {
         </div>
       )}
 
+
+      {/* ── ADD EVENT MODAL ── */}
+      {addModal&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.45)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center"}}>
+          <div style={{background:"white",borderRadius:16,padding:28,width:"100%",maxWidth:420,boxShadow:"0 8px 40px rgba(0,0,0,0.2)"}}>
+            <h2 style={{fontSize:18,fontWeight:700,color:"#0d2e5e",marginBottom:16}}>Add Event</h2>
+
+            <label style={lbl}>Type</label>
+            <div style={{display:"flex",gap:10,marginBottom:14}}>
+              <button onClick={()=>setAddType("oncall")} style={{flex:1,padding:"8px",borderRadius:8,fontWeight:700,fontSize:13,cursor:"pointer",border:`2px solid ${addType==="oncall"?"#1565c0":"#d1d5db"}`,background:addType==="oncall"?"#eff6ff":"#fff",color:addType==="oncall"?"#1565c0":"#374151"}}>📞 On Call</button>
+              <button onClick={()=>setAddType("vacation")} style={{flex:1,padding:"8px",borderRadius:8,fontWeight:700,fontSize:13,cursor:"pointer",border:`2px solid ${addType==="vacation"?"#f97316":"#d1d5db"}`,background:addType==="vacation"?"#fff7ed":"#fff",color:addType==="vacation"?"#ea580c":"#374151"}}>🏖 Vacation</button>
+            </div>
+
+            <label style={lbl}>Person</label>
+            <select value={addName} onChange={e=>setAddName(e.target.value)} style={{...inp,marginBottom:14}}>
+              <option value="">Select person…</option>
+              {(rosterNames.length>0?rosterNames:allUsers.map(u=>u.displayName.split(" ")[0])).map(n=><option key={n} value={n}>{n}</option>)}
+            </select>
+
+            <label style={lbl}>Start date</label>
+            <input type="date" value={addModal.date} onChange={e=>setAddModal({date:e.target.value})} style={{...inp,marginBottom:14}}/>
+
+            <label style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:"#374151",marginBottom:addMultiDay?10:14,cursor:"pointer"}}>
+              <input type="checkbox" checked={addMultiDay} onChange={e=>{setAddMultiDay(e.target.checked);if(e.target.checked&&!addEndDate)setAddEndDate(addModal.date);}} style={{width:15,height:15}}/>
+              Multi-day event
+            </label>
+            {addMultiDay&&<>
+              <label style={lbl}>End date</label>
+              <input type="date" value={addEndDate} min={addModal.date} onChange={e=>setAddEndDate(e.target.value)} style={{...inp,marginBottom:14}}/>
+            </>}
+
+            <div style={{display:"flex",gap:10,marginTop:8}}>
+              <button disabled={!addName||addSubmitting} onClick={submitAddEvent} style={{...btnS(addType==="vacation"?"#f97316":"#1565c0"),opacity:(!addName||addSubmitting)?0.5:1}}>{addSubmitting?"Adding…":"Add to Calendar"}</button>
+              <button onClick={()=>setAddModal(null)} style={btnS("#6b7280")}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── REBALANCE MODAL ── */}
       {rebalanceModal&&(
