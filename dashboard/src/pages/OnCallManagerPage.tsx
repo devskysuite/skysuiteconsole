@@ -38,10 +38,16 @@ async function graphFetch(token:string, path:string, method="GET", body?:any) {
 const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 const DAYS   = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
 
+function fmtYMD(d:Date){return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;}
 function calGrid(year:number, month:number) {
-  const g:string[]=[], first=new Date(year,month,1).getDay(), days=new Date(year,month+1,0).getDate();
-  for(let i=0;i<first;i++) g.push("");
+  const first=new Date(year,month,1).getDay(), days=new Date(year,month+1,0).getDate();
+  const g:string[]=[];
+  // Leading days from the previous month
+  for(let i=0;i<first;i++) g.push(fmtYMD(new Date(year,month,1-(first-i))));
+  // Current month
   for(let d=1;d<=days;d++) g.push(`${year}-${String(month+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`);
+  // Trailing days from the next month to complete the last week
+  while(g.length%7!==0){ const nx=new Date(g[g.length-1]+"T12:00:00"); nx.setDate(nx.getDate()+1); g.push(fmtYMD(nx)); }
   return g;
 }
 
@@ -221,8 +227,10 @@ export default function OnCallManagerPage() {
   useEffect(()=>{
     if(!accessToken) return;
     setLoading(true);
-    const start=new Date(year,month,1).toISOString().slice(0,10);
-    const end=new Date(year,month+1,1).toISOString().slice(0,10);
+    const startD=new Date(year,month,1); startD.setDate(startD.getDate()-7);
+    const endD2=new Date(year,month+1,1); endD2.setDate(endD2.getDate()+7);
+    const start=fmtYMD(startD);
+    const end=fmtYMD(endD2);
     let url=`https://graph.microsoft.com/v1.0/me/calendars/${CAL_ID}/calendarView?startDateTime=${start}T00:00:00&endDateTime=${end}T00:00:00&$top=999&$select=id,subject,start,end,isAllDay`;
     const evs:CalEvent[]=[];
     (async()=>{
@@ -556,11 +564,12 @@ export default function OnCallManagerPage() {
                 const isOnCall=(s:string)=>{const l=s.toLowerCase();return(l.includes("on call")||l.includes("oncall"))&&!l.includes("vacation");};
                 const dayEvs=date?(eventMap[date]||[]).filter(e=>isOnCall(e.subject)):[];
                 const isToday=date===todayStr;
+                const inMonth=date.slice(0,7)===`${year}-${String(month+1).padStart(2,"0")}`;
                 const myOncall=dayEvs.find(e=>getName(e.subject).toLowerCase()===currentUser?.displayName?.split(" ")[0].toLowerCase());
                 // Admin can click any on-call event; user can only click their own
                 const clickableOncall=isAdmin?dayEvs.find(e=>isOnCall(e.subject)):myOncall;
                 return(
-                  <div key={i} style={{minHeight:110,background:isToday?"#eff6ff":"#fafafa",border:isToday?"2px solid #1565c0":"1px solid #e5e7eb",borderRadius:6,padding:6,cursor:clickableOncall?"pointer":"default"}}
+                  <div key={i} style={{minHeight:110,background:isToday?"#eff6ff":(inMonth?"#fafafa":"#f1f1f1"),border:isToday?"2px solid #1565c0":"1px solid #e5e7eb",borderRadius:6,padding:6,opacity:inMonth?1:0.55,cursor:clickableOncall?"pointer":"default"}}
                     onClick={()=>{ if(clickableOncall&&connected) setSwapModal({event:clickableOncall}); }}>
                     {date&&<>
                       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:2}}>

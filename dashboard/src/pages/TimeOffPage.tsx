@@ -14,7 +14,6 @@ const callVacation         = httpsCallable(getFunctions(), "vacationAction");
 import { useToast } from "../components/Toast";
 import { useRole, canApproveTimeOff, isAdminRole } from "../hooks/useRole";
 import TimeOffNotifySettings from "../components/TimeOffNotifySettings";
-import VacationManager from "../components/VacationManager";
 import { fmtISODate, timeOffStatusBadge } from "../utils/formatting";
 import type { TimeOffRequest } from "../types";
 
@@ -24,7 +23,7 @@ const CAL_ID     = "AAMkADgyOGUwMDUyLTNiZjMtNGQzNi1hNTgwLTQ2M2IzYzE2YmQ5MgBGAAAA
 const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 const DAYS   = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
 
-type View = "month" | "list" | "request" | "my-requests" | "approvals" | "manage-vacation";
+type View = "month" | "list" | "request" | "my-requests" | "approvals";
 
 export default function TimeOffPage() {
   const { toast, confirm } = useToast();
@@ -243,9 +242,11 @@ export default function TimeOffPage() {
   const todayStr = `${todayDate.getFullYear()}-${String(todayDate.getMonth()+1).padStart(2,"0")}-${String(todayDate.getDate()).padStart(2,"0")}`;
   const first = new Date(year, month, 1).getDay();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const fmtYMD = (d: Date) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
   const grid: string[] = [];
-  for (let i = 0; i < first; i++) grid.push("");
+  for (let i = 0; i < first; i++) grid.push(fmtYMD(new Date(year, month, 1 - (first - i))));
   for (let d = 1; d <= daysInMonth; d++) grid.push(`${year}-${String(month+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`);
+  while (grid.length % 7 !== 0) { const nx = new Date(grid[grid.length-1] + "T12:00:00"); nx.setDate(nx.getDate()+1); grid.push(fmtYMD(nx)); }
 
   // Vacation map: date → [{id,name,calId,start,lastDay}]
   type VacPill = { id: string; name: string; calId?: string; start: string; lastDay: string };
@@ -255,7 +256,7 @@ export default function TimeOffPage() {
     const end = new Date(ev.end + "T12:00:00"); // exclusive
     const lastD = new Date(end); lastD.setDate(lastD.getDate() - 1);
     const lastDay = lastD.toISOString().slice(0, 10);
-    const name = ev.subject.replace(/vacation\s*[-–]?\s*/i, "").replace(/[-–]\s*vacation/i, "").trim();
+    const name = (ev.subject.replace(/vacation\s*[-–]?\s*/i, "").replace(/[-–]\s*vacation/i, "").trim().split(/\s+/)[0]) || "";
     while (cur < end) {
       const d = cur.toISOString().slice(0, 10);
       if (!vacByDate[d]) vacByDate[d] = [];
@@ -297,9 +298,6 @@ export default function TimeOffPage() {
               onClick={()=>setView("approvals")}
             />
           )}
-          {isAdminRole(role) && (
-            <TabBtn label="🏖 Manage Vacation" active={view==="manage-vacation"} onClick={()=>setView("manage-vacation")} />
-          )}
         </div>
 
         {/* ── Month nav ── */}
@@ -329,12 +327,13 @@ export default function TimeOffPage() {
                 {grid.map((date, i) => {
                   const dayVacs = date ? (vacByDate[date] || []) : [];
                   const isToday = date === todayStr;
+                  const inMonth = date.slice(0,7) === `${year}-${String(month+1).padStart(2,"0")}`;
                   const admin = isAdminRole(role);
                   return (
                     <div key={i}
                       onClick={admin && date ? () => openAdd(date) : undefined}
                       title={admin && date ? "Click to add a vacation" : undefined}
-                      style={{ minHeight: 110, background: isToday ? "#fff8f0" : "#fafafa", border: isToday ? "2px solid #f97316" : "1px solid #e5e7eb", borderRadius: 6, padding: 6, cursor: admin && date ? "pointer" : "default" }}>
+                      style={{ minHeight: 110, background: isToday ? "#fff8f0" : (inMonth ? "#fafafa" : "#f1f1f1"), border: isToday ? "2px solid #f97316" : "1px solid #e5e7eb", borderRadius: 6, padding: 6, opacity: inMonth ? 1 : 0.55, cursor: admin && date ? "pointer" : "default" }}>
                       {date && <>
                         <div style={{ fontSize: 12, fontWeight: isToday ? 800 : 500, color: isToday ? "#f97316" : "#374151", marginBottom: 2 }}>{parseInt(date.slice(8))}</div>
                         {dayVacs.map(v => (
@@ -473,11 +472,6 @@ export default function TimeOffPage() {
               </table>
             )}
           </div>
-        )}
-
-        {/* ── Manage Vacation (admins only) ── */}
-        {view === "manage-vacation" && isAdminRole(role) && (
-          <VacationManager />
         )}
 
       </div>
