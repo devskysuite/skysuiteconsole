@@ -5,7 +5,10 @@ import {
   query, updateDoc, deleteDoc, where,
 } from "firebase/firestore";
 import { doc as fsDoc, getDoc as fsGetDoc, setDoc as fsSetDoc } from "firebase/firestore";
+import { getFunctions, httpsCallable } from "firebase/functions";
 import { auth, db } from "../firebase";
+
+const callSyncVacation = httpsCallable(getFunctions(), "syncVacationEvent");
 import { useToast } from "../components/Toast";
 import { useRole, canApproveTimeOff } from "../hooks/useRole";
 import { fmtISODate, timeOffStatusBadge } from "../utils/formatting";
@@ -154,9 +157,11 @@ export default function TimeOffPage() {
 
   async function approveRequest(r: TimeOffRequest) {
     await updateDoc(doc(db, "timeOffRequests", r.id), { status: "APPROVED" });
+    callSyncVacation({ requestId: r.id }).catch(() => {});
   }
   async function denyRequest(r: TimeOffRequest) {
     await updateDoc(doc(db, "timeOffRequests", r.id), { status: "DENIED" });
+    callSyncVacation({ requestId: r.id }).catch(() => {});
   }
   async function deleteRequest(r: TimeOffRequest) {
     if (!await confirm(`Delete this request from ${r.employeeName}?`)) return;

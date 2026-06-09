@@ -7,12 +7,15 @@ import {
   deleteDoc,
   doc,
 } from "firebase/firestore";
+import { getFunctions, httpsCallable } from "firebase/functions";
 import { db } from "../firebase";
 import { useRole, canApproveTimeOff } from "../hooks/useRole";
 import { useToast } from "../components/Toast";
 import Spinner from "../components/Spinner";
 import { fmtISODate, timeOffStatusBadge } from "../utils/formatting";
 import type { TimeOffRequest } from "../types";
+
+const callSyncVacation = httpsCallable(getFunctions(), "syncVacationEvent");
 
 type Filter = "PENDING" | "APPROVED" | "DENIED" | "PAST" | "ALL";
 
@@ -58,6 +61,8 @@ export default function TimeOffApprovalsPage() {
     setBusy(id);
     try {
       await updateDoc(doc(db, "timeOffRequests", id), { status });
+      // Add/remove the vacation event on the Outlook calendar
+      callSyncVacation({ requestId: id }).catch(() => {});
     } catch (e: any) {
       toast(`Error: ${e?.message}`, "error");
     } finally {
