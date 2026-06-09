@@ -300,22 +300,6 @@ export default function PropertyDetailPage() {
                       ))}
                     </div>
                   </div>
-                  {/* Summary cards */}
-                  <div style={{ display: "flex", gap: 0, borderBottom: "1px solid #e5e7eb" }}>
-                    {[
-                      { label: "Open Jobs",         value: property.openJobs ?? 0,         isMoney: false, red: false },
-                      { label: "Open Jobs Value",    value: property.openJobsValue,          isMoney: true,  red: false },
-                      { label: "Outstanding Balance",value: property.outstandingBalance,     isMoney: true,  red: (property.outstandingBalance || 0) > 0 },
-                      { label: "Overdue Balance",    value: property.overdueBalance,         isMoney: true,  red: (property.overdueBalance    || 0) > 0 },
-                    ].map(({ label, value, isMoney, red }, i, arr) => (
-                      <div key={label} style={{ flex: 1, padding: "14px 20px", borderRight: i < arr.length - 1 ? "1px solid #e5e7eb" : "none" }}>
-                        <div style={{ fontSize: 11, fontWeight: 600, color: "#9ca3af", textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 4 }}>{label}</div>
-                        <div style={{ fontSize: 20, fontWeight: 800, color: red ? "#dc2626" : "#0d2e5e" }}>
-                          {isMoney ? fmt$(value as number) : String(value)}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
                   {/* Jobs table */}
                   <table style={{ width: "100%", borderCollapse: "collapse" }}>
                     <thead>
