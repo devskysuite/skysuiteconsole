@@ -378,10 +378,10 @@ export default function OnCallManagerPage() {
     if(!accessToken) return;
     const rotDays=parseInt((document.getElementById("rot-days") as HTMLSelectElement)?.value||"1");
 
-    // 365-day rolling window from today
+    // 365-day rolling window from today (UTC arithmetic — DST-safe)
     const today=new Date().toISOString().slice(0,10);
     const startDate=action==="rebalance"&&rebalanceFrom?rebalanceFrom:today;
-    const endDate=new Date(); endDate.setDate(endDate.getDate()+364);
+    const endDate=new Date(today+"T00:00:00Z"); endDate.setUTCDate(endDate.getUTCDate()+364);
     const endStr=endDate.toISOString().slice(0,10);
 
     // Get roster — this IS the rotation order, single source of truth
@@ -447,18 +447,21 @@ export default function OnCallManagerPage() {
     // Build schedule — gaps only, continuing rotation from where calendar left off
     const toAdd:any[]=[];
     tickProgress(`Starting from ${order[startIdx]} (${startIdx+1}/${order.length}) — building schedule…`, 0, 365);
-    let cur=new Date(startDate), idx=startIdx;
+    // Iterate in pure UTC (setUTCDate/getUTCDate + toISOString) so DST changes
+    // never skip or duplicate a day — the old local setDate dropped Nov 1 and
+    // doubled Mar 8, leaving gaps and shifting the rotation.
+    let cur=new Date(startDate+"T00:00:00Z"), idx=startIdx;
     while(cur.toISOString().slice(0,10)<=endStr){
       const d=cur.toISOString().slice(0,10);
       if(!occupied.has(d)){
-        const end2=new Date(cur); end2.setDate(end2.getDate()+rotDays);
+        const end2=new Date(cur); end2.setUTCDate(end2.getUTCDate()+rotDays);
         toAdd.push({subject:`${order[idx%order.length]} On Call`,start:{dateTime:`${d}T00:00:00`,timeZone:"America/Toronto"},end:{dateTime:`${end2.toISOString().slice(0,10)}T00:00:00`,timeZone:"America/Toronto"},isAllDay:true});
         idx++;
       } else {
         // Still advance rotation index for occupied days
         idx++;
       }
-      cur.setDate(cur.getDate()+rotDays);
+      cur.setUTCDate(cur.getUTCDate()+rotDays);
     }
 
 
