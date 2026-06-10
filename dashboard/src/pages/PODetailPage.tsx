@@ -66,6 +66,192 @@ function SideLabel({ label, children }: { label: string; children: React.ReactNo
   );
 }
 
+// ── Edit Item Modal ────────────────────────────────────────────────────────────
+const COST_TYPES  = ["Materials", "Labour", "Subcontractor", "Equipment", "Other"];
+const COST_CODES  = ["Materials", "Labour", "Subcontractor", "Equipment", "Other"];
+const REV_TYPES   = ["Materials", "Labour", "Subcontractor", "Equipment", "Other"];
+
+function EditItemModal({
+  item, poId, jobNumber, departments, onClose,
+}: {
+  item: POItem; poId: string; jobNumber: string; departments: string[]; onClose: () => void;
+}) {
+  const [f, setF] = useState({
+    name:           item.name || "",
+    description:    item.description || "",
+    department:     item.costCode || "Materials",
+    costCode:       item.costCode || "Materials",
+    jobCostType:    item.jobCostType || "Materials",
+    revenueType:    item.revenueType || "Materials",
+    unitCost:       String(item.unitCost ?? 0),
+    quantity:       String(item.quantityOrdered ?? 1),
+    unitOfMeasure:  item.unitOfMeasure || "",
+    taxable:        !!item.taxable,
+  });
+  const [saving, setSaving] = useState(false);
+
+  const qty  = parseFloat(f.quantity) || 0;
+  const cost = parseFloat(f.unitCost) || 0;
+  const total = qty * cost;
+
+  const inp: React.CSSProperties = {
+    width: "100%", padding: "8px 10px", border: "1px solid #d1d5db",
+    borderRadius: 6, fontSize: 13, outline: "none", boxSizing: "border-box" as const,
+  };
+  const label: React.CSSProperties = {
+    fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase",
+    letterSpacing: 0.6, marginBottom: 4, display: "block",
+  };
+
+  async function save() {
+    if (!f.name.trim()) { alert("Product name is required."); return; }
+    setSaving(true);
+    try {
+      const poSnap = await getDoc(doc(db, "purchaseOrders", poId));
+      const existing: POItem[] = poSnap.data()?.items || [];
+      const updated = existing.map(i =>
+        i.id === item.id
+          ? { ...i, name: f.name.trim(), description: f.description.trim(),
+              costCode: f.costCode, jobCostType: f.jobCostType, revenueType: f.revenueType,
+              unitCost: cost, quantityOrdered: qty, totalCost: total,
+              unitOfMeasure: f.unitOfMeasure, taxable: f.taxable }
+          : i
+      );
+      const newSubtotal = updated.reduce((s, i) => s + (i.totalCost || 0), 0);
+      await updateDoc(doc(db, "purchaseOrders", poId), {
+        items: updated,
+        subtotal: newSubtotal,
+        total: newSubtotal,
+      });
+      onClose();
+    } catch (e) { console.error(e); alert("Failed to save item."); }
+    setSaving(false);
+  }
+
+  return (
+    <div style={{
+      position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 1000,
+      display: "flex", alignItems: "center", justifyContent: "center",
+    }} onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div style={{
+        background: "#fff", borderRadius: 12, width: 560, maxWidth: "95vw",
+        maxHeight: "90vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,0.25)",
+      }}>
+        {/* Header */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "18px 22px", borderBottom: "1px solid #e5e7eb" }}>
+          <div style={{ fontSize: 18, fontWeight: 800, color: "#111827" }}>Edit Purchase Order Item</div>
+          <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", color: "#6b7280", lineHeight: 1 }}>×</button>
+        </div>
+
+        {/* Body */}
+        <div style={{ padding: "20px 22px", display: "flex", flexDirection: "column", gap: 16 }}>
+
+          {/* Product */}
+          <div>
+            <span style={label}>Product</span>
+            <input style={inp} value={f.name} onChange={e => setF(p => ({ ...p, name: e.target.value }))}
+              placeholder="e.g. Purchased Materials — enter description here" />
+          </div>
+
+          {/* Description */}
+          <div>
+            <span style={label}>Description</span>
+            <textarea style={{ ...inp, height: 72, resize: "vertical" }} value={f.description}
+              onChange={e => setF(p => ({ ...p, description: e.target.value }))} />
+          </div>
+
+          {/* Job / Department row */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <div>
+              <span style={label}>Job / Project</span>
+              <input style={{ ...inp, background: "#f9fafb", color: "#6b7280" }} value={jobNumber} readOnly />
+            </div>
+            <div>
+              <span style={label}>Department <span style={{ color: "#ef4444" }}>REQUIRED</span></span>
+              <select style={inp} value={f.department} onChange={e => setF(p => ({ ...p, department: e.target.value }))}>
+                {DEPARTMENTS.map(d => <option key={d}>{d}</option>)}
+              </select>
+            </div>
+          </div>
+
+          {/* Cost Code / Job Cost Type / Revenue Type */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+            <div>
+              <span style={label}>Cost Code</span>
+              <select style={inp} value={f.costCode} onChange={e => setF(p => ({ ...p, costCode: e.target.value }))}>
+                {COST_CODES.map(c => <option key={c}>{c}</option>)}
+              </select>
+            </div>
+            <div>
+              <span style={label}>Job Cost Type</span>
+              <select style={inp} value={f.jobCostType} onChange={e => setF(p => ({ ...p, jobCostType: e.target.value }))}>
+                {COST_TYPES.map(c => <option key={c}>{c}</option>)}
+              </select>
+            </div>
+            <div>
+              <span style={label}>Revenue Type</span>
+              <select style={inp} value={f.revenueType} onChange={e => setF(p => ({ ...p, revenueType: e.target.value }))}>
+                {REV_TYPES.map(c => <option key={c}>{c}</option>)}
+              </select>
+            </div>
+          </div>
+
+          {/* Unit Cost / Qty / UOM */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+            <div>
+              <span style={label}>Unit Cost</span>
+              <div style={{ position: "relative" }}>
+                <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "#6b7280", fontSize: 13 }}>$</span>
+                <input style={{ ...inp, paddingLeft: 22 }} type="number" min={0} step={0.01}
+                  value={f.unitCost} onChange={e => setF(p => ({ ...p, unitCost: e.target.value }))} />
+              </div>
+            </div>
+            <div>
+              <span style={label}>Quantity</span>
+              <input style={inp} type="number" min={0} value={f.quantity}
+                onChange={e => setF(p => ({ ...p, quantity: e.target.value }))} />
+            </div>
+            <div>
+              <span style={label}>Unit of Measure</span>
+              <input style={inp} value={f.unitOfMeasure}
+                onChange={e => setF(p => ({ ...p, unitOfMeasure: e.target.value }))} />
+            </div>
+          </div>
+
+          {/* Taxable */}
+          <div>
+            <span style={label}>Taxable</span>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+              <input type="checkbox" checked={f.taxable} onChange={e => setF(p => ({ ...p, taxable: e.target.checked }))}
+                style={{ width: 16, height: 16, accentColor: "#1565c0" }} />
+              <span style={{ fontSize: 13, color: "#374151" }}>Taxable</span>
+            </label>
+          </div>
+
+          {/* Total Cost */}
+          <div style={{ borderTop: "1px solid #e5e7eb", paddingTop: 14, display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 20 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: 0.6 }}>Total Cost</div>
+            <div style={{ fontSize: 20, fontWeight: 800, color: "#111827" }}>
+              ${total.toLocaleString("en-CA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div style={{ padding: "0 22px 22px" }}>
+          <button onClick={save} disabled={saving} style={{
+            width: "100%", background: saving ? "#86efac" : "#16a34a", color: "#fff",
+            border: "none", borderRadius: 8, padding: "13px 0", fontSize: 14,
+            fontWeight: 800, cursor: "pointer", letterSpacing: 0.5,
+          }}>
+            {saving ? "SAVING…" : "SAVE"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Add Item Row ───────────────────────────────────────────────────────────────
 function AddItemRow({ poId, jobNumber }: { poId: string; jobNumber: string }) {
   const blank = { name: "", description: "", unitCost: "", quantity: "1", jobCostType: "Materials", unitOfMeasure: "ea" };
@@ -206,6 +392,7 @@ export default function PODetailPage() {
   const [saving, setSaving]   = useState(false);
   const [vendors, setVendors]     = useState<string[]>([]);
   const [employees, setEmployees] = useState<string[]>([]);
+  const [editingItem, setEditingItem] = useState<POItem | null>(null);
   const firstEditField = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -287,6 +474,15 @@ export default function PODetailPage() {
 
   return (
     <div style={{ background: "#f9fafb", minHeight: "calc(100vh - 56px)", display: "flex", flexDirection: "column" }}>
+      {editingItem && (
+        <EditItemModal
+          item={editingItem}
+          poId={po.id}
+          jobNumber={po.jobNumber}
+          departments={DEPARTMENTS}
+          onClose={() => setEditingItem(null)}
+        />
+      )}
 
       {/* ── Top bar ── */}
       <div style={{ background: "#fff", borderBottom: "1px solid #e5e7eb", padding: "0 24px", height: 56, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
@@ -469,6 +665,7 @@ export default function PODetailPage() {
                   <table style={{ width: "100%", borderCollapse: "collapse" }}>
                     <thead>
                       <tr>
+                        <th style={thStyle}></th>
                         <th style={thStyle}>Line #</th>
                         <th style={thStyle}>Item Name</th>
                         <th style={thStyle}>Line Type</th>
@@ -483,10 +680,17 @@ export default function PODetailPage() {
                     </thead>
                     <tbody>
                       {items.length === 0 && (
-                        <tr><td colSpan={10} style={{ padding: "32px 12px", textAlign: "center", color: "#9ca3af", fontSize: 13 }}>No Purchase Order Lines</td></tr>
+                        <tr><td colSpan={11} style={{ padding: "32px 12px", textAlign: "center", color: "#9ca3af", fontSize: 13 }}>No Purchase Order Lines</td></tr>
                       )}
                       {items.map((item, i) => (
-                        <tr key={item.id || i}>
+                        <tr key={item.id || i} style={{ borderBottom: "1px solid #f3f4f6" }}>
+                          <td style={{ ...tdStyle, width: 36, padding: "6px 8px" }}>
+                            <button
+                              onClick={() => setEditingItem(item)}
+                              title="Edit item"
+                              style={{ background: "none", border: "1px solid #e5e7eb", borderRadius: 5, padding: "3px 8px", fontSize: 11, fontWeight: 700, color: "#6b7280", cursor: "pointer" }}
+                            >Edit</button>
+                          </td>
                           <td style={tdStyle}>{i + 1}</td>
                           <td style={{ ...tdStyle, fontWeight: 600 }}>{item.name || "—"}</td>
                           <td style={tdStyle}>{item.jobCostType || "—"}</td>
