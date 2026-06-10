@@ -107,8 +107,7 @@ export default function DispatchPage() {
     const n = new Date();
     return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}`;
   });
-  const [timeOffList, setTimeOffList] = useState<{ employeeName: string; startDate: string; endDate: string }[]>([]);
-  const [timeOffLoaded, setTimeOffLoaded] = useState(false);
+  const [monthCalMap, setMonthCalMap] = useState<CalMap>({});
 
   // Technicians flagged to show on the dispatch board
   useEffect(() => {
@@ -140,17 +139,67 @@ export default function DispatchPage() {
     return unsub;
   }, []);
 
-  // Vacation requests — lazy load when vacation view opened
+  // Monthly Outlook fetch — runs when on-call or vacation view is open, re-runs on month change
   useEffect(() => {
-    if (boardView !== "vacation" || timeOffLoaded) return;
-    setTimeOffLoaded(true);
-    getDocs(query(collection(db, "timeOffRequests"), where("status", "==", "APPROVED"))).then(snap => {
-      setTimeOffList(snap.docs.map(d => {
-        const data = d.data();
-        return { employeeName: data.employeeName as string, startDate: data.startDate as string, endDate: data.endDate as string };
-      }));
+    if (boardView === "board") return;
+    const [y, m] = monthAnchor.split("-").map(Number);
+    const start = `${monthAnchor}-01`;
+    const nextMo = new Date(y, m, 1);
+    const end = fmtYMD(nextMo);
+    let cancelled = false;
+    setMonthCalMap({});
+    getOutlookToken().then(async token => {
+      if (!token || token === "disconnected" || cancelled) return;
+      try {
+        const CAL_ID = "AAMkADgyOGUwMDUyLTNiZjMtNGQzNi1hNTgwLTQ2M2IzYzE2YmQ5MgBGAAAAAACGxuDePTlOQawDDU8UfW0gBwBxt6lSDH0kQY0tk4wDjNk8AAAAAAEGAABxt6lSDH0kQY0tk4wDjNk8AAALmQObAAA=";
+        const headers = { Authorization: `Bearer ${token}`, Prefer: 'outlook.timezone="America/Toronto"' };
+        const evs: any[] = [];
+        let url = `https://graph.microsoft.com/v1.0/me/calendars/${encodeURIComponent(CAL_ID)}/calendarView?startDateTime=${start}T00:00:00&endDateTime=${end}T00:00:00&$top=200&$select=subject,start,end`;
+        while (url) {
+          const res = await fetch(url, { headers });
+          const json = await res.json();
+          if (!res.ok || cancelled) return;
+          evs.push(...(json.value || []));
+          url = json["@odata.nextLink"] || null;
+        }
+        if (cancelled) return;
+        const map: CalMap = {};
+        for (const ev of evs) {
+          const subj = (ev.subject || "") as string;
+          const sl = subj.toLowerCase();
+          let type: "vacation" | "oncall" | null = null;
+          if (sl.includes("vacation")) type = "vacation";
+          else if (sl.includes("on call") || sl.includes("oncall")) type = "oncall";
+          if (!type) continue;
+          let personName = "";
+          if (type === "vacation") {
+            const mx = subj.match(/vacation\s*[-–]\s*(.+)/i);
+            personName = mx ? mx[1].trim() : "";
+          } else {
+            const mx = subj.match(/^(.+?)\s+(?:on\s+call|oncall)/i);
+            personName = mx ? mx[1].trim() : "";
+          }
+          const firstName = personName.split(/\s+/)[0].toLowerCase();
+          if (!firstName || firstName === "vacation") continue;
+          const evStart = ev.start?.date || ev.start?.dateTime?.slice(0, 10) || "";
+          const evEnd   = ev.end?.date   || ev.end?.dateTime?.slice(0, 10)   || "";
+          if (!evStart || !evEnd) continue;
+          let cur = new Date(evStart + "T12:00:00");
+          const evEndD = new Date(evEnd + "T12:00:00");
+          while (cur < evEndD) {
+            const d = fmtYMD(cur);
+            if (d >= start && d < end) {
+              const key = `${firstName}|${d}`;
+              (map[key] ||= []).push({ type, label: subj });
+            }
+            cur.setDate(cur.getDate() + 1);
+          }
+        }
+        setMonthCalMap(map);
+      } catch {}
     }).catch(() => {});
-  }, [boardView, timeOffLoaded]);
+    return () => { cancelled = true; };
+  }, [boardView, monthAnchor]);
 
   // All users for swap dropdown
   useEffect(() => {
@@ -302,27 +351,25 @@ export default function DispatchPage() {
     return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
   }
 
-  // On-call: date → name
-  const onCallByDate = useMemo(() => {
-    const m: Record<string, string> = {};
-    for (const a of assignments) m[a.date] = a.employeeName;
-    return m;
-  }, [assignments]);
-
-  // Vacation: date → list of names
-  const vacByDate = useMemo(() => {
-    const m: Record<string, string[]> = {};
-    for (const req of timeOffList) {
-      let cur = new Date(req.startDate + "T12:00:00");
-      const end = new Date(req.endDate + "T12:00:00");
-      while (cur <= end) {
-        const d = fmtYMD(cur);
-        (m[d] ||= []).push(req.employeeName);
-        cur.setDate(cur.getDate()+1);
+  // Monthly summary derived from Outlook calMap (same logic as weekSummary)
+  const monthSummary = useMemo(() => {
+    const vacations: Record<string, string[]> = {};
+    const oncall: Record<string, string> = {};
+    for (const [key, chips] of Object.entries(monthCalMap)) {
+      const [, date] = key.split("|");
+      for (const chip of chips) {
+        if (chip.type === "vacation") {
+          const mx = chip.label.match(/vacation\s*[-–]\s*(.+)/i);
+          const name = mx ? mx[1].trim() : key.split("|")[0];
+          (vacations[date] ||= []).push(name);
+        } else if (chip.type === "oncall") {
+          const mx = chip.label.match(/^(.+?)\s+(?:on\s+call|oncall)/i);
+          oncall[date] = mx ? mx[1].trim() : key.split("|")[0];
+        }
       }
     }
-    return m;
-  }, [timeOffList]);
+    return { vacations, oncall };
+  }, [monthCalMap]);
 
   // On-call swap handlers
   const requesterOnCallDays = assignments
@@ -491,8 +538,8 @@ export default function DispatchPage() {
               {mDays.map(d => {
                 const isToday = d === todayYMD;
                 const names: string[] = isOncall
-                  ? (onCallByDate[d] ? [onCallByDate[d]] : [])
-                  : (vacByDate[d] || []);
+                  ? (monthSummary.oncall[d] ? [monthSummary.oncall[d]] : [])
+                  : (monthSummary.vacations[d] || []);
                 const dayNum = parseInt(d.slice(8));
                 return (
                   <div key={d} style={{ background: "#fff", minHeight: 90, padding: "6px 8px", position: "relative" }}>
@@ -506,26 +553,26 @@ export default function DispatchPage() {
                     }}>{dayNum}</div>
                     {names.map((name, i) => (
                       <div key={i} style={{ background: accentBg, color: accentFg, border: `1px solid ${accentBdr}`, borderRadius: 4, padding: "2px 6px", fontSize: 11, fontWeight: 700, marginBottom: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>
-                        {name.split(" ")[0]}
+                        {name}
                       </div>
                     ))}
                   </div>
                 );
               })}
             </div>
-            {/* Check if anything exists this month */}
-            {mDays.every(d => isOncall ? !onCallByDate[d] : !(vacByDate[d]?.length)) && (
+            {/* Empty state — only show once calMap has loaded (non-empty object means fetch completed) */}
+            {Object.keys(monthCalMap).length > 0 && mDays.every(d => isOncall ? !monthSummary.oncall[d] : !monthSummary.vacations[d]?.length) && (
               <div style={{ textAlign: "center", color: "#9ca3af", padding: "32px 0", fontSize: 14 }}>{emptyMsg}</div>
+            )}
+            {Object.keys(monthCalMap).length === 0 && (
+              <div style={{ textAlign: "center", color: "#9ca3af", padding: "32px 0", fontSize: 14 }}>Loading from Outlook…</div>
             )}
             {/* Legend */}
             <div style={{ display: "flex", gap: 12, marginTop: 14, alignItems: "center", fontSize: 12, color: "#6b7280" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
                 <div style={{ width: 12, height: 12, borderRadius: 2, background: accentBg, border: `1px solid ${accentBdr}` }} />
-                {isOncall ? "On call" : "Approved vacation"}
+                {isOncall ? "On call (from Outlook)" : "Vacation (from Outlook)"}
               </div>
-              {boardView === "vacation" && !timeOffLoaded && (
-                <span style={{ color: "#9ca3af" }}>Loading…</span>
-              )}
             </div>
           </div>
         );
