@@ -476,7 +476,7 @@ export default function OnCallManagerPage() {
       occupied.clear();
     }
 
-    if(action==="preview"){finishProgress(`${existingEvs.length} days assigned, ${364-existingEvs.length} gaps. Push to fill.`);return;}
+    if(action==="preview"){finishProgress(`${existingEvs.length} days assigned, ${365-existingEvs.length} gaps. Push to fill.`);return;}
 
     // Build events. ONE deterministic, date-anchored formula is used by push,
     // rebalance, AND the nightly cloud job so they always agree:
