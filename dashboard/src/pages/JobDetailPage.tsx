@@ -267,10 +267,16 @@ export default function JobDetailPage() {
     setStatusBusy(false);
   }
 
+  async function removeVisitPayroll(visitId: string) {
+    const snap = await getDocs(query(collection(db, "payrollEntries"), where("visitId", "==", visitId)));
+    for (const d of snap.docs) await deleteDoc(doc(db, "payrollEntries", d.id));
+  }
+
   async function changeVisitStatus(visitId: string, visitNumber: number, newStatus: string) {
     if (!jobId) return;
     try {
       await updateDoc(doc(db, "dispatchVisits", visitId), { status: newStatus });
+      if (newStatus === "canceled") await removeVisitPayroll(visitId);
       await addDoc(collection(db, "jobs", jobId, "history"), {
         action: `Visit #${visitNumber} status changed to "${VISIT_STATUS_LABELS[newStatus] || newStatus}"`,
         performedBy: auth.currentUser?.displayName || auth.currentUser?.email || "Unknown",
@@ -283,6 +289,7 @@ export default function JobDetailPage() {
     if (!jobId) return;
     if (!window.confirm(`Delete Visit #${visitNumber}? This cannot be undone.`)) return;
     try {
+      await removeVisitPayroll(visitId);
       await deleteDoc(doc(db, "dispatchVisits", visitId));
       await addDoc(collection(db, "jobs", jobId, "history"), {
         action: `Visit #${visitNumber} deleted`,
