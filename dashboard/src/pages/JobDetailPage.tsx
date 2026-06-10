@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { addDoc, collection, deleteDoc, doc, getDoc, getDocs, onSnapshot, orderBy, query, updateDoc, where } from "firebase/firestore";
 import { auth, db } from "../firebase";
 import CreateVisitModal from "./CreateVisitModal";
+import PartsAndPurchasingTab from "./PartsAndPurchasingTab";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface Job {
@@ -1050,7 +1051,11 @@ export default function JobDetailPage() {
               );
             })()}
 
-            {activeTab !== "Scheduling" && activeTab !== "Job Costing" && (
+            {activeTab === "Parts & Purchasing" && job && (
+              <PartsAndPurchasingTab jobId={jobId!} jobNumber={job.jobNumber} />
+            )}
+
+            {activeTab !== "Scheduling" && activeTab !== "Job Costing" && activeTab !== "Parts & Purchasing" && (
               <div style={{ textAlign: "center", color: "#9ca3af", paddingTop: 60, fontSize: 14 }}>
                 {activeTab} — coming soon
               </div>

@@ -1,0 +1,542 @@
+import { useEffect, useState } from "react";
+import { addDoc, arrayUnion, collection, doc, getDoc, onSnapshot, query, updateDoc, where } from "firebase/firestore";
+import { auth, db } from "../firebase";
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+interface POItem {
+  id: string;
+  description: string;
+  fulfillmentStatus: string;
+  quantityOrdered: number;
+  quantityReceived: number;
+  unitCost: number;
+  totalCost: number;
+}
+
+interface Bill {
+  id: string;
+  billNumber: string;
+  receiptNumber: string;
+  vendor: string;
+  dateIssued: string;
+  createdBy: string;
+  total: number;
+}
+
+interface PurchaseOrder {
+  id: string;
+  poNumber: string;
+  status: string;
+  fieldOrder: boolean;
+  vendor: string;
+  description: string;
+  department: string;
+  assignedTo: string;
+  createdBy: string;
+  createdAt: string;
+  items: POItem[];
+  bills: Bill[];
+  total: number;
+}
+
+interface Props { jobId: string; jobNumber: string; }
+
+// ── Constants ─────────────────────────────────────────────────────────────────
+const DEPARTMENTS = ["Service","Electrical","Automation","Industrial","Commercial","HVAC","Maintenance","General","Construction","Other"];
+const PO_STATUSES = ["Open","Pending","Fulfilled","Cancelled"];
+const ITEM_STATUSES = ["Pending","Ordered","Fulfilled"];
+
+const STATUS_COLORS: Record<string, { bg: string; color: string; border: string }> = {
+  Fulfilled:  { bg: "#dcfce7", color: "#166534", border: "#86efac" },
+  Open:       { bg: "#dbeafe", color: "#1e40af", border: "#93c5fd" },
+  Pending:    { bg: "#fef3c7", color: "#92400e", border: "#fcd34d" },
+  Cancelled:  { bg: "#fee2e2", color: "#991b1b", border: "#fca5a5" },
+  Ordered:    { bg: "#e0f2fe", color: "#0369a1", border: "#7dd3fc" },
+};
+
+// ── Shared styles ──────────────────────────────────────────────────────────────
+const th: React.CSSProperties = { padding: "9px 12px", fontSize: 11, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: 0.4, textAlign: "left", whiteSpace: "nowrap" };
+const td: React.CSSProperties = { padding: "9px 12px", fontSize: 13, color: "#374151", verticalAlign: "middle" };
+const inp: React.CSSProperties = { width: "100%", padding: "7px 10px", border: "1px solid #d1d5db", borderRadius: 6, fontSize: 13, outline: "none", boxSizing: "border-box" };
+const lbl: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 4, display: "block" };
+
+function fmtDate(iso: string) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return d.toLocaleDateString("en-CA", { year: "numeric", month: "short", day: "numeric" });
+}
+function fmtC(n: number) {
+  return n > 0 ? `$${n.toLocaleString("en-CA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "$0.00";
+}
+function uid() { return Math.random().toString(36).slice(2); }
+
+function StatusBadge({ status }: { status: string }) {
+  const s = STATUS_COLORS[status] || { bg: "#f3f4f6", color: "#6b7280", border: "#d1d5db" };
+  return (
+    <span style={{ background: s.bg, color: s.color, border: `1px solid ${s.border}`, borderRadius: 6, padding: "2px 8px", fontSize: 11, fontWeight: 700, whiteSpace: "nowrap" }}>
+      {status}
+    </span>
+  );
+}
+
+// ── Section header ─────────────────────────────────────────────────────────────
+function SectionHead({ title, action }: { title: string; action?: React.ReactNode }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+      <div style={{ fontSize: 14, fontWeight: 700, color: "#111827" }}>{title}</div>
+      {action}
+    </div>
+  );
+}
+
+// ── Add PO Modal ───────────────────────────────────────────────────────────────
+function AddPOModal({ jobId, jobNumber, onClose }: { jobId: string; jobNumber: string; onClose: () => void }) {
+  const [form, setForm] = useState({
+    poNumber: "", status: "Open", fieldOrder: false,
+    vendor: "", description: "", department: "", assignedTo: "",
+  });
+  const [saving, setSaving] = useState(false);
+
+  function bind(k: keyof typeof form) {
+    return { value: form[k] as string, onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => setForm(f => ({ ...f, [k]: e.target.value })) };
+  }
+
+  async function save() {
+    if (!form.poNumber.trim()) return;
+    setSaving(true);
+    await addDoc(collection(db, "purchaseOrders"), {
+      jobId, jobNumber,
+      poNumber:    form.poNumber.trim(),
+      status:      form.status,
+      fieldOrder:  form.fieldOrder,
+      vendor:      form.vendor.trim(),
+      description: form.description.trim(),
+      department:  form.department,
+      assignedTo:  form.assignedTo.trim(),
+      createdBy:   auth.currentUser?.displayName || auth.currentUser?.email || "Unknown",
+      createdAt:   new Date().toISOString().slice(0, 10),
+      items: [],
+      bills: [],
+      total: 0,
+    });
+    onClose();
+  }
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={onClose}>
+      <div style={{ background: "#fff", borderRadius: 12, width: "100%", maxWidth: 560, padding: "24px", boxShadow: "0 12px 40px rgba(0,0,0,0.18)" }} onClick={e => e.stopPropagation()}>
+        <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 20 }}>Add Purchase Order</div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
+          <div>
+            <label style={lbl}>PO Number <span style={{ color: "#ef4444" }}>*</span></label>
+            <input style={inp} placeholder="e.g. 16226" {...bind("poNumber")} />
+          </div>
+          <div>
+            <label style={lbl}>Status</label>
+            <select style={{ ...inp, appearance: "auto" as any }} {...bind("status")}>
+              {PO_STATUSES.map(s => <option key={s}>{s}</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={lbl}>Vendor</label>
+            <input style={inp} placeholder="Vendor name" {...bind("vendor")} />
+          </div>
+          <div>
+            <label style={lbl}>Department</label>
+            <select style={{ ...inp, appearance: "auto" as any }} {...bind("department")}>
+              <option value="">— Select —</option>
+              {DEPARTMENTS.map(d => <option key={d}>{d}</option>)}
+            </select>
+          </div>
+          <div style={{ gridColumn: "1 / -1" }}>
+            <label style={lbl}>Description</label>
+            <input style={inp} placeholder="Optional description" {...bind("description")} />
+          </div>
+          <div>
+            <label style={lbl}>Assigned To</label>
+            <input style={inp} placeholder="Name" {...bind("assignedTo")} />
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, paddingTop: 20 }}>
+            <input type="checkbox" id="fo" checked={form.fieldOrder} onChange={e => setForm(f => ({ ...f, fieldOrder: e.target.checked }))} />
+            <label htmlFor="fo" style={{ fontSize: 13, fontWeight: 600, cursor: "pointer" }}>Field Order</label>
+          </div>
+        </div>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 4 }}>
+          <button onClick={onClose} style={{ background: "none", border: "1px solid #d1d5db", borderRadius: 6, padding: "8px 18px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>Cancel</button>
+          <button onClick={save} disabled={saving || !form.poNumber.trim()} style={{ background: "#0d2e5e", color: "#fff", border: "none", borderRadius: 6, padding: "8px 22px", fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: saving ? 0.7 : 1 }}>
+            {saving ? "Saving…" : "Add PO"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Add Item Panel ─────────────────────────────────────────────────────────────
+function AddItemRow({ poId, poVendor, onDone }: { poId: string; poVendor: string; onDone: () => void }) {
+  const [f, setF] = useState({ description: "", fulfillmentStatus: "Fulfilled", quantityOrdered: "1", quantityReceived: "1", unitCost: "", totalCost: "" });
+  const [saving, setSaving] = useState(false);
+
+  function recalc(qty: string, unit: string) {
+    const q = parseFloat(qty) || 0;
+    const u = parseFloat(unit) || 0;
+    return String(q > 0 && u > 0 ? (q * u).toFixed(2) : "");
+  }
+
+  async function save() {
+    if (!f.description.trim()) return;
+    setSaving(true);
+    const item: POItem = {
+      id: uid(),
+      description:       f.description.trim(),
+      fulfillmentStatus: f.fulfillmentStatus,
+      quantityOrdered:   parseFloat(f.quantityOrdered) || 0,
+      quantityReceived:  parseFloat(f.quantityReceived) || 0,
+      unitCost:          parseFloat(f.unitCost) || 0,
+      totalCost:         parseFloat(f.totalCost) || 0,
+    };
+    const ref = doc(db, "purchaseOrders", poId);
+    // get current total and items
+    const snap = await getDoc(ref);
+    const data = snap.data() as PurchaseOrder;
+    const newTotal = (data.total || 0) + item.totalCost;
+    await updateDoc(ref, { items: arrayUnion(item), total: newTotal });
+    onDone();
+  }
+
+  return (
+    <tr style={{ background: "#f0fdf4" }}>
+      <td style={td}><input style={{ ...inp, width: 220 }} placeholder="Item description" value={f.description} onChange={e => setF(p => ({ ...p, description: e.target.value }))} /></td>
+      <td style={td}>
+        <select style={{ ...inp, width: 110, appearance: "auto" as any }} value={f.fulfillmentStatus} onChange={e => setF(p => ({ ...p, fulfillmentStatus: e.target.value }))}>
+          {ITEM_STATUSES.map(s => <option key={s}>{s}</option>)}
+        </select>
+      </td>
+      <td style={{ ...td, textAlign: "center" }}><input style={{ ...inp, width: 60, textAlign: "center" }} value={f.quantityOrdered} onChange={e => { const v = e.target.value; setF(p => ({ ...p, quantityOrdered: v, totalCost: recalc(v, p.unitCost) })); }} /></td>
+      <td style={{ ...td, textAlign: "center" }}><input style={{ ...inp, width: 60, textAlign: "center" }} value={f.quantityReceived} onChange={e => setF(p => ({ ...p, quantityReceived: e.target.value }))} /></td>
+      <td style={{ ...td, textAlign: "right" }}><input style={{ ...inp, width: 90, textAlign: "right" }} placeholder="0.00" value={f.unitCost} onChange={e => { const v = e.target.value; setF(p => ({ ...p, unitCost: v, totalCost: recalc(p.quantityOrdered, v) })); }} /></td>
+      <td style={{ ...td, textAlign: "right" }}><input style={{ ...inp, width: 90, textAlign: "right" }} placeholder="0.00" value={f.totalCost} onChange={e => setF(p => ({ ...p, totalCost: e.target.value }))} /></td>
+      <td style={td}>
+        <div style={{ display: "flex", gap: 6 }}>
+          <button onClick={save} disabled={saving} style={{ background: "#16a34a", color: "#fff", border: "none", borderRadius: 6, padding: "4px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>{saving ? "…" : "Add"}</button>
+          <button onClick={onDone} style={{ background: "none", border: "1px solid #d1d5db", borderRadius: 6, padding: "4px 10px", fontSize: 12, cursor: "pointer" }}>✕</button>
+        </div>
+      </td>
+    </tr>
+  );
+}
+
+// ── Add Bill Panel ─────────────────────────────────────────────────────────────
+function AddBillRow({ poId, poNumber, poVendor, onDone }: { poId: string; poNumber: string; poVendor: string; onDone: () => void }) {
+  const [f, setF] = useState({ billNumber: `${poNumber}-1`, receiptNumber: `${poNumber}-1`, vendor: poVendor, dateIssued: new Date().toISOString().slice(0, 10), total: "" });
+  const [saving, setSaving] = useState(false);
+
+  async function save() {
+    if (!f.total) return;
+    setSaving(true);
+    const bill: Bill = {
+      id: uid(),
+      billNumber:   f.billNumber.trim(),
+      receiptNumber: f.receiptNumber.trim(),
+      vendor:       f.vendor.trim(),
+      dateIssued:   f.dateIssued,
+      createdBy:    auth.currentUser?.displayName || auth.currentUser?.email || "Unknown",
+      total:        parseFloat(f.total) || 0,
+    };
+    await updateDoc(doc(db, "purchaseOrders", poId), { bills: arrayUnion(bill) });
+    onDone();
+  }
+
+  return (
+    <tr style={{ background: "#eff6ff" }}>
+      <td style={td}><input style={{ ...inp, width: 120 }} value={f.billNumber} onChange={e => setF(p => ({ ...p, billNumber: e.target.value }))} /></td>
+      <td style={td}><input style={{ ...inp, width: 120 }} value={f.receiptNumber} onChange={e => setF(p => ({ ...p, receiptNumber: e.target.value }))} /></td>
+      <td style={td}><input style={{ ...inp, width: 160 }} value={f.vendor} onChange={e => setF(p => ({ ...p, vendor: e.target.value }))} /></td>
+      <td style={td}><input type="date" style={{ ...inp, width: 140 }} value={f.dateIssued} onChange={e => setF(p => ({ ...p, dateIssued: e.target.value }))} /></td>
+      <td style={{ ...td, textAlign: "right" }}><input style={{ ...inp, width: 100, textAlign: "right" }} placeholder="0.00" value={f.total} onChange={e => setF(p => ({ ...p, total: e.target.value }))} /></td>
+      <td style={td}>
+        <div style={{ display: "flex", gap: 6 }}>
+          <button onClick={save} disabled={saving || !f.total} style={{ background: "#1565c0", color: "#fff", border: "none", borderRadius: 6, padding: "4px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>{saving ? "…" : "Add"}</button>
+          <button onClick={onDone} style={{ background: "none", border: "1px solid #d1d5db", borderRadius: 6, padding: "4px 10px", fontSize: 12, cursor: "pointer" }}>✕</button>
+        </div>
+      </td>
+    </tr>
+  );
+}
+
+// ── Main Component ─────────────────────────────────────────────────────────────
+export default function PartsAndPurchasingTab({ jobId, jobNumber }: Props) {
+  const [pos, setPOs]         = useState<PurchaseOrder[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [addPOOpen, setAddPOOpen]     = useState(false);
+  const [expandedPO, setExpandedPO]   = useState<string | null>(null);
+  const [addingItemTo, setAddingItemTo] = useState<string | null>(null);
+  const [addingBillTo, setAddingBillTo] = useState<string | null>(null);
+
+  useEffect(() => {
+    const unsub = onSnapshot(
+      query(collection(db, "purchaseOrders"), where("jobId", "==", jobId)),
+      snap => {
+        const list = snap.docs.map(d => ({ id: d.id, ...(d.data() as Omit<PurchaseOrder, "id">) }));
+        list.sort((a, b) => String(a.poNumber).localeCompare(String(b.poNumber)));
+        setPOs(list);
+        setLoading(false);
+      },
+      () => setLoading(false)
+    );
+    return unsub;
+  }, [jobId]);
+
+  const allItems = pos.flatMap(po => (po.items || []).map(item => ({ ...item, poNumber: po.poNumber, vendor: po.vendor || item.description })));
+  const allBills = pos.flatMap(po => (po.bills || []).map(bill => ({ ...bill, poNumber: po.poNumber })));
+  const poGrandTotal   = pos.reduce((s, p) => s + (p.total || 0), 0);
+  const itemGrandTotal = allItems.reduce((s, i) => s + (i.totalCost || 0), 0);
+  const billGrandTotal = allBills.reduce((s, b) => s + (b.total || 0), 0);
+
+  async function changePOStatus(poId: string, status: string) {
+    await updateDoc(doc(db, "purchaseOrders", poId), { status });
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 32 }}>
+
+      {/* ── Purchase Orders ── */}
+      <div>
+        <SectionHead
+          title="Purchase Orders"
+          action={
+            <button onClick={() => setAddPOOpen(true)} style={{ background: "#0d2e5e", color: "#fff", border: "none", borderRadius: 6, padding: "6px 16px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+              + ADD PURCHASE ORDER
+            </button>
+          }
+        />
+        <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead>
+              <tr style={{ background: "#f9fafb", borderBottom: "1px solid #e5e7eb" }}>
+                <th style={th}>PO Number</th>
+                <th style={th}>Status</th>
+                <th style={th}>Field Order</th>
+                <th style={th}>Vendor</th>
+                <th style={th}>Description</th>
+                <th style={th}>Department</th>
+                <th style={th}>Assigned To</th>
+                <th style={th}>Created By</th>
+                <th style={th}>Date</th>
+                <th style={{ ...th, textAlign: "right" }}>Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading && <tr><td colSpan={10} style={{ padding: 32, textAlign: "center", color: "#9ca3af" }}>Loading…</td></tr>}
+              {!loading && pos.length === 0 && <tr><td colSpan={10} style={{ padding: 32, textAlign: "center", color: "#9ca3af" }}>No purchase orders yet. Add one to get started.</td></tr>}
+              {pos.map((po, i) => {
+                const isExp = expandedPO === po.id;
+                return [
+                  <tr
+                    key={po.id}
+                    onClick={() => setExpandedPO(isExp ? null : po.id)}
+                    style={{ borderBottom: "1px solid #f3f4f6", cursor: "pointer", background: isExp ? "#f0f4ff" : "transparent" }}
+                  >
+                    <td style={{ ...td, fontWeight: 700, color: "#1565c0" }}>{po.poNumber}</td>
+                    <td style={td}>
+                      <select
+                        value={po.status}
+                        onClick={e => e.stopPropagation()}
+                        onChange={e => { e.stopPropagation(); changePOStatus(po.id, e.target.value); }}
+                        style={{ border: "none", background: "transparent", fontSize: 12, cursor: "pointer", outline: "none" }}
+                      >
+                        {PO_STATUSES.map(s => <option key={s}>{s}</option>)}
+                      </select>
+                      <StatusBadge status={po.status} />
+                    </td>
+                    <td style={{ ...td, textAlign: "center" }}>{po.fieldOrder ? "Yes" : "No"}</td>
+                    <td style={td}>{po.vendor || "—"}</td>
+                    <td style={{ ...td, maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{po.description || "—"}</td>
+                    <td style={td}>{po.department || "—"}</td>
+                    <td style={td}>{po.assignedTo || "—"}</td>
+                    <td style={td}>{po.createdBy || "—"}</td>
+                    <td style={td}>{fmtDate(po.createdAt)}</td>
+                    <td style={{ ...td, textAlign: "right", fontWeight: 700 }}>{fmtC(po.total || 0)}</td>
+                  </tr>,
+
+                  isExp && (
+                    <tr key={po.id + "_exp"}>
+                      <td colSpan={10} style={{ padding: 0, background: "#f8faff", borderBottom: "1px solid #e5e7eb" }}>
+                        <div style={{ padding: "14px 18px" }}>
+
+                          {/* Items sub-table */}
+                          <div style={{ fontSize: 12, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 8 }}>Items</div>
+                          <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: 8, border: "1px solid #e5e7eb", borderRadius: 8, overflow: "hidden" }}>
+                            <thead>
+                              <tr style={{ background: "#f3f4f6" }}>
+                                <th style={th}>Item Description</th>
+                                <th style={th}>Status</th>
+                                <th style={{ ...th, textAlign: "center" }}>Qty Ordered</th>
+                                <th style={{ ...th, textAlign: "center" }}>Qty Received</th>
+                                <th style={{ ...th, textAlign: "right" }}>Unit Cost</th>
+                                <th style={{ ...th, textAlign: "right" }}>Total Cost</th>
+                                <th style={th}></th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {(po.items || []).length === 0 && addingItemTo !== po.id && (
+                                <tr><td colSpan={7} style={{ padding: "10px 12px", color: "#9ca3af", fontSize: 12 }}>No items — add one below.</td></tr>
+                              )}
+                              {(po.items || []).map(item => (
+                                <tr key={item.id} style={{ borderTop: "1px solid #f3f4f6" }}>
+                                  <td style={td}>{item.description}</td>
+                                  <td style={td}><StatusBadge status={item.fulfillmentStatus} /></td>
+                                  <td style={{ ...td, textAlign: "center" }}>{item.quantityOrdered}</td>
+                                  <td style={{ ...td, textAlign: "center" }}>{item.quantityReceived}</td>
+                                  <td style={{ ...td, textAlign: "right" }}>{item.unitCost > 0 ? fmtC(item.unitCost) : "—"}</td>
+                                  <td style={{ ...td, textAlign: "right", fontWeight: 600 }}>{fmtC(item.totalCost)}</td>
+                                  <td style={td}></td>
+                                </tr>
+                              ))}
+                              {addingItemTo === po.id && (
+                                <AddItemRow poId={po.id} poVendor={po.vendor} onDone={() => setAddingItemTo(null)} />
+                              )}
+                            </tbody>
+                          </table>
+                          {addingItemTo !== po.id && (
+                            <button onClick={() => setAddingItemTo(po.id)} style={{ fontSize: 12, color: "#1565c0", background: "none", border: "none", cursor: "pointer", fontWeight: 600, marginBottom: 16 }}>
+                              + Add Item
+                            </button>
+                          )}
+
+                          {/* Bills sub-table */}
+                          <div style={{ fontSize: 12, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 8 }}>Bills</div>
+                          <table style={{ width: "100%", borderCollapse: "collapse", border: "1px solid #e5e7eb", borderRadius: 8, overflow: "hidden" }}>
+                            <thead>
+                              <tr style={{ background: "#f3f4f6" }}>
+                                <th style={th}>Bill #</th>
+                                <th style={th}>Receipt #</th>
+                                <th style={th}>Vendor</th>
+                                <th style={th}>Date Issued</th>
+                                <th style={{ ...th, textAlign: "right" }}>Total</th>
+                                <th style={th}></th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {(po.bills || []).length === 0 && addingBillTo !== po.id && (
+                                <tr><td colSpan={6} style={{ padding: "10px 12px", color: "#9ca3af", fontSize: 12 }}>No bills yet.</td></tr>
+                              )}
+                              {(po.bills || []).map(b => (
+                                <tr key={b.id} style={{ borderTop: "1px solid #f3f4f6" }}>
+                                  <td style={td}>{b.billNumber || "—"}</td>
+                                  <td style={td}>{b.receiptNumber || "—"}</td>
+                                  <td style={td}>{b.vendor || "—"}</td>
+                                  <td style={td}>{fmtDate(b.dateIssued)}</td>
+                                  <td style={{ ...td, textAlign: "right", fontWeight: 600 }}>{fmtC(b.total)}</td>
+                                  <td style={td}></td>
+                                </tr>
+                              ))}
+                              {addingBillTo === po.id && (
+                                <AddBillRow poId={po.id} poNumber={po.poNumber} poVendor={po.vendor} onDone={() => setAddingBillTo(null)} />
+                              )}
+                            </tbody>
+                          </table>
+                          {addingBillTo !== po.id && (
+                            <button onClick={() => setAddingBillTo(po.id)} style={{ fontSize: 12, color: "#1565c0", background: "none", border: "none", cursor: "pointer", fontWeight: 600, marginTop: 8 }}>
+                              + Add Bill
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ),
+                ];
+              })}
+              {pos.length > 0 && (
+                <tr style={{ background: "#f9fafb", borderTop: "2px solid #e5e7eb" }}>
+                  <td colSpan={9} style={{ ...td, fontWeight: 800 }}>TOTAL</td>
+                  <td style={{ ...td, textAlign: "right", fontWeight: 800, fontSize: 14 }}>{fmtC(poGrandTotal)}</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* ── Purchasing Items ── */}
+      {allItems.length > 0 && (
+        <div>
+          <SectionHead title="Purchasing Items" />
+          <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead>
+                <tr style={{ background: "#f9fafb", borderBottom: "1px solid #e5e7eb" }}>
+                  <th style={th}>PO Number</th>
+                  <th style={th}>Item Description</th>
+                  <th style={th}>Vendor</th>
+                  <th style={th}>Fulfillment Status</th>
+                  <th style={{ ...th, textAlign: "center" }}>Qty Ordered</th>
+                  <th style={{ ...th, textAlign: "center" }}>Qty Received</th>
+                  <th style={{ ...th, textAlign: "right" }}>Total Cost</th>
+                </tr>
+              </thead>
+              <tbody>
+                {allItems.map((item, i) => (
+                  <tr key={item.id + i} style={{ borderBottom: "1px solid #f3f4f6" }}>
+                    <td style={{ ...td, fontWeight: 700, color: "#1565c0" }}>{item.poNumber}</td>
+                    <td style={td}>{item.description}</td>
+                    <td style={td}>{item.vendor || "—"}</td>
+                    <td style={td}><StatusBadge status={item.fulfillmentStatus} /></td>
+                    <td style={{ ...td, textAlign: "center" }}>{item.quantityOrdered}</td>
+                    <td style={{ ...td, textAlign: "center" }}>{item.quantityReceived}</td>
+                    <td style={{ ...td, textAlign: "right", fontWeight: 600 }}>{fmtC(item.totalCost)}</td>
+                  </tr>
+                ))}
+                <tr style={{ background: "#f9fafb", borderTop: "2px solid #e5e7eb" }}>
+                  <td colSpan={6} style={{ ...td, fontWeight: 800 }}>TOTAL</td>
+                  <td style={{ ...td, textAlign: "right", fontWeight: 800, fontSize: 14 }}>{fmtC(itemGrandTotal)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ── Bills ── */}
+      {allBills.length > 0 && (
+        <div>
+          <SectionHead title="Bills" />
+          <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead>
+                <tr style={{ background: "#f9fafb", borderBottom: "1px solid #e5e7eb" }}>
+                  <th style={th}>Bill Number</th>
+                  <th style={th}>Receipt Number</th>
+                  <th style={th}>Vendor</th>
+                  <th style={th}>PO Number</th>
+                  <th style={th}>Date Issued</th>
+                  <th style={th}>Created By</th>
+                  <th style={{ ...th, textAlign: "right" }}>Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {allBills.map((b, i) => (
+                  <tr key={b.id + i} style={{ borderBottom: "1px solid #f3f4f6" }}>
+                    <td style={td}>{b.billNumber || "—"}</td>
+                    <td style={td}>{b.receiptNumber || "—"}</td>
+                    <td style={td}>{b.vendor || "—"}</td>
+                    <td style={{ ...td, fontWeight: 700, color: "#1565c0" }}>{b.poNumber}</td>
+                    <td style={td}>{fmtDate(b.dateIssued)}</td>
+                    <td style={td}>{b.createdBy || "—"}</td>
+                    <td style={{ ...td, textAlign: "right", fontWeight: 600 }}>{fmtC(b.total)}</td>
+                  </tr>
+                ))}
+                <tr style={{ background: "#f9fafb", borderTop: "2px solid #e5e7eb" }}>
+                  <td colSpan={6} style={{ ...td, fontWeight: 800 }}>TOTAL</td>
+                  <td style={{ ...td, textAlign: "right", fontWeight: 800, fontSize: 14 }}>{fmtC(billGrandTotal)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {addPOOpen && <AddPOModal jobId={jobId} jobNumber={jobNumber} onClose={() => setAddPOOpen(false)} />}
+    </div>
+  );
+}
