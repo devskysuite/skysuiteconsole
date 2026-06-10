@@ -236,7 +236,7 @@ export default function Nav() {
         {BASE_LINKS.map(l => (
           <Link key={l.to} to={l.to} style={{
             ...styles.link,
-            ...(pathname === l.to || pathname.startsWith(l.to + "/") || (l.to === "/dashboard" && (pathname === "/tools" || pathname.startsWith("/tools/") || pathname === "/vehicles" || pathname.startsWith("/vehicles/") || pathname === "/bookings" || pathname === "/contacts")) ? styles.linkActive : {}),
+            ...(pathname === l.to || (pathname.startsWith(l.to + "/") && !(l.to === "/on-call" && pathname.startsWith("/on-call/admin"))) || (l.to === "/dashboard" && (pathname === "/tools" || pathname.startsWith("/tools/") || pathname === "/vehicles" || pathname.startsWith("/vehicles/") || pathname === "/bookings" || pathname === "/contacts")) ? styles.linkActive : {}),
           }}>
             {l.label}
           </Link>

@@ -197,6 +197,8 @@ export default function JobDetailPage() {
   const [showHistory, setShowHistory] = useState(false);
   const [statusBusy, setStatusBusy] = useState(false);
   const [addVisitOpen, setAddVisitOpen] = useState(false);
+  const [rescheduleVisitId, setRescheduleVisitId] = useState<string | null>(null);
+  const [rescheduleDate, setRescheduleDate] = useState("");
 
   // Edit mode
   const [editing, setEditing] = useState(false);
@@ -712,21 +714,47 @@ export default function JobDetailPage() {
                           onClick={() => navigate(`/jobs/${jobId}/visits/${visit.id}`)}
                         >
                           <span style={{ fontSize: 14, fontWeight: 700, color: "#111827" }}>Visit #{visit.visitNumber}</span>
-                          <select
-                            value={visit.status}
-                            onClick={e => e.stopPropagation()}
-                            onChange={e => { e.stopPropagation(); changeVisitStatus(visit.id, visit.visitNumber, e.target.value); }}
-                            style={{
-                              background: vsc.bg, color: vsc.color,
-                              border: `1px solid ${vsc.border}`,
-                              borderRadius: 6, padding: "3px 8px",
-                              fontSize: 11, fontWeight: 700, cursor: "pointer",
-                              appearance: "auto" as React.CSSProperties["appearance"],
-                            }}
-                          >
-                            {VISIT_STATUSES.map(s => <option key={s} value={s}>{VISIT_STATUS_LABELS[s]}</option>)}
-                          </select>
+                          <span style={{ background: vsc.bg, color: vsc.color, border: `1px solid ${vsc.border}`, borderRadius: 6, padding: "3px 8px", fontSize: 11, fontWeight: 700 }}>
+                            {VISIT_STATUS_LABELS[visit.status] || visit.status}
+                          </span>
+                          {visit.status === "canceled" ? (
+                            <span style={{ fontSize: 11, color: "#991b1b", fontWeight: 600 }}>⛔ Cannot be reopened</span>
+                          ) : (
+                            <div style={{ display: "flex", gap: 6 }} onClick={e => e.stopPropagation()}>
+                              <button
+                                onClick={() => { setRescheduleVisitId(rescheduleVisitId === visit.id ? null : visit.id); setRescheduleDate(visit.date || ""); }}
+                                style={{ background: "#1565c0", color: "#fff", border: "none", borderRadius: 6, padding: "3px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}
+                              >📅 Reschedule</button>
+                              <button
+                                onClick={() => changeVisitStatus(visit.id, visit.visitNumber, "complete")}
+                                style={{ background: "#16a34a", color: "#fff", border: "none", borderRadius: 6, padding: "3px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}
+                              >✓ Complete</button>
+                              <button
+                                onClick={() => { if (window.confirm("Cancel this visit? This cannot be undone.")) changeVisitStatus(visit.id, visit.visitNumber, "canceled"); }}
+                                style={{ background: "transparent", color: "#dc2626", border: "1px solid #fca5a5", borderRadius: 6, padding: "3px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}
+                              >✕ Cancel</button>
+                            </div>
+                          )}
                         </div>
+
+                        {/* Reschedule picker */}
+                        {rescheduleVisitId === visit.id && (
+                          <div style={{ display: "flex", gap: 8, alignItems: "center", padding: "8px 18px", borderBottom: "1px solid #f3f4f6" }} onClick={e => e.stopPropagation()}>
+                            <input type="date" value={rescheduleDate} onChange={e => setRescheduleDate(e.target.value)}
+                              style={{ border: "1px solid #d1d5db", borderRadius: 6, padding: "5px 10px", fontSize: 13 }} />
+                            <button
+                              disabled={!rescheduleDate || statusBusy}
+                              onClick={async () => {
+                                if (!rescheduleDate) return;
+                                await updateDoc(doc(db, "dispatchVisits", visit.id), { date: rescheduleDate, status: "scheduled" });
+                                setRescheduleVisitId(null);
+                              }}
+                              style={{ background: "#1565c0", color: "#fff", border: "none", borderRadius: 6, padding: "5px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
+                            >Confirm</button>
+                            <button onClick={() => setRescheduleVisitId(null)}
+                              style={{ background: "#6b7280", color: "#fff", border: "none", borderRadius: 6, padding: "5px 10px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>✕</button>
+                          </div>
+                        )}
 
                         {/* Visit fields */}
                         <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "0 16px", padding: "14px 18px" }}>
