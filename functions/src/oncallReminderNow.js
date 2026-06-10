@@ -31,15 +31,23 @@ export const oncallReminderNow = onCall({ cors: true }, async (request) => {
       url = json["@odata.nextLink"] || null;
     }
 
-    const onCallNames  = new Set();
     const vacationNames = new Set();
+    const outlookOnCall = new Set();
     for (const e of evs) {
       const s    = (e.subject || "").toLowerCase();
       const name = firstNameFromSubject(e.subject);
       if (!name) continue;
       if (s.includes("vacation")) vacationNames.add(name);
-      else if (s.includes("on call") || s.includes("oncall")) onCallNames.add(name);
+      else if (s.includes("on call") || s.includes("oncall")) outlookOnCall.add(name);
     }
+
+    // onCallAssignments (swaps) override Outlook for on-call names
+    const assignSnap = await db.collection("onCallAssignments").where("date", "==", today).get();
+    const onCallNames = new Set(
+      !assignSnap.empty
+        ? assignSnap.docs.map(d => (d.data().employeeName || "").split(/\s+/)[0].toLowerCase()).filter(Boolean)
+        : [...outlookOnCall]
+    );
 
     const usersSnap = await db.collection("users").get();
     const users     = usersSnap.docs.map(d => d.data());

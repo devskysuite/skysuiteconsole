@@ -194,12 +194,15 @@ export default function DispatchPage() {
           const firstName = personName.split(/\s+/)[0].toLowerCase();
           if (!firstName || firstName === "vacation") continue;
 
-          // Expand multi-day events across each day in range
-          const evStart = new Date(ev.start?.dateTime ? ev.start.dateTime + "Z" : ev.start?.date + "T00:00:00");
-          const evEnd   = new Date(ev.end?.dateTime   ? ev.end.dateTime   + "Z" : ev.end?.date   + "T00:00:00");
-          const cur = new Date(evStart);
-          while (cur < evEnd) {
-            const d = cur.toLocaleDateString("en-CA", { timeZone: TZ });
+          // Use just the date portion — avoids timezone shift from appending "Z"
+          // to dateTime values already returned in Toronto local time by the Prefer header
+          const evStartDate = ev.start?.date || ev.start?.dateTime?.slice(0, 10) || "";
+          const evEndDate   = ev.end?.date   || ev.end?.dateTime?.slice(0, 10)   || "";
+          if (!evStartDate || !evEndDate) continue;
+          let cur = new Date(evStartDate + "T12:00:00"); // noon avoids DST edge cases
+          const endD = new Date(evEndDate + "T12:00:00");
+          while (cur < endD) {
+            const d = fmtYMD(cur);
             if (d >= start && d <= end) {
               const key = `${firstName}|${d}`;
               (map[key] ||= []).push({ type, label: subj });
@@ -231,6 +234,25 @@ export default function DispatchPage() {
     });
     return m;
   }, [visits, flaggedOnly, activeStatus]);
+
+  const weekSummary = useMemo(() => {
+    const vacations: Record<string, string[]> = {};
+    const oncall: Record<string, string> = {};
+    for (const [key, chips] of Object.entries(calMap)) {
+      const [, date] = key.split("|");
+      for (const chip of chips) {
+        if (chip.type === "vacation") {
+          const m = chip.label.match(/vacation\s*[-–]\s*(.+)/i);
+          const name = m ? m[1].trim() : key.split("|")[0];
+          (vacations[date] ||= []).push(name);
+        } else if (chip.type === "oncall") {
+          const m = chip.label.match(/^(.+?)\s+(?:on\s+call|oncall)/i);
+          oncall[date] = m ? m[1].trim() : key.split("|")[0];
+        }
+      }
+    }
+    return { vacations, oncall };
+  }, [calMap]);
 
   function shift(dir: number) {
     const d = new Date(anchor + "T00:00:00");
@@ -328,6 +350,40 @@ export default function DispatchPage() {
           <button style={s.todayBtn} onClick={() => setAnchor(todayStr())}>TODAY</button>
         </div>
       </div>
+
+      {/* ── Weekly vacation + on-call preview ── */}
+      {(Object.keys(weekSummary.oncall).length > 0 || Object.keys(weekSummary.vacations).length > 0) && (
+        <div style={{ background: "#f0f4ff", borderBottom: "1px solid #dbe4ff", padding: "8px 18px", display: "flex", gap: 24, flexWrap: "wrap", fontSize: 12 }}>
+          {days.some(d => weekSummary.oncall[d]) && (
+            <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+              <span style={{ fontWeight: 800, color: "#6d28d9", flexShrink: 0 }}>📞 On Call:</span>
+              {days.map(d => weekSummary.oncall[d] ? (
+                <span key={d} style={{ background: "#ede9fe", color: "#5b21b6", borderRadius: 99, padding: "2px 9px", fontWeight: 600 }}>
+                  {DAY_NAMES[(new Date(d + "T00:00:00").getDay() + 6) % 7]}: {weekSummary.oncall[d]}
+                </span>
+              ) : null)}
+            </div>
+          )}
+          {Object.keys(weekSummary.vacations).some(d => days.includes(d)) && (
+            <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+              <span style={{ fontWeight: 800, color: "#c2410c", flexShrink: 0 }}>☀ Vacation:</span>
+              {(() => {
+                const people: Record<string, string[]> = {};
+                for (const d of days) {
+                  for (const name of weekSummary.vacations[d] || []) {
+                    (people[name] ||= []).push(DAY_NAMES[(new Date(d + "T00:00:00").getDay() + 6) % 7]);
+                  }
+                }
+                return Object.entries(people).map(([name, dayList]) => (
+                  <span key={name} style={{ background: "#fff7ed", color: "#9a3412", borderRadius: 99, padding: "2px 9px", fontWeight: 600 }}>
+                    {name} ({dayList.join(", ")})
+                  </span>
+                ));
+              })()}
+            </div>
+          )}
+        </div>
+      )}
 
       {loading ? (
         <div style={{ padding: 40, textAlign: "center" }}><Spinner /></div>
