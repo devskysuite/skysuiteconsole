@@ -95,6 +95,14 @@ function IconPricebook() {
     </svg>
   );
 }
+function IconPayroll() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="12" y1="1" x2="12" y2="23"/>
+      <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+    </svg>
+  );
+}
 
 // ── Nav data ──────────────────────────────────────────────────────────────────
 const BASE_LINKS = [
@@ -112,6 +120,10 @@ const DIRECTORY_ITEMS: { to: string; label: string; icon: React.ReactNode }[] = 
 
 const RESOURCE_ITEMS: { to: string; label: string; icon: React.ReactNode }[] = [
   { to: "/pid-tuning", label: "PID Tuning", icon: <IconSliders /> },
+];
+
+const ACCOUNTING_ITEMS: { to: string; label: string; icon: React.ReactNode }[] = [
+  { to: "/accounting/payroll", label: "Payroll", icon: <IconPayroll /> },
 ];
 
 const ADMIN_ITEMS: { to: string; label: string; icon: React.ReactNode }[] = [
@@ -142,10 +154,12 @@ export default function Nav() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [resourcesMenuOpen, setResourcesMenuOpen] = useState(false);
   const [directoryMenuOpen, setDirectoryMenuOpen] = useState(false);
+  const [accountingMenuOpen, setAccountingMenuOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const dropdownRef    = useRef<HTMLDivElement>(null);
   const resourcesRef   = useRef<HTMLDivElement>(null);
   const directoryRef   = useRef<HTMLDivElement>(null);
+  const accountingRef  = useRef<HTMLDivElement>(null);
   const [userName, setUserName] = useState("");
   const [pendingTimeOff, setPendingTimeOff] = useState(0);
 
@@ -179,6 +193,7 @@ export default function Nav() {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) setMenuOpen(false);
       if (resourcesRef.current && !resourcesRef.current.contains(e.target as Node)) setResourcesMenuOpen(false);
       if (directoryRef.current && !directoryRef.current.contains(e.target as Node)) setDirectoryMenuOpen(false);
+      if (accountingRef.current && !accountingRef.current.contains(e.target as Node)) setAccountingMenuOpen(false);
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
@@ -188,6 +203,7 @@ export default function Nav() {
     setMenuOpen(false);
     setResourcesMenuOpen(false);
     setDirectoryMenuOpen(false);
+    setAccountingMenuOpen(false);
     setMobileMenuOpen(false);
   }, [pathname]);
 
@@ -275,6 +291,28 @@ export default function Nav() {
           )}
         </div>
 
+        {/* Accounting dropdown */}
+        <div ref={accountingRef} style={{ position: "relative" }}>
+          <button
+            style={{ ...styles.dropBtn, ...(ACCOUNTING_ITEMS.some(i => pathname === i.to || pathname.startsWith(i.to + "/")) ? styles.linkActive : {}) }}
+            onClick={() => setAccountingMenuOpen(v => !v)}
+          >
+            Accounting <Caret open={accountingMenuOpen} />
+          </button>
+          {accountingMenuOpen && (
+            <div style={styles.dropdown}>
+              <div style={styles.dropdownInner}>
+                {ACCOUNTING_ITEMS.map(item => (
+                  <Link key={item.to} to={item.to} style={{ ...styles.dropdownItem, ...(pathname === item.to || pathname.startsWith(item.to + "/") ? styles.dropdownItemActive : {}) }}>
+                    <span style={{ ...styles.itemIcon, color: pathname.startsWith(item.to) ? "#1565c0" : "#6b7280" }}>{item.icon}</span>
+                    {item.label}
+                  </Link>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
         {/* Admin dropdown */}
         {isAdmin && (
           <div ref={dropdownRef} style={{ position: "relative" }}>
@@ -309,6 +347,7 @@ export default function Nav() {
       <Link to="/time-off" className="mobile-nav-link">Vacation</Link>
       {DIRECTORY_ITEMS.map(item => <Link key={item.to} to={item.to} className="mobile-nav-link">{item.label}</Link>)}
       {RESOURCE_ITEMS.map(item => <Link key={item.to} to={item.to} className="mobile-nav-link">{item.label}</Link>)}
+      {ACCOUNTING_ITEMS.map(item => <Link key={item.to} to={item.to} className="mobile-nav-link">{item.label}</Link>)}
       {isAdmin && ADMIN_ITEMS.map(item => <Link key={item.to} to={item.to} className="mobile-nav-link">{item.label}</Link>)}
       <button
         className="mobile-nav-link"

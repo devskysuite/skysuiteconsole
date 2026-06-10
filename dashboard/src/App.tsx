@@ -32,6 +32,7 @@ import VendorsPage from "./pages/VendorsPage";
 import PricebookPage from "./pages/PricebookPage";
 import JobDetailPage from "./pages/JobDetailPage";
 import VisitDetailPage from "./pages/VisitDetailPage";
+import PayrollPage from "./pages/PayrollPage";
 import Nav from "./components/Nav";
 import { ToastProvider } from "./components/Toast";
 import Spinner from "./components/Spinner";
@@ -61,7 +62,7 @@ import { useLocation } from "react-router-dom";
 
 function AppLayout({ children }: { children: React.ReactNode }) {
   const { pathname } = useLocation();
-  const fullWidth = pathname.startsWith("/dispatch") || pathname.startsWith("/on-call") || pathname.startsWith("/time-off") || pathname.startsWith("/customers") || pathname.startsWith("/properties") || pathname.startsWith("/vendors") || pathname.startsWith("/pricebook") || pathname.startsWith("/jobs");
+  const fullWidth = pathname.startsWith("/dispatch") || pathname.startsWith("/on-call") || pathname.startsWith("/time-off") || pathname.startsWith("/customers") || pathname.startsWith("/properties") || pathname.startsWith("/vendors") || pathname.startsWith("/pricebook") || pathname.startsWith("/jobs") || pathname.startsWith("/accounting");
   return (
     <>
       <Nav />
@@ -125,6 +126,7 @@ export default function App() {
                       <Route path="/pricebook" element={<PricebookPage />} />
                       <Route path="/jobs/:jobId" element={<JobDetailPage />} />
                       <Route path="/jobs/:jobId/visits/:visitId" element={<VisitDetailPage />} />
+                      <Route path="/accounting/payroll" element={<PayrollPage />} />
                     </Routes>
                 </AppLayout>
               </RequireAuth>
