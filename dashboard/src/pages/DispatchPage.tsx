@@ -1,12 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  collection, onSnapshot, query, addDoc, updateDoc, deleteDoc, doc, serverTimestamp,
+  collection, onSnapshot, query, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, getDocs,
 } from "firebase/firestore";
 import { db, auth } from "../firebase";
 import { useIsAdmin } from "../hooks/useIsAdmin";
 import Spinner from "../components/Spinner";
 import { getOutlookToken } from "../utils/outlookToken";
+
+type OnCallAssignment = { id: string; date: string; uid: string; employeeName: string };
+type DispatchUser    = { uid: string; displayName: string };
 
 type Visit = {
   id: string;
@@ -89,6 +92,15 @@ export default function DispatchPage() {
   const [modal, setModal] = useState<{ techUid: string; techName: string; date: string; visit?: Visit } | null>(null);
   const [calMap, setCalMap] = useState<CalMap>({});
 
+  // On-call swap state
+  const [assignments, setAssignments]     = useState<OnCallAssignment[]>([]);
+  const [allUsers, setAllUsers]           = useState<DispatchUser[]>([]);
+  const [swapModal, setSwapModal]         = useState<{ assignment: OnCallAssignment } | null>(null);
+  const [swapToUid, setSwapToUid]         = useState("");
+  const [swapOfferDate, setSwapOfferDate] = useState("");
+  const [swapReason, setSwapReason]       = useState("");
+  const [swapping, setSwapping]           = useState(false);
+
   // Technicians flagged to show on the dispatch board
   useEffect(() => {
     const unsub = onSnapshot(collection(db, "users"), snap => {
@@ -109,6 +121,25 @@ export default function DispatchPage() {
       setVisits(snap.docs.map(d => ({ id: d.id, ...d.data() } as Visit)));
     }, () => {});
     return unsub;
+  }, []);
+
+  // On-call assignments (real-time)
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, "onCallAssignments"), snap => {
+      setAssignments(snap.docs.map(d => ({ id: d.id, ...d.data() } as OnCallAssignment)));
+    }, () => {});
+    return unsub;
+  }, []);
+
+  // All users for swap dropdown
+  useEffect(() => {
+    getDocs(collection(db, "users")).then(snap => {
+      const list = snap.docs.map(d => ({
+        uid: (d.data().uid || d.id) as string,
+        displayName: (d.data().displayName || d.data().email || "") as string,
+      })).filter(u => u.displayName).sort((a, b) => a.displayName.localeCompare(b.displayName));
+      setAllUsers(list);
+    }).catch(() => {});
   }, []);
 
   const days = useMemo(() => (view === "week" ? weekDays(anchor) : [anchor]), [view, anchor]);
@@ -208,6 +239,66 @@ export default function DispatchPage() {
     return c;
   }, [visits]);
 
+  // On-call swap handlers
+  const requesterOnCallDays = assignments
+    .filter(a => a.uid === swapToUid && a.date >= todayStr())
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  function openSwap(date: string) {
+    const assignment = assignments.find(a => a.date === date);
+    if (!assignment) return;
+    setSwapModal({ assignment });
+    setSwapToUid(""); setSwapOfferDate(""); setSwapReason("");
+  }
+
+  function closeSwap() {
+    setSwapModal(null); setSwapToUid(""); setSwapOfferDate(""); setSwapReason("");
+  }
+
+  async function submitSwap() {
+    if (!swapModal || !swapToUid) return;
+    const { assignment } = swapModal;
+    const newPerson = allUsers.find(u => u.uid === swapToUid);
+    if (!newPerson) return;
+    setSwapping(true);
+    try {
+      if (isAdmin) {
+        await updateDoc(doc(db, "onCallAssignments", assignment.id), {
+          uid: swapToUid, employeeName: newPerson.displayName,
+        });
+        if (swapOfferDate) {
+          const existing = assignments.find(a => a.date === swapOfferDate && a.uid === swapToUid);
+          if (existing) {
+            await updateDoc(doc(db, "onCallAssignments", existing.id), {
+              uid: assignment.uid, employeeName: assignment.employeeName,
+            });
+          } else {
+            await addDoc(collection(db, "onCallAssignments"), {
+              date: swapOfferDate, uid: assignment.uid, employeeName: assignment.employeeName,
+              assignedByUid: auth.currentUser?.uid || "", createdAt: serverTimestamp(),
+            });
+          }
+        }
+      } else {
+        let targetAssignmentId = "";
+        if (swapOfferDate) {
+          const match = assignments.find(a => a.date === swapOfferDate && a.uid === swapToUid);
+          if (match) targetAssignmentId = match.id;
+        }
+        await addDoc(collection(db, "onCallSwapRequests"), {
+          date: assignment.date, assignmentId: assignment.id,
+          requesterUid: swapToUid, requesterName: newPerson.displayName,
+          targetUid: assignment.uid, targetName: assignment.employeeName,
+          targetDate: swapOfferDate || "", targetAssignmentId,
+          reason: swapReason.trim(), status: "PENDING",
+          createdAt: serverTimestamp(), resolvedAt: null,
+        });
+      }
+      closeSwap();
+    } catch {}
+    setSwapping(false);
+  }
+
   if (isAdmin === null) return <div style={{ padding: 40, textAlign: "center" }}><Spinner /></div>;
 
   return (
@@ -262,6 +353,7 @@ export default function DispatchPage() {
                   if (v.jobId) { navigate(`/jobs/${v.jobId}`); }
                   else { setModal({ techUid: t.uid, techName: t.name, date: v.date, visit: v }); }
                 }}
+                onSwap={openSwap}
                 canEdit={!!isAdmin} />
             ))}
           </div>
@@ -290,13 +382,73 @@ export default function DispatchPage() {
           onClose={() => setModal(null)}
         />
       )}
+
+      {/* ── On-Call Swap Modal ── */}
+      {swapModal && (
+        <div style={s.backdrop} onClick={closeSwap}>
+          <div style={s.modal} onClick={e => e.stopPropagation()}>
+            <h2 style={{ fontSize: 17, fontWeight: 800, color: "#0d2e5e", marginBottom: 4 }}>
+              {isAdmin ? "Swap On-Call Day" : "Request On-Call Swap"}
+            </h2>
+            <p style={{ fontSize: 13, color: "#6b7280", marginBottom: 18 }}>
+              {new Date(swapModal.assignment.date + "T00:00:00").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}
+              {" — "}<strong style={{ color: "#111827" }}>{swapModal.assignment.employeeName}</strong> is on call
+            </p>
+
+            <label style={s.lbl}>{isAdmin ? "Swap to" : "Who will cover?"}</label>
+            <select style={s.inp} value={swapToUid} onChange={e => { setSwapToUid(e.target.value); setSwapOfferDate(""); }}>
+              <option value="">Select employee…</option>
+              {allUsers.filter(u => u.uid !== swapModal.assignment.uid).map(u => (
+                <option key={u.uid} value={u.uid}>{u.displayName}</option>
+              ))}
+            </select>
+
+            {swapToUid && (
+              <>
+                <label style={s.lbl}>Offer a day in exchange (optional)</label>
+                <select style={s.inp} value={swapOfferDate} onChange={e => setSwapOfferDate(e.target.value)}>
+                  <option value="">None — just take over the day</option>
+                  {requesterOnCallDays.map(d => (
+                    <option key={d.id} value={d.date}>
+                      {new Date(d.date + "T00:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
+                    </option>
+                  ))}
+                </select>
+              </>
+            )}
+
+            {!isAdmin && (
+              <>
+                <label style={s.lbl}>Reason (optional)</label>
+                <textarea
+                  style={{ ...s.inp, minHeight: 60, resize: "vertical", fontFamily: "inherit" }}
+                  value={swapReason}
+                  onChange={e => setSwapReason(e.target.value)}
+                  placeholder="Why do you need to swap?"
+                />
+              </>
+            )}
+
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
+              <button onClick={closeSwap} style={s.cancelBtn}>Cancel</button>
+              <button
+                onClick={submitSwap}
+                disabled={swapping || !swapToUid}
+                style={{ ...s.saveBtn, opacity: (swapping || !swapToUid) ? 0.5 : 1 }}
+              >
+                {swapping ? "Saving…" : isAdmin ? "Swap Now" : "Send Request"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-function Row({ tech, days, byCell, calMap, onAdd, onOpen, canEdit }: {
+function Row({ tech, days, byCell, calMap, onAdd, onOpen, onSwap, canEdit }: {
   tech: Tech; days: string[]; byCell: Record<string, Visit[]>; calMap: CalMap;
-  onAdd: (date: string) => void; onOpen: (v: Visit) => void; canEdit: boolean;
+  onAdd: (date: string) => void; onOpen: (v: Visit) => void; onSwap: (date: string) => void; canEdit: boolean;
 }) {
   const firstName = tech.name.split(/\s+/)[0].toLowerCase();
   return (
@@ -314,12 +466,16 @@ function Row({ tech, days, byCell, calMap, onAdd, onOpen, canEdit }: {
         return (
           <div key={d} style={s.cell} onClick={() => canEdit && onAdd(d)} title={canEdit ? "Click to add a visit" : ""}>
             {chips.map((chip, i) => (
-              <div key={i} style={{
-                borderRadius: 5, padding: "4px 8px", marginBottom: 5, fontSize: 11, fontWeight: 700,
-                background: chip.type === "vacation" ? "#fff7ed" : "#f5f3ff",
-                color:      chip.type === "vacation" ? "#c2410c"  : "#6d28d9",
-                border:     `1px solid ${chip.type === "vacation" ? "#fed7aa" : "#ddd6fe"}`,
-              }}>
+              <div key={i}
+                onClick={chip.type === "oncall" ? (e) => { e.stopPropagation(); onSwap(d); } : undefined}
+                title={chip.type === "oncall" ? "Click to swap on-call" : undefined}
+                style={{
+                  borderRadius: 5, padding: "4px 8px", marginBottom: 5, fontSize: 11, fontWeight: 700,
+                  background: chip.type === "vacation" ? "#fff7ed" : "#f5f3ff",
+                  color:      chip.type === "vacation" ? "#c2410c"  : "#6d28d9",
+                  border:     `1px solid ${chip.type === "vacation" ? "#fed7aa" : "#ddd6fe"}`,
+                  cursor:     chip.type === "oncall" ? "pointer" : "default",
+                }}>
                 {chip.type === "vacation" ? "☀ Vacation" : "📞 On Call"}
               </div>
             ))}
