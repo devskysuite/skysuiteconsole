@@ -190,7 +190,7 @@ export default function PayrollPage() {
     setCleaningUp(true);
     try {
       const [paySnap, visitsSnap] = await Promise.all([
-        getDocs(query(collection(db, "payrollEntries"), where("source", "==", "visit"))),
+        getDocs(query(collection(db, "payrollEntries"), where("visitId", ">", ""))),
         getDocs(collection(db, "dispatchVisits")),
       ]);
       const cancelledIds = new Set(visitsSnap.docs.filter(d => d.data().status === "canceled").map(d => d.id));
