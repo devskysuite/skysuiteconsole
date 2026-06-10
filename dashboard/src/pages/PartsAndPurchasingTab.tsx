@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { arrayUnion, collection, doc, getDoc, onSnapshot, query, updateDoc, where } from "firebase/firestore";
+import { arrayUnion, collection, doc, getDoc, getDocs, onSnapshot, query, updateDoc, where } from "firebase/firestore";
 import { auth, db } from "../firebase";
 import { Link } from "react-router-dom";
 import CreatePOModal from "./CreatePOModal";
@@ -7,6 +7,7 @@ import CreatePOModal from "./CreatePOModal";
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface POItem {
   id: string;
+  name?: string;
   description: string;
   fulfillmentStatus: string;
   quantityOrdered: number;
@@ -116,8 +117,9 @@ function AddItemRow({ poId, poVendor, onDone }: { poId: string; poVendor: string
     // get current total and items
     const snap = await getDoc(ref);
     const data = snap.data() as PurchaseOrder;
-    const newTotal = (data.total || 0) + item.totalCost;
-    await updateDoc(ref, { items: arrayUnion(item), total: newTotal });
+    const existingItemsTotal = (data.items || []).reduce((s: number, i: POItem) => s + (i.totalCost || 0), 0);
+    const newTotal = existingItemsTotal + item.totalCost;
+    await updateDoc(ref, { items: arrayUnion(item), subtotal: newTotal, total: newTotal });
     onDone();
   }
 
@@ -182,9 +184,12 @@ function AddBillRow({ poId, poNumber, poVendor, onDone }: { poId: string; poNumb
 }
 
 // ── Main Component ─────────────────────────────────────────────────────────────
+interface VisitPart { id: string; description: string; qty: number; unitCost: number; notes: string; visitNumber: number; visitDate: string; visitId: string; }
+
 export default function PartsAndPurchasingTab({ jobId, jobNumber }: Props) {
   const [pos, setPOs]         = useState<PurchaseOrder[]>([]);
   const [loading, setLoading] = useState(true);
+  const [visitParts, setVisitParts] = useState<VisitPart[]>([]);
   const [addPOOpen, setAddPOOpen]     = useState(false);
   const [expandedPO, setExpandedPO]   = useState<string | null>(null);
   const [addingItemTo, setAddingItemTo] = useState<string | null>(null);
@@ -204,11 +209,26 @@ export default function PartsAndPurchasingTab({ jobId, jobNumber }: Props) {
     return unsub;
   }, [jobId]);
 
+  useEffect(() => {
+    getDocs(query(collection(db, "dispatchVisits"), where("jobId", "==", jobId))).then(snap => {
+      const parts: VisitPart[] = [];
+      for (const d of snap.docs) {
+        const v = d.data() as any;
+        for (const p of (v.parts || [])) {
+          parts.push({ ...p, visitId: d.id, visitNumber: v.visitNumber || 0, visitDate: v.date || "" });
+        }
+      }
+      parts.sort((a, b) => a.visitNumber - b.visitNumber);
+      setVisitParts(parts);
+    }).catch(err => console.error("Visit parts query error:", err));
+  }, [jobId]);
+
   const allItems = pos.flatMap(po => (po.items || []).map(item => ({ ...item, poNumber: po.poNumber, vendor: po.vendor || item.description })));
   const allBills = pos.flatMap(po => (po.bills || []).map(bill => ({ ...bill, poNumber: po.poNumber })));
-  const poGrandTotal   = pos.reduce((s, p) => s + (p.total || 0), 0);
-  const itemGrandTotal = allItems.reduce((s, i) => s + (i.totalCost || 0), 0);
-  const billGrandTotal = allBills.reduce((s, b) => s + (b.total || 0), 0);
+  const poGrandTotal      = pos.reduce((s, p) => s + (p.total || 0), 0);
+  const itemGrandTotal    = allItems.reduce((s, i) => s + (i.totalCost || 0), 0);
+  const billGrandTotal    = allBills.reduce((s, b) => s + (b.total || 0), 0);
+  const visitPartsTotal   = visitParts.reduce((s, p) => s + (p.qty || 0) * (p.unitCost || 0), 0);
 
   async function changePOStatus(poId: string, status: string) {
     await updateDoc(doc(db, "purchaseOrders", poId), { status });
@@ -303,7 +323,7 @@ export default function PartsAndPurchasingTab({ jobId, jobNumber }: Props) {
                               )}
                               {(po.items || []).map(item => (
                                 <tr key={item.id} style={{ borderTop: "1px solid #f3f4f6" }}>
-                                  <td style={td}>{item.description}</td>
+                                  <td style={td}>{item.name || item.description || "—"}</td>
                                   <td style={td}><StatusBadge status={item.fulfillmentStatus} /></td>
                                   <td style={{ ...td, textAlign: "center" }}>{item.quantityOrdered}</td>
                                   <td style={{ ...td, textAlign: "center" }}>{item.quantityReceived}</td>
@@ -398,7 +418,7 @@ export default function PartsAndPurchasingTab({ jobId, jobNumber }: Props) {
                 {allItems.map((item, i) => (
                   <tr key={item.id + i} style={{ borderBottom: "1px solid #f3f4f6" }}>
                     <td style={{ ...td, fontWeight: 700, color: "#1565c0" }}>{item.poNumber}</td>
-                    <td style={td}>{item.description}</td>
+                    <td style={td}>{item.name || item.description || "—"}</td>
                     <td style={td}>{item.vendor || "—"}</td>
                     <td style={td}><StatusBadge status={item.fulfillmentStatus} /></td>
                     <td style={{ ...td, textAlign: "center" }}>{item.quantityOrdered}</td>
@@ -454,6 +474,50 @@ export default function PartsAndPurchasingTab({ jobId, jobNumber }: Props) {
           </div>
         </div>
       )}
+
+      {/* ── Parts Used on Visits ── */}
+      <div>
+        <SectionHead title="Parts Used on Visits" />
+        {visitParts.length === 0 ? (
+          <div style={{ color: "#9ca3af", fontSize: 13, fontStyle: "italic", padding: "10px 0" }}>No parts recorded on visits for this job.</div>
+        ) : (
+          <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead>
+                <tr style={{ background: "#f9fafb", borderBottom: "1px solid #e5e7eb" }}>
+                  <th style={th}>Visit #</th>
+                  <th style={th}>Date</th>
+                  <th style={th}>Description</th>
+                  <th style={th}>Notes</th>
+                  <th style={{ ...th, textAlign: "center" }}>Qty</th>
+                  <th style={{ ...th, textAlign: "right" }}>Unit Cost</th>
+                  <th style={{ ...th, textAlign: "right" }}>Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visitParts.map((p, i) => {
+                  const total = (p.qty || 0) * (p.unitCost || 0);
+                  return (
+                    <tr key={p.id + i} style={{ borderBottom: i < visitParts.length - 1 ? "1px solid #f3f4f6" : "none" }}>
+                      <td style={{ ...td, fontWeight: 700, color: "#1565c0" }}>{p.visitNumber || "—"}</td>
+                      <td style={td}>{p.visitDate ? fmtDate(p.visitDate) : "—"}</td>
+                      <td style={td}>{p.description || "—"}</td>
+                      <td style={{ ...td, color: "#6b7280" }}>{p.notes || "—"}</td>
+                      <td style={{ ...td, textAlign: "center" }}>{p.qty}</td>
+                      <td style={{ ...td, textAlign: "right" }}>{fmtC(p.unitCost || 0)}</td>
+                      <td style={{ ...td, textAlign: "right", fontWeight: 700 }}>{fmtC(total)}</td>
+                    </tr>
+                  );
+                })}
+                <tr style={{ background: "#f9fafb", borderTop: "2px solid #e5e7eb" }}>
+                  <td colSpan={6} style={{ ...td, fontWeight: 800 }}>TOTAL</td>
+                  <td style={{ ...td, textAlign: "right", fontWeight: 800, fontSize: 14 }}>{fmtC(visitPartsTotal)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
 
       {addPOOpen && <CreatePOModal jobId={jobId} jobNumber={jobNumber} onClose={() => setAddPOOpen(false)} />}
     </div>

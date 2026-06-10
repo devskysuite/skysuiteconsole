@@ -208,6 +208,7 @@ export default function JobDetailPage() {
   const [costEntries, setCostEntries]   = useState<any[]>([]);
   const [userRates, setUserRates]       = useState<Record<string, { rt: number; ot: number; dt: number; pto: number; laborType: string }>>({});
   const [jobPOs, setJobPOs]             = useState<any[]>([]);
+  const [visitParts, setVisitParts]     = useState<any[]>([]);
   const [costLoaded, setCostLoaded]     = useState(false);
 
   // Edit mode
@@ -281,9 +282,19 @@ export default function JobDetailPage() {
       getDocs(query(collection(db, "payrollEntries"), where("jobId", "==", jobId))),
       getDocs(query(collection(db, "users"), where("showInDispatch", "==", true))),
       getDocs(query(collection(db, "purchaseOrders"), where("jobId", "==", jobId))),
-    ]).then(([paySnap, userSnap, poSnap]) => {
+      getDocs(query(collection(db, "dispatchVisits"), where("jobId", "==", jobId))),
+    ]).then(([paySnap, userSnap, poSnap, visitSnap]) => {
       setCostEntries(paySnap.docs.map(d => ({ id: d.id, ...d.data() })));
       setJobPOs(poSnap.docs.map(d => ({ id: d.id, ...d.data() as any })));
+      const parts: any[] = [];
+      for (const d of visitSnap.docs) {
+        const v = d.data() as any;
+        for (const p of (v.parts || [])) {
+          parts.push({ ...p, visitId: d.id, visitNumber: v.visitNumber || 0, visitDate: v.date || "" });
+        }
+      }
+      parts.sort((a, b) => a.visitNumber - b.visitNumber);
+      setVisitParts(parts);
       const rates: typeof userRates = {};
       for (const d of userSnap.docs) {
         const data = d.data() as any;
@@ -1051,52 +1062,106 @@ export default function JobDetailPage() {
                     Rates set in Accounting → Labor Rate Settings. Only entries with a jobId linked to this job are included.
                   </div>
 
-                  {/* Materials */}
-                  <div style={{ marginTop: 32, fontSize: 13, fontWeight: 700, color: "#6b7280", letterSpacing: 0.5, textTransform: "uppercase", marginBottom: 16 }}>Materials — Purchase Orders</div>
+                  {/* Materials — Purchase Orders */}
+                  <div style={{ marginTop: 32, fontSize: 13, fontWeight: 700, color: "#6b7280", letterSpacing: 0.5, textTransform: "uppercase", marginBottom: 12 }}>Materials — Purchase Orders</div>
                   {costLoaded && jobPOs.length === 0 && (
-                    <div style={{ color: "#9ca3af", textAlign: "center", paddingTop: 16, paddingBottom: 16 }}>No purchase orders linked to this job yet.</div>
+                    <div style={{ color: "#9ca3af", fontSize: 13, fontStyle: "italic", paddingBottom: 8 }}>No purchase orders linked to this job.</div>
                   )}
-                  {costLoaded && jobPOs.length > 0 && (() => {
-                    const materialTotal = jobPOs.reduce((s, po) => s + (po.total || 0), 0);
-                    return (
-                      <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden" }}>
-                        <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                          <thead>
-                            <tr style={{ background: "#f9fafb", borderBottom: "1px solid #e5e7eb" }}>
-                              <th style={{ ...hdr, textAlign: "left", paddingLeft: 18 }}>PO #</th>
-                              <th style={{ ...hdr, textAlign: "left" }}>Vendor</th>
-                              <th style={{ ...hdr, textAlign: "left" }}>Status</th>
-                              <th style={{ ...hdr, textAlign: "left" }}>Description</th>
-                              <th style={{ ...hdr, width: "120px" }}>Total</th>
+                  {costLoaded && jobPOs.length > 0 && (
+                    <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden" }}>
+                      <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                        <thead>
+                          <tr style={{ background: "#f9fafb", borderBottom: "1px solid #e5e7eb" }}>
+                            <th style={{ ...hdr, textAlign: "left", paddingLeft: 18 }}>PO #</th>
+                            <th style={{ ...hdr, textAlign: "left" }}>Vendor</th>
+                            <th style={{ ...hdr, textAlign: "left" }}>Status</th>
+                            <th style={{ ...hdr, textAlign: "left" }}>Description</th>
+                            <th style={{ ...hdr, width: "120px" }}>Total</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {jobPOs.map((po, i) => (
+                            <tr key={po.id} style={{ borderBottom: i < jobPOs.length - 1 ? "1px solid #f3f4f6" : "none" }}>
+                              <td style={{ padding: "8px 18px", fontSize: 13, fontWeight: 700, color: "#1565c0" }}>{po.poNumber || "—"}</td>
+                              <td style={{ padding: "8px 14px", fontSize: 13, color: "#374151" }}>{po.vendor || "—"}</td>
+                              <td style={{ padding: "8px 14px", fontSize: 13, color: "#374151" }}>{po.status || "—"}</td>
+                              <td style={{ padding: "8px 14px", fontSize: 13, color: "#374151" }}>{po.description || "—"}</td>
+                              <td style={{ ...cell, fontWeight: 600 }}>{`$${((po.items || []).reduce((s: number, it: any) => s + (it.totalCost || 0), 0) || po.total || 0).toLocaleString("en-CA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</td>
                             </tr>
-                          </thead>
-                          <tbody>
-                            {jobPOs.map((po, i) => (
-                              <tr key={po.id} style={{ borderBottom: i < jobPOs.length - 1 ? "1px solid #f3f4f6" : "none" }}>
-                                <td style={{ padding: "8px 18px", fontSize: 13, fontWeight: 700, color: "#1565c0" }}>{po.poNumber || "—"}</td>
-                                <td style={{ padding: "8px 14px", fontSize: 13, color: "#374151" }}>{po.vendor || "—"}</td>
-                                <td style={{ padding: "8px 14px", fontSize: 13, color: "#374151" }}>{po.status || "—"}</td>
-                                <td style={{ padding: "8px 14px", fontSize: 13, color: "#374151" }}>{po.description || "—"}</td>
-                                <td style={{ ...cell, fontWeight: 600 }}>{`$${(po.total || 0).toLocaleString("en-CA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</td>
+                          ))}
+                          <tr style={{ borderTop: "2px solid #e5e7eb", background: "#f9fafb" }}>
+                            <td colSpan={4} style={{ padding: "10px 18px", fontWeight: 800, fontSize: 13 }}>Total POs</td>
+                            <td style={{ ...cell, fontWeight: 800, fontSize: 14, color: "#1565c0" }}>{`$${jobPOs.reduce((s, po) => s + ((po.items || []).reduce((a: number, it: any) => a + (it.totalCost || 0), 0) || po.total || 0), 0).toLocaleString("en-CA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+
+                  {/* Materials — Parts Used on Visits */}
+                  <div style={{ marginTop: 24, fontSize: 13, fontWeight: 700, color: "#6b7280", letterSpacing: 0.5, textTransform: "uppercase", marginBottom: 12 }}>Materials — Parts Used on Visits</div>
+                  {costLoaded && visitParts.length === 0 && (
+                    <div style={{ color: "#9ca3af", fontSize: 13, fontStyle: "italic", paddingBottom: 8 }}>No parts recorded on visits for this job.</div>
+                  )}
+                  {costLoaded && visitParts.length > 0 && (
+                    <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden" }}>
+                      <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                        <thead>
+                          <tr style={{ background: "#f9fafb", borderBottom: "1px solid #e5e7eb" }}>
+                            <th style={{ ...hdr, textAlign: "left", paddingLeft: 18 }}>Visit #</th>
+                            <th style={{ ...hdr, textAlign: "left" }}>Date</th>
+                            <th style={{ ...hdr, textAlign: "left" }}>Description</th>
+                            <th style={{ ...hdr, textAlign: "left" }}>Notes</th>
+                            <th style={{ ...hdr, width: "60px" }}>Qty</th>
+                            <th style={{ ...hdr, width: "100px" }}>Unit Cost</th>
+                            <th style={{ ...hdr, width: "110px" }}>Total</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {visitParts.map((p, i) => {
+                            const total = (p.qty || 0) * (p.unitCost || 0);
+                            return (
+                              <tr key={p.id + i} style={{ borderBottom: i < visitParts.length - 1 ? "1px solid #f3f4f6" : "none" }}>
+                                <td style={{ padding: "8px 18px", fontSize: 13, fontWeight: 700, color: "#1565c0" }}>{p.visitNumber || "—"}</td>
+                                <td style={{ padding: "8px 14px", fontSize: 13, color: "#374151" }}>{p.visitDate || "—"}</td>
+                                <td style={{ padding: "8px 14px", fontSize: 13, color: "#374151" }}>{p.description || "—"}</td>
+                                <td style={{ padding: "8px 14px", fontSize: 13, color: "#6b7280" }}>{p.notes || "—"}</td>
+                                <td style={cell}>{p.qty}</td>
+                                <td style={cell}>{`$${(p.unitCost || 0).toLocaleString("en-CA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</td>
+                                <td style={{ ...cell, fontWeight: 600 }}>{`$${total.toLocaleString("en-CA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</td>
                               </tr>
-                            ))}
-                            <tr style={{ borderTop: "2px solid #e5e7eb", background: "#f9fafb" }}>
-                              <td colSpan={4} style={{ padding: "10px 18px", fontWeight: 800, fontSize: 13 }}>Total Materials</td>
-                              <td style={{ ...cell, fontWeight: 800, fontSize: 14, color: "#1565c0" }}>{`$${materialTotal.toLocaleString("en-CA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</td>
-                            </tr>
-                          </tbody>
-                        </table>
-                      </div>
-                    );
-                  })()}
+                            );
+                          })}
+                          <tr style={{ borderTop: "2px solid #e5e7eb", background: "#f9fafb" }}>
+                            <td colSpan={6} style={{ padding: "10px 18px", fontWeight: 800, fontSize: 13 }}>Total Visit Parts</td>
+                            <td style={{ ...cell, fontWeight: 800, fontSize: 14, color: "#1565c0" }}>{`$${visitParts.reduce((s, p) => s + (p.qty || 0) * (p.unitCost || 0), 0).toLocaleString("en-CA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
 
                   {/* Combined Total */}
-                  {costLoaded && (grandCost > 0 || jobPOs.length > 0) && (() => {
-                    const materialTotal = jobPOs.reduce((s, po) => s + (po.total || 0), 0);
+                  {costLoaded && (() => {
+                    const poTotal      = jobPOs.reduce((s, po) => s + ((po.items || []).reduce((a: number, it: any) => a + (it.totalCost || 0), 0) || po.total || 0), 0);
+                    const partsTotal   = visitParts.reduce((s, p) => s + (p.qty || 0) * (p.unitCost || 0), 0);
+                    const materialTotal = poTotal + partsTotal;
+                    if (grandCost === 0 && materialTotal === 0) return null;
                     return (
-                      <div style={{ marginTop: 20, padding: "16px 20px", background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 10, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                        <span style={{ fontWeight: 800, fontSize: 14, color: "#1e3a8a" }}>Combined Total (Labor + Materials)</span>
-                        <span style={{ fontWeight: 800, fontSize: 18, color: "#1e3a8a" }}>{`$${(grandCost + materialTotal).toLocaleString("en-CA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</span>
+                      <div style={{ marginTop: 20, padding: "16px 20px", background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 10 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6, fontSize: 13, color: "#374151" }}>
+                          <span>Labor</span><span>{`$${grandCost.toLocaleString("en-CA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</span>
+                        </div>
+                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6, fontSize: 13, color: "#374151" }}>
+                          <span>Materials (POs)</span><span>{`$${poTotal.toLocaleString("en-CA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</span>
+                        </div>
+                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12, fontSize: 13, color: "#374151" }}>
+                          <span>Materials (Visit Parts)</span><span>{`$${partsTotal.toLocaleString("en-CA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</span>
+                        </div>
+                        <div style={{ borderTop: "1px solid #bfdbfe", paddingTop: 10, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                          <span style={{ fontWeight: 800, fontSize: 14, color: "#1e3a8a" }}>Combined Total</span>
+                          <span style={{ fontWeight: 800, fontSize: 18, color: "#1e3a8a" }}>{`$${(grandCost + materialTotal).toLocaleString("en-CA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</span>
+                        </div>
                       </div>
                     );
                   })()}
