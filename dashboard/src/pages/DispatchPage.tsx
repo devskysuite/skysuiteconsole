@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  collection, onSnapshot, query, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, getDocs,
+  collection, onSnapshot, query, where, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, getDocs,
 } from "firebase/firestore";
 import { db, auth } from "../firebase";
 import { useIsAdmin } from "../hooks/useIsAdmin";
@@ -596,11 +596,19 @@ function VisitModal({ init, onClose }: { init: { techUid: string; techName: stri
       onClose();
     } catch (e) { setBusy(false); }
   }
+  async function removeVisitPayroll(visitId: string) {
+    const snap = await getDocs(query(collection(db, "payrollEntries"), where("visitId", "==", visitId)));
+    for (const d of snap.docs) await deleteDoc(doc(db, "payrollEntries", d.id));
+  }
   async function remove() {
     if (!v) return;
     if (!window.confirm(`Delete "${v.title}"?`)) return;
     setBusy(true);
-    try { await deleteDoc(doc(db, "dispatchVisits", v.id)); onClose(); } catch { setBusy(false); }
+    try {
+      await removeVisitPayroll(v.id);
+      await deleteDoc(doc(db, "dispatchVisits", v.id));
+      onClose();
+    } catch { setBusy(false); }
   }
   async function confirmReschedule() {
     if (!v || !rescheduleDate) return;
@@ -617,8 +625,11 @@ function VisitModal({ init, onClose }: { init: { techUid: string; techName: stri
   async function cancelVisit() {
     if (!v || !window.confirm("Cancel this visit? This cannot be undone.")) return;
     setBusy(true);
-    try { await updateDoc(doc(db, "dispatchVisits", v.id), { status: "canceled" }); onClose(); }
-    catch { setBusy(false); }
+    try {
+      await removeVisitPayroll(v.id);
+      await updateDoc(doc(db, "dispatchVisits", v.id), { status: "canceled" });
+      onClose();
+    } catch { setBusy(false); }
   }
 
   return (
