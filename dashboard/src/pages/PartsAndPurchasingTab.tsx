@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { arrayUnion, collection, doc, getDoc, onSnapshot, query, updateDoc, where } from "firebase/firestore";
-import { db } from "../firebase";
+import { auth, db } from "../firebase";
 import CreatePOModal from "./CreatePOModal";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -43,7 +43,6 @@ interface PurchaseOrder {
 interface Props { jobId: string; jobNumber: string; }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-const DEPARTMENTS = ["Service","Electrical","Automation","Industrial","Commercial","HVAC","Maintenance","General","Construction","Other"];
 const PO_STATUSES = ["Open","Pending","Fulfilled","Cancelled"];
 const ITEM_STATUSES = ["Pending","Ordered","Fulfilled"];
 
@@ -59,7 +58,6 @@ const STATUS_COLORS: Record<string, { bg: string; color: string; border: string 
 const th: React.CSSProperties = { padding: "9px 12px", fontSize: 11, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: 0.4, textAlign: "left", whiteSpace: "nowrap" };
 const td: React.CSSProperties = { padding: "9px 12px", fontSize: 13, color: "#374151", verticalAlign: "middle" };
 const inp: React.CSSProperties = { width: "100%", padding: "7px 10px", border: "1px solid #d1d5db", borderRadius: 6, fontSize: 13, outline: "none", boxSizing: "border-box" };
-const lbl: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 4, display: "block" };
 
 function fmtDate(iso: string) {
   if (!iso) return "—";
@@ -86,89 +84,6 @@ function SectionHead({ title, action }: { title: string; action?: React.ReactNod
     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
       <div style={{ fontSize: 14, fontWeight: 700, color: "#111827" }}>{title}</div>
       {action}
-    </div>
-  );
-}
-
-// ── Add PO Modal ───────────────────────────────────────────────────────────────
-function AddPOModal({ jobId, jobNumber, onClose }: { jobId: string; jobNumber: string; onClose: () => void }) {
-  const [form, setForm] = useState({
-    poNumber: "", status: "Open", fieldOrder: false,
-    vendor: "", description: "", department: "", assignedTo: "",
-  });
-  const [saving, setSaving] = useState(false);
-
-  function bind(k: keyof typeof form) {
-    return { value: form[k] as string, onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => setForm(f => ({ ...f, [k]: e.target.value })) };
-  }
-
-  async function save() {
-    if (!form.poNumber.trim()) return;
-    setSaving(true);
-    await addDoc(collection(db, "purchaseOrders"), {
-      jobId, jobNumber,
-      poNumber:    form.poNumber.trim(),
-      status:      form.status,
-      fieldOrder:  form.fieldOrder,
-      vendor:      form.vendor.trim(),
-      description: form.description.trim(),
-      department:  form.department,
-      assignedTo:  form.assignedTo.trim(),
-      createdBy:   auth.currentUser?.displayName || auth.currentUser?.email || "Unknown",
-      createdAt:   new Date().toISOString().slice(0, 10),
-      items: [],
-      bills: [],
-      total: 0,
-    });
-    onClose();
-  }
-
-  return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={onClose}>
-      <div style={{ background: "#fff", borderRadius: 12, width: "100%", maxWidth: 560, padding: "24px", boxShadow: "0 12px 40px rgba(0,0,0,0.18)" }} onClick={e => e.stopPropagation()}>
-        <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 20 }}>Add Purchase Order</div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
-          <div>
-            <label style={lbl}>PO Number <span style={{ color: "#ef4444" }}>*</span></label>
-            <input style={inp} placeholder="e.g. 16226" {...bind("poNumber")} />
-          </div>
-          <div>
-            <label style={lbl}>Status</label>
-            <select style={{ ...inp, appearance: "auto" as any }} {...bind("status")}>
-              {PO_STATUSES.map(s => <option key={s}>{s}</option>)}
-            </select>
-          </div>
-          <div>
-            <label style={lbl}>Vendor</label>
-            <input style={inp} placeholder="Vendor name" {...bind("vendor")} />
-          </div>
-          <div>
-            <label style={lbl}>Department</label>
-            <select style={{ ...inp, appearance: "auto" as any }} {...bind("department")}>
-              <option value="">— Select —</option>
-              {DEPARTMENTS.map(d => <option key={d}>{d}</option>)}
-            </select>
-          </div>
-          <div style={{ gridColumn: "1 / -1" }}>
-            <label style={lbl}>Description</label>
-            <input style={inp} placeholder="Optional description" {...bind("description")} />
-          </div>
-          <div>
-            <label style={lbl}>Assigned To</label>
-            <input style={inp} placeholder="Name" {...bind("assignedTo")} />
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, paddingTop: 20 }}>
-            <input type="checkbox" id="fo" checked={form.fieldOrder} onChange={e => setForm(f => ({ ...f, fieldOrder: e.target.checked }))} />
-            <label htmlFor="fo" style={{ fontSize: 13, fontWeight: 600, cursor: "pointer" }}>Field Order</label>
-          </div>
-        </div>
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 4 }}>
-          <button onClick={onClose} style={{ background: "none", border: "1px solid #d1d5db", borderRadius: 6, padding: "8px 18px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>Cancel</button>
-          <button onClick={save} disabled={saving || !form.poNumber.trim()} style={{ background: "#0d2e5e", color: "#fff", border: "none", borderRadius: 6, padding: "8px 22px", fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: saving ? 0.7 : 1 }}>
-            {saving ? "Saving…" : "Add PO"}
-          </button>
-        </div>
-      </div>
     </div>
   );
 }
