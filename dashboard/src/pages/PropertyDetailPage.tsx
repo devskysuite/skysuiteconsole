@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { doc, getDoc, updateDoc } from "firebase/firestore";
 import { db } from "../firebase";
 import { useIsAdmin } from "../hooks/useIsAdmin";
+import CreateJobModal from "./CreateJobModal";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface Property {
@@ -125,8 +126,9 @@ export default function PropertyDetailPage() {
   const isAdmin = useIsAdmin();
   const [property, setProperty] = useState<Property | null>(null);
   const [loading, setLoading]   = useState(true);
-  const [tab, setTab]           = useState<Tab>("Jobs & Visits");
-  const [editOpen, setEditOpen] = useState(false);
+  const [tab, setTab]             = useState<Tab>("Jobs & Visits");
+  const [editOpen, setEditOpen]   = useState(false);
+  const [createJobOpen, setCreateJobOpen] = useState(false);
 
   useEffect(() => {
     if (!propertyId) return;
@@ -299,6 +301,10 @@ export default function PropertyDetailPage() {
                         <button key={f} style={{ padding: "4px 12px", fontSize: 12, fontWeight: 600, borderRadius: 99, cursor: "pointer", border: "1px solid " + (i === 0 ? "#1565c0" : "#d1d5db"), background: i === 0 ? "#1565c0" : "#fff", color: i === 0 ? "#fff" : "#374151" }}>{f}</button>
                       ))}
                     </div>
+                    <button
+                      onClick={() => setCreateJobOpen(true)}
+                      style={{ background: "#16a34a", color: "#fff", border: "none", borderRadius: 7, padding: "7px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}
+                    >+ Create Job</button>
                   </div>
                   {/* Jobs table */}
                   <table style={{ width: "100%", borderCollapse: "collapse" }}>
@@ -411,6 +417,17 @@ export default function PropertyDetailPage() {
 
       {editOpen && property && (
         <EditModal property={property} onSave={saveEdit} onClose={() => setEditOpen(false)} />
+      )}
+
+      {createJobOpen && (
+        <CreateJobModal
+          property={property}
+          onClose={() => setCreateJobOpen(false)}
+          onCreated={(_id, num) => {
+            setProperty(p => p ? { ...p, openJobs: (p.openJobs || 0) + 1 } : p);
+            alert(`Job ${num} created successfully.`);
+          }}
+        />
       )}
     </div>
   );
