@@ -101,6 +101,15 @@ export default function DispatchPage() {
   const [swapReason, setSwapReason]       = useState("");
   const [swapping, setSwapping]           = useState(false);
 
+  // Top-level view: job board vs monthly on-call vs monthly vacation
+  const [boardView, setBoardView] = useState<"board" | "oncall" | "vacation">("board");
+  const [monthAnchor, setMonthAnchor] = useState(() => {
+    const n = new Date();
+    return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}`;
+  });
+  const [timeOffList, setTimeOffList] = useState<{ employeeName: string; startDate: string; endDate: string }[]>([]);
+  const [timeOffLoaded, setTimeOffLoaded] = useState(false);
+
   // Technicians flagged to show on the dispatch board
   useEffect(() => {
     const unsub = onSnapshot(collection(db, "users"), snap => {
@@ -130,6 +139,18 @@ export default function DispatchPage() {
     }, () => {});
     return unsub;
   }, []);
+
+  // Vacation requests — lazy load when vacation view opened
+  useEffect(() => {
+    if (boardView !== "vacation" || timeOffLoaded) return;
+    setTimeOffLoaded(true);
+    getDocs(query(collection(db, "timeOffRequests"), where("status", "==", "APPROVED"))).then(snap => {
+      setTimeOffList(snap.docs.map(d => {
+        const data = d.data();
+        return { employeeName: data.employeeName as string, startDate: data.startDate as string, endDate: data.endDate as string };
+      }));
+    }).catch(() => {});
+  }, [boardView, timeOffLoaded]);
 
   // All users for swap dropdown
   useEffect(() => {
@@ -266,6 +287,43 @@ export default function DispatchPage() {
     return c;
   }, [visits]);
 
+  // Monthly calendar helpers
+  const MONTH_NAMES = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+  function calMonthDays(ym: string): string[] {
+    const [y, m] = ym.split("-").map(Number);
+    const arr: string[] = [];
+    const cur = new Date(y, m-1, 1);
+    while (cur.getMonth() === m-1) { arr.push(fmtYMD(cur)); cur.setDate(cur.getDate()+1); }
+    return arr;
+  }
+  function shiftMo(ym: string, dir: number): string {
+    const [y, m] = ym.split("-").map(Number);
+    const d = new Date(y, m-1+dir, 1);
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
+  }
+
+  // On-call: date → name
+  const onCallByDate = useMemo(() => {
+    const m: Record<string, string> = {};
+    for (const a of assignments) m[a.date] = a.employeeName;
+    return m;
+  }, [assignments]);
+
+  // Vacation: date → list of names
+  const vacByDate = useMemo(() => {
+    const m: Record<string, string[]> = {};
+    for (const req of timeOffList) {
+      let cur = new Date(req.startDate + "T12:00:00");
+      const end = new Date(req.endDate + "T12:00:00");
+      while (cur <= end) {
+        const d = fmtYMD(cur);
+        (m[d] ||= []).push(req.employeeName);
+        cur.setDate(cur.getDate()+1);
+      }
+    }
+    return m;
+  }, [timeOffList]);
+
   // On-call swap handlers
   const requesterOnCallDays = assignments
     .filter(a => a.uid === swapToUid && a.date >= todayStr())
@@ -332,22 +390,44 @@ export default function DispatchPage() {
     <div>
       {/* ── Header bar ── */}
       <div style={s.headerBar}>
-        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
           <span style={{ fontSize: 20, fontWeight: 800 }}>🗓 Job Board</span>
           <div style={s.segment}>
-            <button style={view === "day" ? s.segOn : s.segOff} onClick={() => setView("day")}>DAY</button>
-            <button style={view === "week" ? s.segOn : s.segOff} onClick={() => setView("week")}>WEEK</button>
+            <button style={boardView === "board"   ? s.segOn : s.segOff} onClick={() => setBoardView("board")}>JOB BOARD</button>
+            <button style={boardView === "oncall"  ? s.segOn : s.segOff} onClick={() => setBoardView("oncall")}>ON CALL</button>
+            <button style={boardView === "vacation"? s.segOn : s.segOff} onClick={() => setBoardView("vacation")}>VACATION</button>
           </div>
-          <div style={s.segment}>
-            <button style={!flaggedOnly ? s.segOn : s.segOff} onClick={() => setFlaggedOnly(false)}>ALL</button>
-            <button style={flaggedOnly ? s.segOn : s.segOff} onClick={() => setFlaggedOnly(true)}>FLAGGED</button>
-          </div>
+          {boardView === "board" && (
+            <>
+              <div style={s.segment}>
+                <button style={view === "day" ? s.segOn : s.segOff} onClick={() => setView("day")}>DAY</button>
+                <button style={view === "week" ? s.segOn : s.segOff} onClick={() => setView("week")}>WEEK</button>
+              </div>
+              <div style={s.segment}>
+                <button style={!flaggedOnly ? s.segOn : s.segOff} onClick={() => setFlaggedOnly(false)}>ALL</button>
+                <button style={flaggedOnly ? s.segOn : s.segOff} onClick={() => setFlaggedOnly(true)}>FLAGGED</button>
+              </div>
+            </>
+          )}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <button style={s.navBtn} onClick={() => shift(-1)}>←</button>
-          <input type="date" value={anchor} onChange={e => setAnchor(e.target.value || todayStr())} style={s.dateInput} />
-          <button style={s.navBtn} onClick={() => shift(1)}>→</button>
-          <button style={s.todayBtn} onClick={() => setAnchor(todayStr())}>TODAY</button>
+          {boardView === "board" ? (
+            <>
+              <button style={s.navBtn} onClick={() => shift(-1)}>←</button>
+              <input type="date" value={anchor} onChange={e => setAnchor(e.target.value || todayStr())} style={s.dateInput} />
+              <button style={s.navBtn} onClick={() => shift(1)}>→</button>
+              <button style={s.todayBtn} onClick={() => setAnchor(todayStr())}>TODAY</button>
+            </>
+          ) : (
+            <>
+              <button style={s.navBtn} onClick={() => setMonthAnchor(m => shiftMo(m, -1))}>←</button>
+              <span style={{ fontSize: 14, fontWeight: 700, color: "#fff", minWidth: 160, textAlign: "center" }}>
+                {(() => { const [y,m] = monthAnchor.split("-").map(Number); return `${MONTH_NAMES[m-1]} ${y}`; })()}
+              </span>
+              <button style={s.navBtn} onClick={() => setMonthAnchor(m => shiftMo(m, 1))}>→</button>
+              <button style={s.todayBtn} onClick={() => { const n = new Date(); setMonthAnchor(`${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}`); }}>THIS MONTH</button>
+            </>
+          )}
         </div>
       </div>
 
@@ -385,44 +465,109 @@ export default function DispatchPage() {
         </div>
       )}
 
-      {loading ? (
-        <div style={{ padding: 40, textAlign: "center" }}><Spinner /></div>
-      ) : techs.length === 0 ? (
-        <div style={s.empty}>
-          No technicians on the Job Board yet.<br />
-          Go to <strong>Admin → Users</strong> and turn on <strong>Show in Dispatch</strong> for the techs you want here.
-        </div>
-      ) : (
-        <div style={s.boardWrap}>
-          <div style={{ ...s.grid, gridTemplateColumns: `150px repeat(${days.length}, minmax(120px, 1fr))` }}>
-            {/* Header row */}
-            <div style={s.cornerCell}>Technician</div>
-            {days.map(d => {
-              const isToday = d === todayStr();
-              return (
-                <div key={d} style={{ ...s.dayHead, ...(isToday ? { color: "#1565c0" } : {}) }}>
-                  {DAY_NAMES[(new Date(d + "T00:00:00").getDay() + 6) % 7]} <span style={{ color: "#9ca3af", fontWeight: 600 }}>{prettyDate(d)}</span>
-                </div>
-              );
-            })}
+      {/* ── Monthly On-Call / Vacation calendar ── */}
+      {boardView !== "board" && (() => {
+        const mDays = calMonthDays(monthAnchor);
+        const firstDow = new Date(mDays[0] + "T00:00:00").getDay(); // 0=Sun
+        const todayYMD = todayStr();
+        const isOncall = boardView === "oncall";
+        const accentBg  = isOncall ? "#f5f3ff" : "#fff7ed";
+        const accentFg  = isOncall ? "#6d28d9" : "#c2410c";
+        const accentBdr = isOncall ? "#ddd6fe" : "#fed7aa";
+        const emptyMsg  = isOncall ? "No one on call this month" : "No approved vacation this month";
 
-            {/* Tech rows */}
-            {techs.map(t => (
-              <Row key={t.uid} tech={t} days={days} byCell={byCell} calMap={calMap}
-                onAdd={(date) => setModal({ techUid: t.uid, techName: t.name, date })}
-                onOpen={(v) => {
-                  if (v.jobId) { navigate(`/jobs/${v.jobId}`); }
-                  else { setModal({ techUid: t.uid, techName: t.name, date: v.date, visit: v }); }
-                }}
-                onSwap={openSwap}
-                canEdit={!!isAdmin} />
-            ))}
+        return (
+          <div style={{ padding: "16px 18px" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 1, background: "#e5e7eb", border: "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden" }}>
+              {/* Day headers */}
+              {["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(d => (
+                <div key={d} style={{ background: "#f8fafc", padding: "8px 4px", textAlign: "center", fontSize: 11, fontWeight: 800, color: "#6b7280", textTransform: "uppercase" }}>{d}</div>
+              ))}
+              {/* Leading empty cells */}
+              {Array.from({ length: firstDow }, (_, i) => (
+                <div key={"e"+i} style={{ background: "#fafafa", minHeight: 90 }} />
+              ))}
+              {/* Day cells */}
+              {mDays.map(d => {
+                const isToday = d === todayYMD;
+                const names: string[] = isOncall
+                  ? (onCallByDate[d] ? [onCallByDate[d]] : [])
+                  : (vacByDate[d] || []);
+                const dayNum = parseInt(d.slice(8));
+                return (
+                  <div key={d} style={{ background: "#fff", minHeight: 90, padding: "6px 8px", position: "relative" }}>
+                    <div style={{
+                      fontSize: 12, fontWeight: 700, marginBottom: 4,
+                      color: isToday ? "#fff" : "#374151",
+                      background: isToday ? "#1565c0" : "transparent",
+                      borderRadius: isToday ? "50%" : 0,
+                      width: isToday ? 22 : "auto", height: isToday ? 22 : "auto",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                    }}>{dayNum}</div>
+                    {names.map((name, i) => (
+                      <div key={i} style={{ background: accentBg, color: accentFg, border: `1px solid ${accentBdr}`, borderRadius: 4, padding: "2px 6px", fontSize: 11, fontWeight: 700, marginBottom: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>
+                        {name.split(" ")[0]}
+                      </div>
+                    ))}
+                  </div>
+                );
+              })}
+            </div>
+            {/* Check if anything exists this month */}
+            {mDays.every(d => isOncall ? !onCallByDate[d] : !(vacByDate[d]?.length)) && (
+              <div style={{ textAlign: "center", color: "#9ca3af", padding: "32px 0", fontSize: 14 }}>{emptyMsg}</div>
+            )}
+            {/* Legend */}
+            <div style={{ display: "flex", gap: 12, marginTop: 14, alignItems: "center", fontSize: 12, color: "#6b7280" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                <div style={{ width: 12, height: 12, borderRadius: 2, background: accentBg, border: `1px solid ${accentBdr}` }} />
+                {isOncall ? "On call" : "Approved vacation"}
+              </div>
+              {boardView === "vacation" && !timeOffLoaded && (
+                <span style={{ color: "#9ca3af" }}>Loading…</span>
+              )}
+            </div>
           </div>
-        </div>
+        );
+      })()}
+
+      {boardView === "board" && (
+        loading ? (
+          <div style={{ padding: 40, textAlign: "center" }}><Spinner /></div>
+        ) : techs.length === 0 ? (
+          <div style={s.empty}>
+            No technicians on the Job Board yet.<br />
+            Go to <strong>Admin → Users</strong> and turn on <strong>Show in Dispatch</strong> for the techs you want here.
+          </div>
+        ) : (
+          <div style={s.boardWrap}>
+            <div style={{ ...s.grid, gridTemplateColumns: `150px repeat(${days.length}, minmax(120px, 1fr))` }}>
+              <div style={s.cornerCell}>Technician</div>
+              {days.map(d => {
+                const isToday = d === todayStr();
+                return (
+                  <div key={d} style={{ ...s.dayHead, ...(isToday ? { color: "#1565c0" } : {}) }}>
+                    {DAY_NAMES[(new Date(d + "T00:00:00").getDay() + 6) % 7]} <span style={{ color: "#9ca3af", fontWeight: 600 }}>{prettyDate(d)}</span>
+                  </div>
+                );
+              })}
+              {techs.map(t => (
+                <Row key={t.uid} tech={t} days={days} byCell={byCell} calMap={calMap}
+                  onAdd={(date) => setModal({ techUid: t.uid, techName: t.name, date })}
+                  onOpen={(v) => {
+                    if (v.jobId) { navigate(`/jobs/${v.jobId}`); }
+                    else { setModal({ techUid: t.uid, techName: t.name, date: v.date, visit: v }); }
+                  }}
+                  onSwap={openSwap}
+                  canEdit={!!isAdmin} />
+              ))}
+            </div>
+          </div>
+        )
       )}
 
-      {/* ── Status filter footer ── */}
-      <div style={s.footer}>
+      {/* ── Status filter footer (board view only) ── */}
+      {boardView === "board" && <div style={s.footer}>
         <button style={activeStatus === "all" ? s.tabOn("#374151") : s.tabOff} onClick={() => setActiveStatus("all")}>
           All Visits {visits.length > 0 ? `(${visits.length})` : ""}
         </button>
@@ -435,7 +580,7 @@ export default function DispatchPage() {
             </button>
           );
         })}
-      </div>
+      </div>}
 
       {modal && (
         <VisitModal
