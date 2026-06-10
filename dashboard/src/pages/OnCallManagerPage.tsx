@@ -978,6 +978,8 @@ function OnCallAlertsPanel({ db }: { db:any }) {
   const [loaded,setLoaded]=useState(false);
   const [running,setRunning]=useState(false);
   const [runResult,setRunResult]=useState("");
+  const [sendingReminder,setSendingReminder]=useState(false);
+  const [reminderResult,setReminderResult]=useState("");
   useEffect(()=>{
     getDoc(doc(db,"settings","onCallConfig")).then(s=>{ setPhone(s.data()?.alertPhone||""); setLoaded(true); }).catch(()=>setLoaded(true));
   },[]);
@@ -996,6 +998,16 @@ function OnCallAlertsPanel({ db }: { db:any }) {
     }catch(e:any){ setRunResult(`Error: ${e?.message||"failed"}`); }
     setRunning(false);
   }
+  async function sendReminderNow(){
+    setSendingReminder(true); setReminderResult("");
+    try{
+      const res:any=await callOncallReminderNow({});
+      const d=res?.data||{};
+      if(d.ok===false){ setReminderResult(`⚠️ ${d.reason||"Could not send."}`); }
+      else{ setReminderResult(`✅ ${d.message||"On-call reminder sent."}`); }
+    }catch(e:any){ setReminderResult(`Error: ${e?.message||"failed"}`); }
+    setSendingReminder(false);
+  }
   if(!loaded) return null;
   return(
     <div style={{background:"white",borderRadius:12,padding:20,boxShadow:"0 1px 4px rgba(0,0,0,0.07)",marginBottom:16}}>
@@ -1004,10 +1016,12 @@ function OnCallAlertsPanel({ db }: { db:any }) {
       <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
         <input type="tel" value={phone} onChange={e=>setPhone(e.target.value)} placeholder="905-555-1234" style={{...inp,maxWidth:200}}/>
         <button onClick={save} style={btnS("#1565c0")}>Save</button>
-        <button onClick={runNow} disabled={running} style={btnS("#6b7280")}>{running?"Checking…":"Run now (admin only)"}</button>
+        <button onClick={runNow} disabled={running||sendingReminder} style={btnS("#6b7280")}>{running?"Checking…":"Run Conflict Check"}</button>
+        <button onClick={sendReminderNow} disabled={running||sendingReminder} style={btnS("#7c3aed")}>{sendingReminder?"Sending…":"Send On-Call Reminder"}</button>
         {saved&&<span style={{fontSize:12,color:"#059669",fontWeight:600}}>Saved</span>}
       </div>
       {runResult&&<p style={{fontSize:12,color:"#374151",marginTop:10}}>{runResult}</p>}
+      {reminderResult&&<p style={{fontSize:12,color:"#374151",marginTop:10}}>{reminderResult}</p>}
     </div>
   );
 }
