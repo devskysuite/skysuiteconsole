@@ -92,7 +92,7 @@ function SectionHead({ title, action }: { title: string; action?: React.ReactNod
 
 // ── Add Item Panel ─────────────────────────────────────────────────────────────
 function AddItemRow({ poId, poVendor, onDone }: { poId: string; poVendor: string; onDone: () => void }) {
-  const [f, setF] = useState({ description: "", fulfillmentStatus: "Fulfilled", quantityOrdered: "1", quantityReceived: "1", unitCost: "", totalCost: "" });
+  const [f, setF] = useState({ description: "", quantityOrdered: "1", quantityReceived: "0", unitCost: "", totalCost: "", taxable: true });
   const [saving, setSaving] = useState(false);
 
   function recalc(qty: string, unit: string) {
@@ -104,22 +104,29 @@ function AddItemRow({ poId, poVendor, onDone }: { poId: string; poVendor: string
   async function save() {
     if (!f.description.trim()) return;
     setSaving(true);
-    const item: POItem = {
+    const qty    = parseFloat(f.quantityOrdered) || 0;
+    const qtyRec = parseFloat(f.quantityReceived) || 0;
+    const newItem: POItem = {
       id: uid(),
       description:       f.description.trim(),
-      fulfillmentStatus: f.fulfillmentStatus,
-      quantityOrdered:   parseFloat(f.quantityOrdered) || 0,
-      quantityReceived:  parseFloat(f.quantityReceived) || 0,
+      fulfillmentStatus: qty > 0 && qty === qtyRec ? "Fulfilled" : "Pending",
+      quantityOrdered:   qty,
+      quantityReceived:  qtyRec,
       unitCost:          parseFloat(f.unitCost) || 0,
       totalCost:         parseFloat(f.totalCost) || 0,
+      taxable:           f.taxable,
     };
-    const ref = doc(db, "purchaseOrders", poId);
-    // get current total and items
+    const ref  = doc(db, "purchaseOrders", poId);
     const snap = await getDoc(ref);
     const data = snap.data() as PurchaseOrder;
-    const existingItemsTotal = (data.items || []).reduce((s: number, i: POItem) => s + (i.totalCost || 0), 0);
-    const newTotal = existingItemsTotal + item.totalCost;
-    await updateDoc(ref, { items: arrayUnion(item), subtotal: newTotal, total: newTotal });
+    const allItems = [...(data.items || []), newItem];
+    const newSubtotal = allItems.reduce((s, i) => s + (i.totalCost || 0), 0);
+    const taxPct = ({ "GST (5%)": 0.05, "HST ON (13%)": 0.13, "HST BC (12%)": 0.12, "PST (7%)": 0.07 } as Record<string,number>)[data.taxRate || ""] ?? 0;
+    const newTaxAmt = allItems.filter(i => i.taxable).reduce((s, i) => s + (i.totalCost || 0), 0) * taxPct;
+    const allFulfilled = allItems.length > 0 && allItems.every(i => i.fulfillmentStatus === "Fulfilled");
+    const updates: Record<string, unknown> = { items: allItems, subtotal: newSubtotal, taxAmount: newTaxAmt, total: newSubtotal + newTaxAmt };
+    if (allFulfilled) updates.status = "Fulfilled";
+    await updateDoc(ref, updates);
     onDone();
   }
 
@@ -127,9 +134,11 @@ function AddItemRow({ poId, poVendor, onDone }: { poId: string; poVendor: string
     <tr style={{ background: "#f0fdf4" }}>
       <td style={td}><input style={{ ...inp, width: 220 }} placeholder="Item description" value={f.description} onChange={e => setF(p => ({ ...p, description: e.target.value }))} /></td>
       <td style={td}>
-        <select style={{ ...inp, width: 110, appearance: "auto" as any }} value={f.fulfillmentStatus} onChange={e => setF(p => ({ ...p, fulfillmentStatus: e.target.value }))}>
-          {ITEM_STATUSES.map(s => <option key={s}>{s}</option>)}
-        </select>
+        <label style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, cursor: "pointer" }}>
+          <input type="checkbox" checked={f.taxable} onChange={e => setF(p => ({ ...p, taxable: e.target.checked }))}
+            style={{ width: 13, height: 13, accentColor: "#1565c0" }} />
+          Taxable
+        </label>
       </td>
       <td style={{ ...td, textAlign: "center" }}><input style={{ ...inp, width: 60, textAlign: "center" }} value={f.quantityOrdered} onChange={e => { const v = e.target.value; setF(p => ({ ...p, quantityOrdered: v, totalCost: recalc(v, p.unitCost) })); }} /></td>
       <td style={{ ...td, textAlign: "center" }}><input style={{ ...inp, width: 60, textAlign: "center" }} value={f.quantityReceived} onChange={e => setF(p => ({ ...p, quantityReceived: e.target.value }))} /></td>
@@ -301,7 +310,7 @@ export default function PartsAndPurchasingTab({ jobId, jobNumber }: Props) {
                             <thead>
                               <tr style={{ background: "#f3f4f6" }}>
                                 <th style={th}>Item Description</th>
-                                <th style={th}>Status</th>
+                                <th style={th}>Taxable</th>
                                 <th style={{ ...th, textAlign: "center" }}>Qty Ordered</th>
                                 <th style={{ ...th, textAlign: "center" }}>Qty Received</th>
                                 <th style={{ ...th, textAlign: "right" }}>Unit Cost</th>
@@ -316,7 +325,7 @@ export default function PartsAndPurchasingTab({ jobId, jobNumber }: Props) {
                               {(po.items || []).map(item => (
                                 <tr key={item.id} style={{ borderTop: "1px solid #f3f4f6" }}>
                                   <td style={td}>{item.name || item.description || "—"}</td>
-                                  <td style={td}><StatusBadge status={item.fulfillmentStatus} /></td>
+                                  <td style={td}>{item.taxable ? "Yes" : "No"}</td>
                                   <td style={{ ...td, textAlign: "center" }}>{item.quantityOrdered}</td>
                                   <td style={{ ...td, textAlign: "center" }}>{item.quantityReceived}</td>
                                   <td style={{ ...td, textAlign: "right" }}>{item.unitCost > 0 ? fmtC(item.unitCost) : "—"}</td>
