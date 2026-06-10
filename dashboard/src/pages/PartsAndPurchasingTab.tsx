@@ -198,7 +198,7 @@ export default function PartsAndPurchasingTab({ jobId, jobNumber }: Props) {
         setPOs(list);
         setLoading(false);
       },
-      () => setLoading(false)
+      (err) => { console.error("PO query error:", err); setLoading(false); }
     );
     return unsub;
   }, [jobId]);

@@ -621,7 +621,7 @@ export default function CreatePOModal({ jobId, jobNumber, department, projectMan
         createdAt: new Date().toISOString().slice(0,10),
       });
       onClose();
-    } catch(e) { console.error(e); setSaving(false); }
+    } catch(e) { console.error(e); setSaving(false); alert("Failed to save purchase order. Check console for details."); }
   }
 
   const STEPS = ["General Info","Add Items","Summary"];

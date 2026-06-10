@@ -207,6 +207,7 @@ export default function JobDetailPage() {
   // Job Costing
   const [costEntries, setCostEntries]   = useState<any[]>([]);
   const [userRates, setUserRates]       = useState<Record<string, { rt: number; ot: number; dt: number; pto: number; laborType: string }>>({});
+  const [jobPOs, setJobPOs]             = useState<any[]>([]);
   const [costLoaded, setCostLoaded]     = useState(false);
 
   // Edit mode
@@ -279,8 +280,10 @@ export default function JobDetailPage() {
     Promise.all([
       getDocs(query(collection(db, "payrollEntries"), where("jobId", "==", jobId))),
       getDocs(query(collection(db, "users"), where("showInDispatch", "==", true))),
-    ]).then(([paySnap, userSnap]) => {
+      getDocs(query(collection(db, "purchaseOrders"), where("jobId", "==", jobId))),
+    ]).then(([paySnap, userSnap, poSnap]) => {
       setCostEntries(paySnap.docs.map(d => ({ id: d.id, ...d.data() })));
+      setJobPOs(poSnap.docs.map(d => ({ id: d.id, ...d.data() as any })));
       const rates: typeof userRates = {};
       for (const d of userSnap.docs) {
         const data = d.data() as any;
@@ -1047,6 +1050,56 @@ export default function JobDetailPage() {
                   <div style={{ marginTop: 10, fontSize: 11, color: "#9ca3af" }}>
                     Rates set in Accounting → Labor Rate Settings. Only entries with a jobId linked to this job are included.
                   </div>
+
+                  {/* Materials */}
+                  <div style={{ marginTop: 32, fontSize: 13, fontWeight: 700, color: "#6b7280", letterSpacing: 0.5, textTransform: "uppercase", marginBottom: 16 }}>Materials — Purchase Orders</div>
+                  {costLoaded && jobPOs.length === 0 && (
+                    <div style={{ color: "#9ca3af", textAlign: "center", paddingTop: 16, paddingBottom: 16 }}>No purchase orders linked to this job yet.</div>
+                  )}
+                  {costLoaded && jobPOs.length > 0 && (() => {
+                    const materialTotal = jobPOs.reduce((s, po) => s + (po.total || 0), 0);
+                    return (
+                      <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden" }}>
+                        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                          <thead>
+                            <tr style={{ background: "#f9fafb", borderBottom: "1px solid #e5e7eb" }}>
+                              <th style={{ ...hdr, textAlign: "left", paddingLeft: 18 }}>PO #</th>
+                              <th style={{ ...hdr, textAlign: "left" }}>Vendor</th>
+                              <th style={{ ...hdr, textAlign: "left" }}>Status</th>
+                              <th style={{ ...hdr, textAlign: "left" }}>Description</th>
+                              <th style={{ ...hdr, width: "120px" }}>Total</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {jobPOs.map((po, i) => (
+                              <tr key={po.id} style={{ borderBottom: i < jobPOs.length - 1 ? "1px solid #f3f4f6" : "none" }}>
+                                <td style={{ padding: "8px 18px", fontSize: 13, fontWeight: 700, color: "#1565c0" }}>{po.poNumber || "—"}</td>
+                                <td style={{ padding: "8px 14px", fontSize: 13, color: "#374151" }}>{po.vendor || "—"}</td>
+                                <td style={{ padding: "8px 14px", fontSize: 13, color: "#374151" }}>{po.status || "—"}</td>
+                                <td style={{ padding: "8px 14px", fontSize: 13, color: "#374151" }}>{po.description || "—"}</td>
+                                <td style={{ ...cell, fontWeight: 600 }}>{`$${(po.total || 0).toLocaleString("en-CA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</td>
+                              </tr>
+                            ))}
+                            <tr style={{ borderTop: "2px solid #e5e7eb", background: "#f9fafb" }}>
+                              <td colSpan={4} style={{ padding: "10px 18px", fontWeight: 800, fontSize: 13 }}>Total Materials</td>
+                              <td style={{ ...cell, fontWeight: 800, fontSize: 14, color: "#1565c0" }}>{`$${materialTotal.toLocaleString("en-CA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    );
+                  })()}
+
+                  {/* Combined Total */}
+                  {costLoaded && (grandCost > 0 || jobPOs.length > 0) && (() => {
+                    const materialTotal = jobPOs.reduce((s, po) => s + (po.total || 0), 0);
+                    return (
+                      <div style={{ marginTop: 20, padding: "16px 20px", background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 10, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <span style={{ fontWeight: 800, fontSize: 14, color: "#1e3a8a" }}>Combined Total (Labor + Materials)</span>
+                        <span style={{ fontWeight: 800, fontSize: 18, color: "#1e3a8a" }}>{`$${(grandCost + materialTotal).toLocaleString("en-CA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</span>
+                      </div>
+                    );
+                  })()}
                 </div>
               );
             })()}
