@@ -29,6 +29,7 @@ import CustomerDetailPage from "./pages/CustomerDetailPage";
 import PropertiesPage from "./pages/PropertiesPage";
 import PropertyDetailPage from "./pages/PropertyDetailPage";
 import VendorsPage from "./pages/VendorsPage";
+import PricebookPage from "./pages/PricebookPage";
 import Nav from "./components/Nav";
 import { ToastProvider } from "./components/Toast";
 import Spinner from "./components/Spinner";
@@ -58,7 +59,7 @@ import { useLocation } from "react-router-dom";
 
 function AppLayout({ children }: { children: React.ReactNode }) {
   const { pathname } = useLocation();
-  const fullWidth = pathname.startsWith("/dispatch") || pathname.startsWith("/on-call") || pathname.startsWith("/time-off") || pathname.startsWith("/customers") || pathname.startsWith("/properties") || pathname.startsWith("/vendors");
+  const fullWidth = pathname.startsWith("/dispatch") || pathname.startsWith("/on-call") || pathname.startsWith("/time-off") || pathname.startsWith("/customers") || pathname.startsWith("/properties") || pathname.startsWith("/vendors") || pathname.startsWith("/pricebook");
   return (
     <>
       <Nav />
@@ -119,6 +120,7 @@ export default function App() {
                       <Route path="/properties" element={<PropertiesPage />} />
                       <Route path="/properties/:propertyId" element={<PropertyDetailPage />} />
                       <Route path="/vendors" element={<VendorsPage />} />
+                      <Route path="/pricebook" element={<PricebookPage />} />
                     </Routes>
                 </AppLayout>
               </RequireAuth>

@@ -19,7 +19,6 @@ interface Props {
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const WORK_TYPES  = ["Service Call","Quoted Work","Maintenance","Emergency","Project","Inspection","Commissioning","Start-up","Other"];
-const PRICEBOOKS  = ["Price Book 2026","Price Book 2025","Standard","Maintenance Contract"];
 const JOB_TYPES   = ["Service","Project","Quote","Emergency","Warranty"];
 const DEPARTMENTS = ["Electrical","Automation","Industrial","Commercial","HVAC","Plumbing","Maintenance","General","Other"];
 const PRIORITIES  = ["Low","Medium","High","Critical"];
@@ -54,6 +53,7 @@ async function reserveJobNumber(): Promise<string> {
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function CreateJobModal({ property, onClose, onCreated }: Props) {
   const [users, setUsers]       = useState<string[]>([]);
+  const [pricebooks, setPricebooks] = useState<{ id: string; name: string; isDefault: boolean }[]>([]);
   const [saving, setSaving]     = useState(false);
   const [errors, setErrors]     = useState<Record<string, boolean>>({});
 
@@ -92,6 +92,15 @@ export default function CreateJobModal({ property, onClose, onCreated }: Props) 
         .filter(Boolean)
         .sort((a, b) => a.localeCompare(b));
       setUsers(names);
+    }).catch(() => {});
+    getDocs(collection(db, "pricebooks")).then(snap => {
+      const books = snap.docs
+        .map(d => ({ id: d.id, name: d.data().name as string, isDefault: d.data().isDefault as boolean }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+      setPricebooks(books);
+      // Pre-select default pricebook if none chosen yet
+      const def = books.find(b => b.isDefault);
+      if (def) setForm(f => f.pricebook ? f : { ...f, pricebook: def.name });
     }).catch(() => {});
   }, []);
 
@@ -286,7 +295,7 @@ export default function CreateJobModal({ property, onClose, onCreated }: Props) 
             </label>
             <select style={sel("pricebook")} {...bind("pricebook")}>
               <option value="">Select...</option>
-              {PRICEBOOKS.map(p => <option key={p} value={p}>{p}</option>)}
+              {pricebooks.map(p => <option key={p.id} value={p.name}>{p.name}</option>)}
             </select>
             {errors.pricebook && <div style={{ color: "#ef4444", fontSize: 11, marginTop: 3 }}>Select a pricebook</div>}
           </div>
