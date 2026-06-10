@@ -779,11 +779,13 @@ export default function JobDetailPage() {
                           <span style={{ background: vsc.bg, color: vsc.color, border: `1px solid ${vsc.border}`, borderRadius: 6, padding: "3px 8px", fontSize: 11, fontWeight: 700 }}>
                             {VISIT_STATUS_LABELS[visit.status] || visit.status}
                           </span>
-                          {(visit.status === "canceled" || visit.status === "complete") ? (
+                          {visit.status === "complete" ? (
                             <div style={{ display: "flex", gap: 8, alignItems: "center" }} onClick={e => e.stopPropagation()}>
-                              <span style={{ fontSize: 11, color: visit.status === "canceled" ? "#991b1b" : "#166534", fontWeight: 600 }}>
-                                {visit.status === "canceled" ? "⛔ Cannot be reopened" : "✓ Completed"}
-                              </span>
+                              <span style={{ fontSize: 11, color: "#166534", fontWeight: 600 }}>✓ Completed</span>
+                            </div>
+                          ) : visit.status === "canceled" ? (
+                            <div style={{ display: "flex", gap: 8, alignItems: "center" }} onClick={e => e.stopPropagation()}>
+                              <span style={{ fontSize: 11, color: "#991b1b", fontWeight: 600 }}>⛔ Cannot be reopened</span>
                               <button
                                 onClick={() => deleteVisit(visit.id, visit.visitNumber)}
                                 style={{ background: "#dc2626", color: "#fff", border: "none", borderRadius: 6, padding: "3px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}
