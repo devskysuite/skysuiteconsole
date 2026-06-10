@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { arrayUnion, collection, doc, getDoc, onSnapshot, query, updateDoc, where } from "firebase/firestore";
 import { auth, db } from "../firebase";
+import { Link } from "react-router-dom";
 import CreatePOModal from "./CreatePOModal";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -253,7 +254,9 @@ export default function PartsAndPurchasingTab({ jobId, jobNumber }: Props) {
                     onClick={() => setExpandedPO(isExp ? null : po.id)}
                     style={{ borderBottom: "1px solid #f3f4f6", cursor: "pointer", background: isExp ? "#f0f4ff" : "transparent" }}
                   >
-                    <td style={{ ...td, fontWeight: 700, color: "#1565c0" }}>{po.poNumber}</td>
+                    <td style={{ ...td, fontWeight: 700 }}>
+                      <Link to={`/purchase-orders/${po.id}`} onClick={e => e.stopPropagation()} style={{ color: "#1565c0", textDecoration: "none" }}>{po.poNumber}</Link>
+                    </td>
                     <td style={td}>
                       <select
                         value={po.status}

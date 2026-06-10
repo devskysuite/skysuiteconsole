@@ -194,7 +194,9 @@ export default function OperationsPurchaseOrdersPage() {
               )}
               {filtered.map((po, i) => (
                 <tr key={po.id} style={{ borderBottom: i < filtered.length - 1 ? "1px solid #f3f4f6" : "none" }}>
-                  <td style={{ ...td, fontWeight: 700, color: "#1565c0" }}>{po.poNumber}</td>
+                  <td style={{ ...td, fontWeight: 700 }}>
+                    <Link to={`/purchase-orders/${po.id}`} style={{ color: "#1565c0", textDecoration: "none" }}>{po.poNumber}</Link>
+                  </td>
                   <td style={td}>
                     {po.jobId ? (
                       <Link to={`/jobs/${po.jobId}`} style={{ color: "#1565c0", textDecoration: "none", fontWeight: 600 }}>{po.jobNumber || po.jobId}</Link>
