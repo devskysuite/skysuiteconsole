@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { addDoc, collection, doc, getDocs, onSnapshot, query, updateDoc, where, writeBatch } from "firebase/firestore";
 import { db, auth } from "../firebase";
 import * as XLSX from "xlsx";
@@ -14,7 +15,9 @@ interface PayrollEntry {
   jobNumber: string;
   phase: string;
   costCode: string;
-  visitRef: string;    // Visit column from Excel
+  visitRef: string;    // Visit number (display)
+  visitId?: string;    // dispatchVisits doc ID (auto-created entries)
+  jobId?: string;
   eventStatus: string; // Scheduled, Working, Complete, etc.
   reviewStatus: string;// UNSUBMITTED | SUBMITTED | PENDING_APPROVAL | APPROVED | DISPUTED
   customer: string;
@@ -27,6 +30,7 @@ interface PayrollEntry {
   pto: number;
   laborRate: string;
   laborType: string;
+  source?: string;     // "visit" | "import" | undefined (manual add)
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -92,7 +96,8 @@ export default function PayrollPage() {
   const [selectedEmp, setSelectedEmp] = useState<string|null>(null);
   const [activeDay, setActiveDay]   = useState<string|null>(null);
   const [statusFilter, setStatusFilter] = useState("all");
-  const [pendingEdits, setPendingEdits] = useState<Record<string,{laborRate?:string;laborType?:string}>>({});
+  const [pendingEdits, setPendingEdits] = useState<Record<string,{laborRate?:string;laborType?:string;rt?:number;ot?:number;dt?:number;pto?:number}>>({});
+  const navigate = useNavigate();
   const [importing, setImporting]   = useState(false);
   const [addOpen, setAddOpen]       = useState(false);
   const [addForm, setAddForm]       = useState(BLANK_ENTRY);
@@ -450,15 +455,20 @@ export default function PayrollPage() {
                         <div key={entry.id} style={{ background:"#fff", border:"1px solid #e5e7eb", borderRadius:10, marginBottom:14, overflow:"hidden" }}>
                           {/* Card header */}
                           <div style={{ display:"flex", alignItems:"center", gap:8, padding:"11px 16px", borderBottom:"1px solid #f3f4f6", flexWrap:"wrap" }}>
-                            <span style={{ fontSize:13, fontWeight:800, color:"#1565c0" }}>
-                              {entry.jobNumber ? `Job ${entry.jobNumber}` : entry.event}
-                              {entry.visitRef ? `, Visit ${entry.visitRef}` : ""}
-                            </span>
+                            {entry.visitId && entry.jobId
+                              ? <span onClick={() => navigate(`/jobs/${entry.jobId}/visits/${entry.visitId}`)} style={{ fontSize:13, fontWeight:800, color:"#1565c0", cursor:"pointer", textDecoration:"underline" }}>
+                                  {entry.jobNumber ? `Job ${entry.jobNumber}` : entry.event}{entry.visitRef ? `, Visit ${entry.visitRef}` : ""}
+                                </span>
+                              : <span style={{ fontSize:13, fontWeight:800, color:"#1565c0" }}>
+                                  {entry.jobNumber ? `Job ${entry.jobNumber}` : entry.event}{entry.visitRef ? `, Visit ${entry.visitRef}` : ""}
+                                </span>
+                            }
                             {entry.department && (
                               <span style={{ background:"#e0f2fe", color:"#0369a1", fontSize:11, fontWeight:700, borderRadius:99, padding:"2px 8px" }}>{entry.department}</span>
                             )}
                             <span style={{ background:es.bg, color:es.color, fontSize:11, fontWeight:700, borderRadius:99, padding:"2px 8px" }}>{entry.eventStatus || "—"}</span>
                             <span style={{ background:rs.bg, color:rs.color, border:`1px solid ${rs.border}`, fontSize:11, fontWeight:700, borderRadius:6, padding:"2px 8px" }}>{rs.label}</span>
+                            {entry.source === "visit" && <span style={{ background:"#f0fdf4", color:"#15803d", fontSize:10, fontWeight:700, borderRadius:99, padding:"2px 8px", border:"1px solid #86efac" }}>AUTO</span>}
                             <div style={{ marginLeft:"auto", display:"flex", gap:6 }}>
                               <button onClick={()=>updateStatus(entry.id,"DISPUTED")} style={{ background:"none", border:"1px solid #d1d5db", borderRadius:5, padding:"3px 10px", fontSize:11, fontWeight:700, cursor:"pointer", color:"#374151" }}>DISPUTE</button>
                               <button onClick={()=>updateStatus(entry.id,"APPROVED")} style={{ background:"#16a34a", color:"#fff", border:"none", borderRadius:5, padding:"3px 10px", fontSize:11, fontWeight:700, cursor:"pointer" }}>APPROVE</button>
@@ -474,14 +484,22 @@ export default function PayrollPage() {
                               </div>
                             )}
 
-                            {/* Hours breakdown */}
-                            <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:"0 16px", marginBottom:12 }}>
-                              {[["RT",entry.rt],["OT",entry.ot],["DT",entry.dt],["PTO",entry.pto]].map(([label,val]) => (
-                                <div key={label as string}>
-                                  <div style={{ fontSize:10, fontWeight:700, color:"#9ca3af", textTransform:"uppercase", marginBottom:3 }}>{label}</div>
-                                  <div style={{ fontSize:13, fontWeight:700, color: (val as number) > 0 ? "#111827" : "#d1d5db" }}>{fmtH(val as number)}</div>
-                                </div>
-                              ))}
+                            {/* Hours breakdown — editable for admin override */}
+                            <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:"0 12px", marginBottom:12 }}>
+                              {(["rt","ot","dt","pto"] as const).map(key => {
+                                const current = pendingEdits[entry.id]?.[key] ?? entry[key];
+                                return (
+                                  <div key={key}>
+                                    <div style={{ fontSize:10, fontWeight:700, color:"#9ca3af", textTransform:"uppercase", marginBottom:3 }}>{key.toUpperCase()}</div>
+                                    <input
+                                      type="number" min="0" step="0.25"
+                                      value={current ?? 0}
+                                      onChange={e => setPendingEdits(p => ({...p,[entry.id]:{...p[entry.id],[key]:parseFloat(e.target.value)||0}}))}
+                                      style={{ width:"100%", padding:"4px 6px", border:"1px solid #e5e7eb", borderRadius:4, fontSize:13, fontWeight:700, color:(current??0)>0?"#111827":"#9ca3af", background:"#f9fafb", boxSizing:"border-box" as const }}
+                                    />
+                                  </div>
+                                );
+                              })}
                             </div>
 
                             {/* Labor rate / type (editable) */}

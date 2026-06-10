@@ -210,13 +210,14 @@ export default function CreateJobModal({ property, onClose, onCreated }: Props) 
       if (visitOpen) {
         const dept = visitForm.department || form.departmentsNeeded;
         const selectedTech = dispatchTechs.find(t => t.uid === visitForm.primaryTechUid);
+        const visitDuration = parseFloat(visitForm.duration) || 1;
         let endTime = "";
         if (visitForm.time) {
           const [h, m] = visitForm.time.split(":").map(Number);
-          const totalMin = h * 60 + m + Math.round((parseFloat(visitForm.duration) || 1) * 60);
+          const totalMin = h * 60 + m + Math.round(visitDuration * 60);
           endTime = `${String(Math.floor(totalMin / 60) % 24).padStart(2, "0")}:${String(totalMin % 60).padStart(2, "0")}`;
         }
-        await addDoc(collection(db, "dispatchVisits"), {
+        const visitRef = await addDoc(collection(db, "dispatchVisits"), {
           techUid:                  visitForm.primaryTechUid || "",
           techName:                 selectedTech?.name || "",
           date:                     visitForm.date || "",
@@ -233,7 +234,7 @@ export default function CreateJobModal({ property, onClose, onCreated }: Props) 
           description:              visitForm.description,
           toDo:                     visitForm.toDo,
           department:               dept,
-          duration:                 parseFloat(visitForm.duration) || 1,
+          duration:                 visitDuration,
           additionalTechnicians:    visitForm.additionalTechnicians ? visitForm.additionalTechnicians.split(",").map(s => s.trim()).filter(Boolean) : [],
           requiredSkills:           visitForm.requiredSkills ? visitForm.requiredSkills.split(",").map(s => s.trim()).filter(Boolean) : [],
           requiredCertifications:   visitForm.requiredCertifications ? visitForm.requiredCertifications.split(",").map(s => s.trim()).filter(Boolean) : [],
@@ -241,6 +242,38 @@ export default function CreateJobModal({ property, onClose, onCreated }: Props) 
           createdAt:                now,
           createdBy:                performer,
         });
+
+        // Auto-create payroll entry for Visit #1
+        try {
+          await addDoc(collection(db, "payrollEntries"), {
+            employeeName:  selectedTech?.name || "",
+            employeeCode:  "",
+            date:          visitForm.date || "",
+            department:    dept,
+            event:         "Visit",
+            jobNumber,
+            phase:         "",
+            costCode:      "",
+            visitRef:      "1",
+            visitId:       visitRef.id,
+            jobId:         ref.id,
+            eventStatus:   "Scheduled",
+            reviewStatus:  "UNSUBMITTED",
+            customer:      form.customer || "",
+            property:      form.propertyName || "",
+            location:      "",
+            notes:         "",
+            rt:            visitDuration,
+            ot:            0,
+            dt:            0,
+            pto:           0,
+            laborRate:     "",
+            laborType:     "",
+            source:        "visit",
+            createdAt:     now,
+          });
+        } catch {}
+
         await addDoc(collection(db, "jobs", ref.id, "history"), {
           action:      "Visit #1 Added",
           performedBy: performer,

@@ -126,7 +126,8 @@ export default function CreateVisitModal({ jobId, jobNumber, customerName, prope
       const selectedTech = techs.find(t => t.uid === form.primaryTechUid);
       const title = form.description.trim() || `${customerName}${propertyName ? " – " + propertyName : ""}`;
 
-      await addDoc(collection(db, "dispatchVisits"), {
+      const duration = parseFloat(form.duration) || 1;
+      const visitRef = await addDoc(collection(db, "dispatchVisits"), {
         // Dispatch board core fields
         techUid:   form.primaryTechUid || "",
         techName:  selectedTech?.name || "",
@@ -145,7 +146,7 @@ export default function CreateVisitModal({ jobId, jobNumber, customerName, prope
         description:              form.description,
         toDo:                     form.toDo,
         department:               form.department,
-        duration:                 parseFloat(form.duration) || 1,
+        duration,
         additionalTechnicians:    form.additionalTechnicians
           ? form.additionalTechnicians.split(",").map(s => s.trim()).filter(Boolean)
           : [],
@@ -161,6 +162,37 @@ export default function CreateVisitModal({ jobId, jobNumber, customerName, prope
         createdAt:  now,
         createdBy:  performer,
       });
+
+      // Auto-create payroll entry so the tech's time shows up in payroll immediately
+      try {
+        await addDoc(collection(db, "payrollEntries"), {
+          employeeName:  selectedTech?.name || "",
+          employeeCode:  "",
+          date:          form.date || "",
+          department:    form.department,
+          event:         "Visit",
+          jobNumber,
+          phase:         "",
+          costCode:      "",
+          visitRef:      String(visitNumber),
+          visitId:       visitRef.id,
+          jobId,
+          eventStatus:   "Scheduled",
+          reviewStatus:  "UNSUBMITTED",
+          customer:      customerName,
+          property:      propertyName,
+          location:      "",
+          notes:         "",
+          rt:            duration,
+          ot:            0,
+          dt:            0,
+          pto:           0,
+          laborRate:     "",
+          laborType:     "",
+          source:        "visit",
+          createdAt:     now,
+        });
+      } catch {}
 
       // Log to job history
       await addDoc(collection(db, "jobs", jobId, "history"), {
