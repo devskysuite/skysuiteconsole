@@ -223,7 +223,7 @@ export default function PartsAndPurchasingTab({ jobId, jobNumber }: Props) {
     }).catch(err => console.error("Visit parts query error:", err));
   }, [jobId]);
 
-  const allItems = pos.flatMap(po => (po.items || []).map(item => ({ ...item, poId: po.id, poNumber: po.poNumber, vendor: po.vendor || item.description })));
+  const allItems = pos.flatMap(po => (po.items || []).map((item, idx) => ({ ...item, poId: po.id, poNumber: po.poNumber, lineNumber: idx + 1, vendor: po.vendor || item.description })));
   const allBills = pos.flatMap(po => (po.bills || []).map(bill => ({ ...bill, poId: po.id, poNumber: po.poNumber })));
   const poGrandTotal      = pos.reduce((s, p) => s + (p.total || 0), 0);
   const itemGrandTotal    = allItems.reduce((s, i) => s + (i.totalCost || 0), 0);
@@ -410,7 +410,7 @@ export default function PartsAndPurchasingTab({ jobId, jobNumber }: Props) {
                 {allItems.map((item, i) => (
                   <tr key={item.id + i} style={{ borderBottom: "1px solid #f3f4f6" }}>
                     <td style={{ ...td, fontWeight: 700 }}>
-                      <Link to={`/purchase-orders/${item.poId}`} style={{ color: "#1565c0", textDecoration: "none" }}>{item.poNumber}</Link>
+                      <Link to={`/purchase-orders/${item.poId}`} style={{ color: "#1565c0", textDecoration: "none" }}>{item.poNumber}-{(item as any).lineNumber}</Link>
                     </td>
                     <td style={td}>{item.name || item.description || "—"}</td>
                     <td style={td}>{item.vendor || "—"}</td>
