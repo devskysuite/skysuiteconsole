@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { collection, doc, getDoc, getDocs, onSnapshot, query, updateDoc, where } from "firebase/firestore";
+import { arrayUnion, collection, doc, getDoc, getDocs, onSnapshot, query, updateDoc, where } from "firebase/firestore";
 import { auth, db } from "../firebase";
 import { Link, useParams } from "react-router-dom";
 
