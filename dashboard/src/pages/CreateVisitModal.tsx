@@ -163,35 +163,41 @@ export default function CreateVisitModal({ jobId, jobNumber, customerName, prope
         createdBy:  performer,
       });
 
-      // Auto-create payroll entry so the tech's time shows up in payroll immediately
+      // Auto-create payroll entry for primary + additional techs
+      const additionalTechs = form.additionalTechnicians
+        ? form.additionalTechnicians.split(",").map((s: string) => s.trim()).filter(Boolean)
+        : [];
+      const allTechs = [selectedTech?.name || "", ...additionalTechs].filter(Boolean);
       try {
-        await addDoc(collection(db, "payrollEntries"), {
-          employeeName:  selectedTech?.name || "",
-          employeeCode:  "",
-          date:          form.date || "",
-          department:    form.department,
-          event:         "Visit",
-          jobNumber,
-          phase:         "",
-          costCode:      "",
-          visitRef:      String(visitNumber),
-          visitId:       visitRef.id,
-          jobId,
-          eventStatus:   "Scheduled",
-          reviewStatus:  "UNSUBMITTED",
-          customer:      customerName,
-          property:      propertyName,
-          location:      "",
-          notes:         "",
-          rt:            0,
-          ot:            0,
-          dt:            0,
-          pto:           0,
-          laborRate:     "",
-          laborType:     "",
-          source:        "visit",
-          createdAt:     now,
-        });
+        for (const techName of allTechs) {
+          await addDoc(collection(db, "payrollEntries"), {
+            employeeName:  techName,
+            employeeCode:  "",
+            date:          form.date || "",
+            department:    form.department,
+            event:         "Visit",
+            jobNumber,
+            phase:         "",
+            costCode:      "",
+            visitRef:      String(visitNumber),
+            visitId:       visitRef.id,
+            jobId,
+            eventStatus:   "Scheduled",
+            reviewStatus:  "UNSUBMITTED",
+            customer:      customerName,
+            property:      propertyName,
+            location:      "",
+            notes:         "",
+            rt:            0,
+            ot:            0,
+            dt:            0,
+            pto:           0,
+            laborRate:     "",
+            laborType:     "",
+            source:        "visit",
+            createdAt:     now,
+          });
+        }
       } catch {}
 
       // Log to job history

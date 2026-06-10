@@ -243,35 +243,41 @@ export default function CreateJobModal({ property, onClose, onCreated }: Props) 
           createdBy:                performer,
         });
 
-        // Auto-create payroll entry for Visit #1
+        // Auto-create payroll entry for Visit #1 (primary + additional techs)
+        const additionalTechs = visitForm.additionalTechnicians
+          ? visitForm.additionalTechnicians.split(",").map((s: string) => s.trim()).filter(Boolean)
+          : [];
+        const allTechs = [selectedTech?.name || "", ...additionalTechs].filter(Boolean);
         try {
-          await addDoc(collection(db, "payrollEntries"), {
-            employeeName:  selectedTech?.name || "",
-            employeeCode:  "",
-            date:          visitForm.date || "",
-            department:    dept,
-            event:         "Visit",
-            jobNumber,
-            phase:         "",
-            costCode:      "",
-            visitRef:      "1",
-            visitId:       visitRef.id,
-            jobId:         ref.id,
-            eventStatus:   "Scheduled",
-            reviewStatus:  "UNSUBMITTED",
-            customer:      form.customer || "",
-            property:      form.propertyName || "",
-            location:      "",
-            notes:         "",
-            rt:            0,
-            ot:            0,
-            dt:            0,
-            pto:           0,
-            laborRate:     "",
-            laborType:     "",
-            source:        "visit",
-            createdAt:     now,
-          });
+          for (const techName of allTechs) {
+            await addDoc(collection(db, "payrollEntries"), {
+              employeeName:  techName,
+              employeeCode:  "",
+              date:          visitForm.date || "",
+              department:    dept,
+              event:         "Visit",
+              jobNumber,
+              phase:         "",
+              costCode:      "",
+              visitRef:      "1",
+              visitId:       visitRef.id,
+              jobId:         ref.id,
+              eventStatus:   "Scheduled",
+              reviewStatus:  "UNSUBMITTED",
+              customer:      form.customer || "",
+              property:      form.propertyName || "",
+              location:      "",
+              notes:         "",
+              rt:            0,
+              ot:            0,
+              dt:            0,
+              pto:           0,
+              laborRate:     "",
+              laborType:     "",
+              source:        "visit",
+              createdAt:     now,
+            });
+          }
         } catch {}
 
         await addDoc(collection(db, "jobs", ref.id, "history"), {
