@@ -540,13 +540,6 @@ export default function PODetailPage() {
           <span style={{ background: "#f0fdf4", color: "#166534", border: "1px solid #86efac", borderRadius: 6, padding: "2px 10px", fontSize: 11, fontWeight: 700 }}>Field Order</span>
         )}
         <span style={{ background: statusStyle.bg, color: statusStyle.color, border: `1px solid ${statusStyle.border}`, borderRadius: 6, padding: "2px 10px", fontSize: 11, fontWeight: 700 }}>{po.status}</span>
-        <select
-          value={po.status}
-          onChange={e => changeStatus(e.target.value)}
-          style={{ fontSize: 12, border: "1px solid #d1d5db", borderRadius: 6, padding: "4px 8px", outline: "none", cursor: "pointer", color: "#374151" }}
-        >
-          {PO_STATUSES.map(s => <option key={s}>{s}</option>)}
-        </select>
       </div>
 
       {/* ── Body ── */}
