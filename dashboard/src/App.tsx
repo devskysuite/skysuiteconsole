@@ -31,6 +31,7 @@ import PropertyDetailPage from "./pages/PropertyDetailPage";
 import VendorsPage from "./pages/VendorsPage";
 import PricebookPage from "./pages/PricebookPage";
 import JobDetailPage from "./pages/JobDetailPage";
+import VisitDetailPage from "./pages/VisitDetailPage";
 import Nav from "./components/Nav";
 import { ToastProvider } from "./components/Toast";
 import Spinner from "./components/Spinner";
@@ -123,6 +124,7 @@ export default function App() {
                       <Route path="/vendors" element={<VendorsPage />} />
                       <Route path="/pricebook" element={<PricebookPage />} />
                       <Route path="/jobs/:jobId" element={<JobDetailPage />} />
+                      <Route path="/jobs/:jobId/visits/:visitId" element={<VisitDetailPage />} />
                     </Routes>
                 </AppLayout>
               </RequireAuth>

@@ -3,7 +3,6 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { addDoc, collection, doc, getDoc, getDocs, onSnapshot, orderBy, query, updateDoc, where } from "firebase/firestore";
 import { auth, db } from "../firebase";
 import CreateVisitModal from "./CreateVisitModal";
-import VisitDetailModal, { VisitData } from "./VisitDetailModal";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface Job {
@@ -42,7 +41,27 @@ interface PropertyInfo {
   propertyType?: string;
 }
 
-type Visit = VisitData;
+interface Visit {
+  id: string;
+  visitNumber: number;
+  jobId: string;
+  jobNumber: string;
+  status: string;
+  date: string;
+  start: string;
+  end: string;
+  duration: number;
+  title: string;
+  description: string;
+  toDo: string;
+  department: string;
+  techUid: string;
+  techName: string;
+  additionalTechnicians: string[];
+  forms: string[];
+  requiredSkills: string[];
+  requiredCertifications: string[];
+}
 
 interface HistoryEntry {
   id: string;
@@ -178,7 +197,6 @@ export default function JobDetailPage() {
   const [showHistory, setShowHistory] = useState(false);
   const [statusBusy, setStatusBusy] = useState(false);
   const [addVisitOpen, setAddVisitOpen] = useState(false);
-  const [selectedVisit, setSelectedVisit] = useState<Visit | null>(null);
 
   // Edit mode
   const [editing, setEditing] = useState(false);
@@ -691,7 +709,7 @@ export default function JobDetailPage() {
                         {/* Visit header */}
                         <div
                           style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 18px", borderBottom: "1px solid #f3f4f6", cursor: "pointer" }}
-                          onClick={() => setSelectedVisit(visit)}
+                          onClick={() => navigate(`/jobs/${jobId}/visits/${visit.id}`)}
                         >
                           <span style={{ fontSize: 14, fontWeight: 700, color: "#111827" }}>Visit #{visit.visitNumber}</span>
                           <select
@@ -846,15 +864,6 @@ export default function JobDetailPage() {
         />
       )}
 
-      {selectedVisit && job && (
-        <VisitDetailModal
-          visit={selectedVisit}
-          customerName={job.customerName}
-          propertyName={job.propertyName}
-          onClose={() => setSelectedVisit(null)}
-          onSaved={() => setSelectedVisit(null)}
-        />
-      )}
     </div>
   );
 }
