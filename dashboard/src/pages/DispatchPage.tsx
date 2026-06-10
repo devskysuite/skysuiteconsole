@@ -218,6 +218,7 @@ export default function DispatchPage() {
   const byCell = useMemo(() => {
     const m: Record<string, Visit[]> = {};
     for (const v of visits) {
+      if (v.status === "canceled") continue;
       if (flaggedOnly && !v.flagged) continue;
       if (activeStatus !== "all" && v.status !== activeStatus) continue;
       const k = `${v.techUid}|${v.date}`;
