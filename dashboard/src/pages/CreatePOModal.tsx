@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { addDoc, collection, getDocs, query, where } from "firebase/firestore";
+import { collection, doc, getDocs, query, runTransaction, where } from "firebase/firestore";
 import { auth, db } from "../firebase";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -132,7 +132,7 @@ function Step1({ form, setForm, employees, vendors }: { form: any; setForm: any;
             </select>
           </Field>
           <Field label="PO Number">
-            <input style={inp} placeholder="e.g. 16226" value={form.poNumber} onChange={e=>set("poNumber",e.target.value)} />
+            <input style={inp} placeholder="Auto-assigned if blank" value={form.poNumber} onChange={e=>set("poNumber",e.target.value)} />
           </Field>
         </div>
       </Section>
@@ -579,46 +579,61 @@ export default function CreatePOModal({ jobId, jobNumber, department, projectMan
       const subtotal = selected.reduce((s,i)=>s+(i.totalCost||0), 0);
       const taxPct = form.taxRate==="GST (5%)" ? 0.05 : form.taxRate==="HST ON (13%)" ? 0.13 : form.taxRate==="HST BC (12%)" ? 0.12 : form.taxRate==="PST (7%)" ? 0.07 : 0;
       const taxAmt = subtotal * taxPct;
-      await addDoc(collection(db,"purchaseOrders"), {
-        jobId, jobNumber,
-        poNumber:    form.poNumber.trim() || `PO-${Date.now().toString(36).toUpperCase()}`,
-        status,
-        vendorType:  form.vendorType,
-        vendor:      form.vendor.trim(),
-        poType:      form.poType,
-        poDate:      form.poDate,
-        fieldOrder:  false,
-        assignTo:    form.assignTo,
-        assignedTo:  form.assignTo,
-        requiredBy:  form.requiredBy,
-        tags:        form.tags,
-        description: form.description,
-        department:  form.department,
-        projectManager: form.projectManager,
-        taxRate:     form.taxRate,
-        directPayerSalesTax: form.directPayerSalesTax,
-        shipTo:      form.shipTo,
-        items: selected.map(i => ({
-          id:                i.id,
-          name:              i.name,
-          description:       i.description,
-          fulfillmentStatus: "Pending",
-          quantityOrdered:   Number(i.quantity),
-          quantityReceived:  0,
-          unitCost:          Number(i.unitCost),
-          totalCost:         Number(i.totalCost),
-          taxable:           i.taxable,
-          unitOfMeasure:     i.unitOfMeasure,
-          costCode:          i.costCode,
-          jobCostType:       i.jobCostType,
-          revenueType:       i.revenueType,
-        })),
-        bills: [],
-        subtotal,
-        taxAmount: taxAmt,
-        total: subtotal + taxAmt,
-        createdBy: auth.currentUser?.displayName || auth.currentUser?.email || "Unknown",
-        createdAt: new Date().toISOString().slice(0,10),
+      const poRef       = doc(collection(db, "purchaseOrders"));
+      const settingsRef = doc(db, "settings", "poSettings");
+      await runTransaction(db, async (tx) => {
+        const settingsSnap = await tx.get(settingsRef);
+        let assignedPoNumber = form.poNumber.trim();
+        if (!assignedPoNumber) {
+          if (settingsSnap.exists() && settingsSnap.data().nextPoNumber) {
+            const next = settingsSnap.data().nextPoNumber as number;
+            assignedPoNumber = String(next);
+            tx.set(settingsRef, { nextPoNumber: next + 1 }, { merge: true });
+          } else {
+            assignedPoNumber = `PO-${Date.now().toString(36).toUpperCase()}`;
+          }
+        }
+        tx.set(poRef, {
+          jobId, jobNumber,
+          poNumber:    assignedPoNumber,
+          status,
+          vendorType:  form.vendorType,
+          vendor:      form.vendor.trim(),
+          poType:      form.poType,
+          poDate:      form.poDate,
+          fieldOrder:  false,
+          assignTo:    form.assignTo,
+          assignedTo:  form.assignTo,
+          requiredBy:  form.requiredBy,
+          tags:        form.tags,
+          description: form.description,
+          department:  form.department,
+          projectManager: form.projectManager,
+          taxRate:     form.taxRate,
+          directPayerSalesTax: form.directPayerSalesTax,
+          shipTo:      form.shipTo,
+          items: selected.map(i => ({
+            id:                i.id,
+            name:              i.name,
+            description:       i.description,
+            fulfillmentStatus: "Pending",
+            quantityOrdered:   Number(i.quantity),
+            quantityReceived:  0,
+            unitCost:          Number(i.unitCost),
+            totalCost:         Number(i.totalCost),
+            taxable:           i.taxable,
+            unitOfMeasure:     i.unitOfMeasure,
+            costCode:          i.costCode,
+            jobCostType:       i.jobCostType,
+            revenueType:       i.revenueType,
+          })),
+          bills: [],
+          subtotal,
+          taxAmount: taxAmt,
+          total: subtotal + taxAmt,
+          createdBy: auth.currentUser?.displayName || auth.currentUser?.email || "Unknown",
+          createdAt: new Date().toISOString().slice(0,10),
+        });
       });
       onClose();
     } catch(e) { console.error(e); setSaving(false); alert("Failed to save purchase order. Check console for details."); }
