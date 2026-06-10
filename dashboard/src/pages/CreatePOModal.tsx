@@ -285,7 +285,7 @@ function Step2({ selected, setSelected, taxRate, jobNumber }: {
       id: uid(), name: item.name,
       description: item.description || item.name,
       unitCost: item.unitCost || 0, quantity: 1, totalCost: item.unitCost || 0,
-      taxable: item.taxable ?? false,
+      taxable: item.taxable ?? true,
       unitOfMeasure: "", costCode: "", jobCostType: "Materials", revenueType: "Materials",
     };
     setSelected(s => [...s, newItem]);
@@ -295,7 +295,7 @@ function Step2({ selected, setSelected, taxRate, jobNumber }: {
   function addManual(name: string, unitCost: number) {
     const newItem: SelectedItem = {
       id: uid(), name, description: name, unitCost, quantity: 1, totalCost: unitCost,
-      taxable: false, unitOfMeasure: "", costCode: "", jobCostType: "Materials", revenueType: "Materials",
+      taxable: true, unitOfMeasure: "", costCode: "", jobCostType: "Materials", revenueType: "Materials",
     };
     setSelected(s => [...s, newItem]);
     setActiveId(newItem.id);
@@ -306,7 +306,7 @@ function Step2({ selected, setSelected, taxRate, jobNumber }: {
 
   const subtotal = selected.reduce((sum,i)=>sum+(i.totalCost||0), 0);
   const taxPct = taxRate==="GST (5%)" ? 0.05 : taxRate==="HST ON (13%)" ? 0.13 : taxRate==="HST BC (12%)" ? 0.12 : taxRate==="PST (7%)" ? 0.07 : 0;
-  const taxAmt = subtotal * taxPct;
+  const taxAmt = selected.filter(i=>i.taxable).reduce((s,i)=>s+(i.totalCost||0),0) * taxPct;
   const total = subtotal + taxAmt;
 
   return (
@@ -436,7 +436,7 @@ function ManualAddRow({ onAdd }: { onAdd: (name: string, unitCost: number) => vo
 function Step3({ form, selected }: { form: any; selected: SelectedItem[] }) {
   const subtotal = selected.reduce((s,i)=>s+(i.totalCost||0), 0);
   const taxPct = form.taxRate==="GST (5%)" ? 0.05 : form.taxRate==="HST ON (13%)" ? 0.13 : form.taxRate==="HST BC (12%)" ? 0.12 : form.taxRate==="PST (7%)" ? 0.07 : 0;
-  const taxAmt = subtotal * taxPct;
+  const taxAmt = selected.filter(i=>i.taxable).reduce((s,i)=>s+(i.totalCost||0),0) * taxPct;
 
   function SumField({ label, value }: { label: string; value?: React.ReactNode }) {
     return (
@@ -550,7 +550,7 @@ export default function CreatePOModal({ jobId, jobNumber, department, projectMan
     poType: "", poTypeErr: false, poDate: new Date().toISOString().slice(0,10),
     assignTo: "", requiredBy: "", tags: "", description: "",
     jobNumber, department: department||"", projectManager: projectManager||"", deptErr: false,
-    taxRate: "None", directPayerSalesTax: false, shipTo: "",
+    taxRate: "HST ON (13%)", directPayerSalesTax: false, shipTo: "",
   });
 
   useEffect(() => {
@@ -578,7 +578,7 @@ export default function CreatePOModal({ jobId, jobNumber, department, projectMan
     try {
       const subtotal = selected.reduce((s,i)=>s+(i.totalCost||0), 0);
       const taxPct = form.taxRate==="GST (5%)" ? 0.05 : form.taxRate==="HST ON (13%)" ? 0.13 : form.taxRate==="HST BC (12%)" ? 0.12 : form.taxRate==="PST (7%)" ? 0.07 : 0;
-      const taxAmt = subtotal * taxPct;
+      const taxAmt = selected.filter(i=>i.taxable).reduce((s,i)=>s+(i.totalCost||0),0) * taxPct;
       const poRef       = doc(collection(db, "purchaseOrders"));
       const settingsRef = doc(db, "settings", "poSettings");
       await runTransaction(db, async (tx) => {

@@ -968,6 +968,30 @@ export default function JobDetailPage() {
                 <div style={{ marginTop: 24, fontSize: 12, color: "#9ca3af" }}>
                   Job created {fmtDate(job.createdAt)} by {job.createdBy || "Unknown"}
                 </div>
+
+                {/* History */}
+                <div style={{ marginTop: 28, borderTop: "1px solid #e5e7eb", paddingTop: 20 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: "#6b7280", letterSpacing: 0.5, textTransform: "uppercase", marginBottom: 12 }}>Job History</div>
+                  {displayHistory.length === 0 ? (
+                    <div style={{ color: "#9ca3af", fontSize: 13 }}>No history recorded.</div>
+                  ) : (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+                      {[...displayHistory].reverse().map((entry, idx) => (
+                        <div key={entry.id || idx} style={{ display: "flex", gap: 10, paddingBottom: 14, paddingTop: idx > 0 ? 14 : 0, borderBottom: idx < displayHistory.length - 1 ? "1px solid #f3f4f6" : "none" }}>
+                          <div style={{ flexShrink: 0, paddingTop: 4 }}>
+                            <div style={{ width: 7, height: 7, borderRadius: "50%", background: "#0d2e5e" }} />
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 13, fontWeight: 600, color: "#111827" }}>{entry.action}</div>
+                            <div style={{ fontSize: 11, color: "#6b7280", marginTop: 2 }}>{entry.performedBy}</div>
+                            <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 1 }}>{fmtDateTime(entry.timestamp)}</div>
+                            {entry.note && <div style={{ fontSize: 12, color: "#374151", marginTop: 4, fontStyle: "italic" }}>{entry.note}</div>}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 
@@ -1086,12 +1110,12 @@ export default function JobDetailPage() {
                               <td style={{ padding: "8px 14px", fontSize: 13, color: "#374151" }}>{po.vendor || "—"}</td>
                               <td style={{ padding: "8px 14px", fontSize: 13, color: "#374151" }}>{po.status || "—"}</td>
                               <td style={{ padding: "8px 14px", fontSize: 13, color: "#374151" }}>{po.description || "—"}</td>
-                              <td style={{ ...cell, fontWeight: 600 }}>{`$${((po.items || []).reduce((s: number, it: any) => s + (it.totalCost || 0), 0) || po.total || 0).toLocaleString("en-CA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</td>
+                              <td style={{ ...cell, fontWeight: 600 }}>{`$${((po.items || []).reduce((s: number, it: any) => s + (it.totalCost || 0), 0) || po.subtotal || 0).toLocaleString("en-CA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</td>
                             </tr>
                           ))}
                           <tr style={{ borderTop: "2px solid #e5e7eb", background: "#f9fafb" }}>
                             <td colSpan={4} style={{ padding: "10px 18px", fontWeight: 800, fontSize: 13 }}>Total POs</td>
-                            <td style={{ ...cell, fontWeight: 800, fontSize: 14, color: "#1565c0" }}>{`$${jobPOs.reduce((s, po) => s + ((po.items || []).reduce((a: number, it: any) => a + (it.totalCost || 0), 0) || po.total || 0), 0).toLocaleString("en-CA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</td>
+                            <td style={{ ...cell, fontWeight: 800, fontSize: 14, color: "#1565c0" }}>{`$${jobPOs.reduce((s, po) => s + ((po.items || []).reduce((a: number, it: any) => a + (it.totalCost || 0), 0) || po.subtotal || 0), 0).toLocaleString("en-CA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</td>
                           </tr>
                         </tbody>
                       </table>
@@ -1143,7 +1167,7 @@ export default function JobDetailPage() {
 
                   {/* Combined Total */}
                   {costLoaded && (() => {
-                    const poTotal      = jobPOs.reduce((s, po) => s + ((po.items || []).reduce((a: number, it: any) => a + (it.totalCost || 0), 0) || po.total || 0), 0);
+                    const poTotal      = jobPOs.reduce((s, po) => s + ((po.items || []).reduce((a: number, it: any) => a + (it.totalCost || 0), 0) || po.subtotal || 0), 0);
                     const partsTotal   = visitParts.reduce((s, p) => s + (p.qty || 0) * (p.unitCost || 0), 0);
                     const materialTotal = poTotal + partsTotal;
                     if (grandCost === 0 && materialTotal === 0) return null;

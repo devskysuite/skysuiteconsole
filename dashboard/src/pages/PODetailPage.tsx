@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { arrayUnion, collection, doc, getDoc, getDocs, onSnapshot, query, updateDoc, where } from "firebase/firestore";
+import { collection, doc, getDoc, getDocs, onSnapshot, query, updateDoc, where } from "firebase/firestore";
 import { auth, db } from "../firebase";
 import { Link, useParams } from "react-router-dom";
 
@@ -118,10 +118,13 @@ function EditItemModal({
           : i
       );
       const newSubtotal = updated.reduce((s, i) => s + (i.totalCost || 0), 0);
+      const poTaxPct = ({ "GST (5%)": 0.05, "HST ON (13%)": 0.13, "HST BC (12%)": 0.12, "PST (7%)": 0.07 } as Record<string,number>)[poSnap.data()?.taxRate || ""] ?? 0;
+      const newTaxAmt = updated.filter(i => i.taxable).reduce((s, i) => s + (i.totalCost || 0), 0) * poTaxPct;
       await updateDoc(doc(db, "purchaseOrders", poId), {
         items: updated,
         subtotal: newSubtotal,
-        total: newSubtotal,
+        taxAmount: newTaxAmt,
+        total: newSubtotal + newTaxAmt,
       });
       onClose();
     } catch (e) { console.error(e); alert("Failed to save item."); }
@@ -254,7 +257,7 @@ function EditItemModal({
 
 // ── Add Item Row ───────────────────────────────────────────────────────────────
 function AddItemRow({ poId, jobNumber }: { poId: string; jobNumber: string }) {
-  const blank = { name: "", description: "", unitCost: "", quantity: "1", jobCostType: "Materials", unitOfMeasure: "ea" };
+  const blank = { name: "", description: "", unitCost: "", quantity: "1", jobCostType: "Materials", unitOfMeasure: "ea", taxable: true };
   const [open, setOpen] = useState(false);
   const [f, setF]       = useState(blank);
   const [saving, setSaving] = useState(false);
@@ -267,26 +270,32 @@ function AddItemRow({ poId, jobNumber }: { poId: string; jobNumber: string }) {
       const qty  = parseFloat(f.quantity) || 1;
       const cost = parseFloat(f.unitCost) || 0;
       const poSnap = await getDoc(doc(db, "purchaseOrders", poId));
-      const existing: POItem[] = poSnap.data()?.items || [];
-      const currentTotal = existing.reduce((s: number, i: POItem) => s + (i.totalCost || 0), 0);
+      const poData = poSnap.data();
+      const existing: POItem[] = poData?.items || [];
+      const newItem = {
+        id: crypto.randomUUID(),
+        name: f.name.trim(),
+        description: f.description.trim(),
+        fulfillmentStatus: "Pending",
+        quantityOrdered: qty,
+        quantityReceived: 0,
+        unitCost: cost,
+        totalCost: qty * cost,
+        taxable: f.taxable,
+        unitOfMeasure: f.unitOfMeasure,
+        costCode: "",
+        jobCostType: f.jobCostType,
+        revenueType: "Materials",
+      };
+      const allItems = [...existing, newItem];
+      const newSubtotal = allItems.reduce((s, i) => s + (i.totalCost || 0), 0);
+      const poTaxPct = ({ "GST (5%)": 0.05, "HST ON (13%)": 0.13, "HST BC (12%)": 0.12, "PST (7%)": 0.07 } as Record<string,number>)[poData?.taxRate || ""] ?? 0;
+      const newTaxAmt = allItems.filter(i => i.taxable).reduce((s, i) => s + (i.totalCost || 0), 0) * poTaxPct;
       await updateDoc(doc(db, "purchaseOrders", poId), {
-        items: arrayUnion({
-          id: crypto.randomUUID(),
-          name: f.name.trim(),
-          description: f.description.trim(),
-          fulfillmentStatus: "Pending",
-          quantityOrdered: qty,
-          quantityReceived: 0,
-          unitCost: cost,
-          totalCost: qty * cost,
-          taxable: false,
-          unitOfMeasure: f.unitOfMeasure,
-          costCode: "",
-          jobCostType: f.jobCostType,
-          revenueType: "Materials",
-        }),
-        total: currentTotal + qty * cost,
-        subtotal: currentTotal + qty * cost,
+        items: allItems,
+        subtotal: newSubtotal,
+        taxAmount: newTaxAmt,
+        total: newSubtotal + newTaxAmt,
         createdBy: auth.currentUser?.displayName || auth.currentUser?.email || "Unknown",
       });
       setF(blank);
@@ -312,6 +321,13 @@ function AddItemRow({ poId, jobNumber }: { poId: string; jobNumber: string }) {
         <input style={inp} placeholder="UOM" value={f.unitOfMeasure} onChange={e => setF(p => ({ ...p, unitOfMeasure: e.target.value }))} />
         <input style={inp} type="number" placeholder="Qty" value={f.quantity} onChange={e => setF(p => ({ ...p, quantity: e.target.value }))} />
         <input style={inp} type="number" placeholder="Unit Cost" value={f.unitCost} onChange={e => setF(p => ({ ...p, unitCost: e.target.value }))} />
+      </div>
+      <div style={{ marginBottom: 8 }}>
+        <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: "#374151", cursor: "pointer" }}>
+          <input type="checkbox" checked={f.taxable} onChange={e => setF(p => ({ ...p, taxable: e.target.checked }))}
+            style={{ width: 14, height: 14, accentColor: "#1565c0" }} />
+          Taxable
+        </label>
       </div>
       <div style={{ display: "flex", gap: 8 }}>
         <button onClick={submit} disabled={saving} style={{ background: "#1565c0", color: "#fff", border: "none", borderRadius: 6, padding: "6px 18px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
