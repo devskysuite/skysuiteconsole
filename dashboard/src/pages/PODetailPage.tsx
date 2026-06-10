@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { arrayUnion, collection, doc, getDoc, getDocs, onSnapshot, query, updateDoc, where } from "firebase/firestore";
 import { auth, db } from "../firebase";
 import { Link, useParams } from "react-router-dom";
@@ -26,6 +26,11 @@ interface PO {
   createdBy: string; createdAt: string;
 }
 interface VendorInfo { address?: string; city?: string; province?: string; postal?: string; phone?: string; email?: string; }
+
+// ── Constants ─────────────────────────────────────────────────────────────────
+const PO_TYPES       = ["Credit Card order","Inspection","On line order","Petty Cash","Subcontractor","Vendor delivery","Vendor Pickup"];
+const DEPARTMENTS    = ["Service","Electrical","Automation","Industrial","Commercial","HVAC","Maintenance","General","Construction","Other"];
+const TAX_RATES      = ["None","GST (5%)","HST ON (13%)","HST BC (12%)","PST (7%)"];
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 const PO_STATUSES = ["Open", "Pending", "Fulfilled", "Cancelled", "Draft"];
@@ -196,6 +201,12 @@ export default function PODetailPage() {
   const [vendorInfo, setVendorInfo] = useState<VendorInfo>({});
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("Order");
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft]     = useState<Partial<PO>>({});
+  const [saving, setSaving]   = useState(false);
+  const [vendors, setVendors]     = useState<string[]>([]);
+  const [employees, setEmployees] = useState<string[]>([]);
+  const firstEditField = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!poId) return;
@@ -217,6 +228,47 @@ export default function PODetailPage() {
       }
     }).catch(() => {});
   }, [po?.vendor]);
+
+  useEffect(() => {
+    getDocs(collection(db, "vendors")).then(s => setVendors(s.docs.map(d => (d.data().name as string) || "").filter(Boolean).sort())).catch(() => {});
+    getDocs(query(collection(db, "users"), where("showInDispatch", "==", true))).then(s => setEmployees(s.docs.map(d => (d.data().displayName as string) || "").filter(Boolean).sort())).catch(() => {});
+  }, []);
+
+  function startEdit() {
+    if (!po) return;
+    setDraft({ ...po });
+    setEditing(true);
+    setTimeout(() => firstEditField.current?.focus(), 50);
+  }
+
+  function cancelEdit() { setEditing(false); setDraft({}); }
+
+  async function saveEdit() {
+    if (!poId || !po) return;
+    setSaving(true);
+    try {
+      await updateDoc(doc(db, "purchaseOrders", poId), {
+        vendor:              draft.vendor      ?? po.vendor,
+        vendorType:          draft.vendorType  ?? po.vendorType,
+        poType:              draft.poType      ?? po.poType,
+        poDate:              draft.poDate      ?? po.poDate,
+        requiredBy:          draft.requiredBy  ?? po.requiredBy,
+        department:          draft.department  ?? po.department,
+        assignedTo:          draft.assignedTo  ?? po.assignedTo,
+        assignTo:            draft.assignedTo  ?? po.assignedTo,
+        description:         draft.description ?? po.description,
+        projectManager:      draft.projectManager ?? po.projectManager,
+        taxRate:             draft.taxRate     ?? po.taxRate,
+        directPayerSalesTax: draft.directPayerSalesTax ?? po.directPayerSalesTax,
+        shipTo:              draft.shipTo      ?? po.shipTo,
+        fieldOrder:          draft.fieldOrder  ?? po.fieldOrder,
+        tags:                draft.tags        ?? po.tags,
+      });
+      setEditing(false);
+      setDraft({});
+    } catch (e) { console.error(e); alert("Failed to save changes."); }
+    setSaving(false);
+  }
 
   async function changeStatus(status: string) {
     if (!poId) return;
@@ -248,9 +300,18 @@ export default function PODetailPage() {
           </span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <button style={{ background: "#fff", border: "1px solid #d1d5db", borderRadius: 6, padding: "6px 16px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>EDIT</button>
-          <button style={{ background: "#1f2937", color: "#fff", border: "none", borderRadius: 6, padding: "6px 16px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>GENERATE PDF</button>
-          <button style={{ background: "#16a34a", color: "#fff", border: "none", borderRadius: 6, padding: "6px 16px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>GENERATE RECEIPT</button>
+          {editing ? (
+            <>
+              <button onClick={cancelEdit} style={{ background: "#fff", border: "1px solid #d1d5db", borderRadius: 6, padding: "6px 16px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>CANCEL</button>
+              <button onClick={saveEdit} disabled={saving} style={{ background: "#1565c0", color: "#fff", border: "none", borderRadius: 6, padding: "6px 16px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>{saving ? "SAVING…" : "SAVE CHANGES"}</button>
+            </>
+          ) : (
+            <>
+              <button onClick={startEdit} style={{ background: "#fff", border: "1px solid #d1d5db", borderRadius: 6, padding: "6px 16px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>EDIT</button>
+              <button style={{ background: "#1f2937", color: "#fff", border: "none", borderRadius: 6, padding: "6px 16px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>GENERATE PDF</button>
+              <button style={{ background: "#16a34a", color: "#fff", border: "none", borderRadius: 6, padding: "6px 16px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>GENERATE RECEIPT</button>
+            </>
+          )}
         </div>
       </div>
 
@@ -295,25 +356,96 @@ export default function PODetailPage() {
         <div style={{ flex: 1, overflowY: "auto", padding: "20px 24px" }}>
 
           {/* PO Info grid */}
-          <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, padding: "18px 20px", marginBottom: 20 }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 16 }}>Purchase Order Information</div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: "16px 24px" }}>
-              <InfoLabel label="Job / Project">
-                {po.jobId ? <Link to={`/jobs/${po.jobId}`} style={{ color: "#1565c0", textDecoration: "none", fontWeight: 600 }}>{po.jobNumber || po.jobId}</Link> : "—"}
-              </InfoLabel>
-              <InfoLabel label="Custom PO Type">{po.poType}</InfoLabel>
-              <InfoLabel label="Date of Purchase">{fmtDate(po.poDate)}</InfoLabel>
-              <InfoLabel label="Required By">{po.requiredBy ? fmtDate(po.requiredBy) : "—"}</InfoLabel>
-              <InfoLabel label="Department">{po.department}</InfoLabel>
-              <InfoLabel label="Assigned To">{po.assignedTo || po.assignTo}</InfoLabel>
-              <InfoLabel label="Description">{po.description}</InfoLabel>
-              <InfoLabel label="Project Manager">{po.projectManager}</InfoLabel>
-              <InfoLabel label="Direct Payer - Sales Tax">
-                <input type="checkbox" checked={!!po.directPayerSalesTax} readOnly style={{ cursor: "default" }} />
-              </InfoLabel>
-              <InfoLabel label="Created By">{po.createdBy}</InfoLabel>
-              <InfoLabel label="Created">{fmtDate(po.createdAt)}</InfoLabel>
+          <div style={{ background: editing ? "#eff6ff" : "#fff", border: `1px solid ${editing ? "#bfdbfe" : "#e5e7eb"}`, borderRadius: 10, padding: "18px 20px", marginBottom: 20, transition: "background 0.15s" }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 16 }}>
+              Purchase Order Information {editing && <span style={{ fontSize: 11, color: "#1565c0", fontWeight: 400, marginLeft: 8 }}>— editing</span>}
             </div>
+            {(() => {
+              const ei: React.CSSProperties = { width: "100%", padding: "6px 8px", border: "1px solid #93c5fd", borderRadius: 5, fontSize: 13, outline: "none", background: "#fff", boxSizing: "border-box" as const };
+              const d = draft as any;
+              const set = (k: string, v: any) => setDraft(p => ({ ...p, [k]: v }));
+              if (editing) return (
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: "14px 20px" }}>
+                  <div><div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 3 }}>Vendor</div>
+                    <select style={ei} value={d.vendor ?? po.vendor} onChange={e => set("vendor", e.target.value)}>
+                      {vendors.includes(po.vendor) ? null : <option value={po.vendor}>{po.vendor}</option>}
+                      {vendors.map(v => <option key={v}>{v}</option>)}
+                    </select>
+                  </div>
+                  <div><div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 3 }}>Custom PO Type</div>
+                    <select style={ei} value={d.poType ?? po.poType} onChange={e => set("poType", e.target.value)}>
+                      {PO_TYPES.map(t => <option key={t}>{t}</option>)}
+                    </select>
+                  </div>
+                  <div><div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 3 }}>Date of Purchase</div>
+                    <input ref={firstEditField} style={ei} type="date" value={d.poDate ?? po.poDate} onChange={e => set("poDate", e.target.value)} />
+                  </div>
+                  <div><div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 3 }}>Required By</div>
+                    <input style={ei} type="date" value={d.requiredBy ?? po.requiredBy ?? ""} onChange={e => set("requiredBy", e.target.value)} />
+                  </div>
+                  <div><div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 3 }}>Department</div>
+                    <select style={ei} value={d.department ?? po.department} onChange={e => set("department", e.target.value)}>
+                      {DEPARTMENTS.map(dep => <option key={dep}>{dep}</option>)}
+                    </select>
+                  </div>
+                  <div><div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 3 }}>Assigned To</div>
+                    <select style={ei} value={d.assignedTo ?? po.assignedTo ?? po.assignTo ?? ""} onChange={e => set("assignedTo", e.target.value)}>
+                      <option value="">— None —</option>
+                      {employees.map(e => <option key={e}>{e}</option>)}
+                    </select>
+                  </div>
+                  <div style={{ gridColumn: "span 2" }}><div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 3 }}>Description</div>
+                    <input style={ei} value={d.description ?? po.description ?? ""} onChange={e => set("description", e.target.value)} />
+                  </div>
+                  <div><div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 3 }}>Project Manager</div>
+                    <select style={ei} value={d.projectManager ?? po.projectManager ?? ""} onChange={e => set("projectManager", e.target.value)}>
+                      <option value="">— None —</option>
+                      {employees.map(e => <option key={e}>{e}</option>)}
+                    </select>
+                  </div>
+                  <div><div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 3 }}>Tax Rate</div>
+                    <select style={ei} value={d.taxRate ?? po.taxRate ?? "None"} onChange={e => set("taxRate", e.target.value)}>
+                      {TAX_RATES.map(t => <option key={t}>{t}</option>)}
+                    </select>
+                  </div>
+                  <div><div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 3 }}>Ship To</div>
+                    <input style={ei} value={d.shipTo ?? po.shipTo ?? ""} onChange={e => set("shipTo", e.target.value)} />
+                  </div>
+                  <div><div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 3 }}>Tags</div>
+                    <input style={ei} value={d.tags ?? po.tags ?? ""} onChange={e => set("tags", e.target.value)} />
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, cursor: "pointer" }}>
+                      <input type="checkbox" checked={!!(d.fieldOrder ?? po.fieldOrder)} onChange={e => set("fieldOrder", e.target.checked)} />
+                      Field Order
+                    </label>
+                    <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, cursor: "pointer" }}>
+                      <input type="checkbox" checked={!!(d.directPayerSalesTax ?? po.directPayerSalesTax)} onChange={e => set("directPayerSalesTax", e.target.checked)} />
+                      Direct Payer Sales Tax
+                    </label>
+                  </div>
+                </div>
+              );
+              return (
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: "16px 24px" }}>
+                  <InfoLabel label="Job / Project">
+                    {po.jobId ? <Link to={`/jobs/${po.jobId}`} style={{ color: "#1565c0", textDecoration: "none", fontWeight: 600 }}>{po.jobNumber || po.jobId}</Link> : "—"}
+                  </InfoLabel>
+                  <InfoLabel label="Custom PO Type">{po.poType}</InfoLabel>
+                  <InfoLabel label="Date of Purchase">{fmtDate(po.poDate)}</InfoLabel>
+                  <InfoLabel label="Required By">{po.requiredBy ? fmtDate(po.requiredBy) : "—"}</InfoLabel>
+                  <InfoLabel label="Department">{po.department}</InfoLabel>
+                  <InfoLabel label="Assigned To">{po.assignedTo || po.assignTo}</InfoLabel>
+                  <InfoLabel label="Description">{po.description}</InfoLabel>
+                  <InfoLabel label="Project Manager">{po.projectManager}</InfoLabel>
+                  <InfoLabel label="Direct Payer - Sales Tax">
+                    <input type="checkbox" checked={!!po.directPayerSalesTax} readOnly style={{ cursor: "default" }} />
+                  </InfoLabel>
+                  <InfoLabel label="Created By">{po.createdBy}</InfoLabel>
+                  <InfoLabel label="Created">{fmtDate(po.createdAt)}</InfoLabel>
+                </div>
+              );
+            })()}
           </div>
 
           {/* Tabs */}
