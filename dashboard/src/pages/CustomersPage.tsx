@@ -30,6 +30,7 @@ interface Customer {
   phone: string;
   tags: string;
   syncStatus: string;
+  taxCode?: string;
 }
 
 // ── CSV parser (handles quoted multiline fields) ───────────────────────────────
@@ -239,6 +240,7 @@ function CustomerModal({ title, initial, onSave, onClose }:
     creditLimit: 0, openJobs: 0, openJobsValue: 0, outstandingBalance: 0, overdueBalance: 0,
     lastPayment: 0, lastPaymentDate: "", billingAddress: "", businessAddress: "",
     createdBy: "", createdOn: "", customerType: "", email: "", phone: "", tags: "", syncStatus: "In Sync",
+    taxCode: "HST ON (13%)",
   };
   const [form, setForm] = useState<Omit<Customer, "id">>({ ...blank, ...initial });
   const [saving, setSaving] = useState(false);
@@ -289,6 +291,13 @@ function CustomerModal({ title, initial, onSave, onClose }:
           <div>
             <label style={lbl}>Phone</label>
             <input style={inp} type="tel" value={form.phone} onChange={e => set("phone")(e.target.value)} placeholder="519-555-0100" />
+          </div>
+          <div>
+            <label style={lbl}>Tax Code</label>
+            <select style={inp} value={form.taxCode || "HST ON (13%)"} onChange={e => set("taxCode")(e.target.value)}>
+              <option value="HST ON (13%)">HST ON (13%)</option>
+              <option value="None (0%)">None (0%)</option>
+            </select>
           </div>
           <div style={{ gridColumn: "1/-1" }}>
             <label style={lbl}>Billing Address</label>

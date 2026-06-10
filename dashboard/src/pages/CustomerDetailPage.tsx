@@ -943,6 +943,12 @@ function EditCustomerModal({ customer, onSave, onClose }:
               {["By Email","By Mail","In Person","Online Portal"].map(o => <option key={o}>{o}</option>)}
             </select>
           </div>
+          <div><label style={lbl}>Tax Code</label>
+            <select style={inp} value={form.taxCode || "HST ON (13%)"} onChange={e => set("taxCode")(e.target.value)}>
+              <option value="HST ON (13%)">HST ON (13%)</option>
+              <option value="None (0%)">None (0%)</option>
+            </select>
+          </div>
           <div style={{ gridColumn: "1/-1" }}><label style={lbl}>Billing Address</label><textarea style={{ ...inp, resize: "vertical", minHeight: 56, fontFamily: "inherit" }} value={form.billingAddress} onChange={e => set("billingAddress")(e.target.value)} /></div>
           <div style={{ gridColumn: "1/-1" }}><label style={lbl}>Business Address</label><textarea style={{ ...inp, resize: "vertical", minHeight: 48, fontFamily: "inherit" }} value={form.businessAddress} onChange={e => set("businessAddress")(e.target.value)} /></div>
         </div>
