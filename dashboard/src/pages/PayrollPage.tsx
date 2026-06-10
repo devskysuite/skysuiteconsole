@@ -154,6 +154,7 @@ export default function PayrollPage() {
   function selectEmployee(name: string) {
     setSelectedEmp(name);
     setPendingEdits({});
+    setStatusFilter("all");
     const today = todayYMD();
     setActiveDay(days.includes(today) ? today : days[0]);
   }
