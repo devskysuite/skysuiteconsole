@@ -33,7 +33,7 @@ const DEPARTMENTS    = ["Service","Electrical","Automation","Industrial","Commer
 const TAX_RATES      = ["None","GST (5%)","HST ON (13%)","HST BC (12%)","PST (7%)"];
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
-const PO_STATUSES = ["Open", "Pending", "Fulfilled", "Cancelled", "Draft"];
+const PO_STATUSES = ["Open", "Pending", "Cancelled", "Draft"];
 const STATUS_COLORS: Record<string, { bg: string; color: string; border: string }> = {
   Fulfilled: { bg: "#dcfce7", color: "#166534", border: "#86efac" },
   Open:      { bg: "#dbeafe", color: "#1e40af", border: "#93c5fd" },
@@ -77,22 +77,24 @@ function EditItemModal({
   item: POItem; poId: string; jobNumber: string; departments: string[]; onClose: () => void;
 }) {
   const [f, setF] = useState({
-    name:           item.name || "",
-    description:    item.description || "",
-    department:     item.costCode || "Materials",
-    costCode:       item.costCode || "Materials",
-    jobCostType:    item.jobCostType || "Materials",
-    revenueType:    item.revenueType || "Materials",
-    unitCost:       String(item.unitCost ?? 0),
-    quantity:       String(item.quantityOrdered ?? 1),
-    unitOfMeasure:  item.unitOfMeasure || "",
-    taxable:        !!item.taxable,
+    name:             item.name || "",
+    description:      item.description || "",
+    department:       item.costCode || "Materials",
+    costCode:         item.costCode || "Materials",
+    jobCostType:      item.jobCostType || "Materials",
+    revenueType:      item.revenueType || "Materials",
+    unitCost:         String(item.unitCost ?? 0),
+    quantity:         String(item.quantityOrdered ?? 1),
+    quantityReceived: String(item.quantityReceived ?? 0),
+    unitOfMeasure:    item.unitOfMeasure || "",
+    taxable:          !!item.taxable,
   });
   const [saving, setSaving] = useState(false);
 
-  const qty  = parseFloat(f.quantity) || 0;
-  const cost = parseFloat(f.unitCost) || 0;
-  const total = qty * cost;
+  const qty     = parseFloat(f.quantity) || 0;
+  const qtyRec  = parseFloat(f.quantityReceived) || 0;
+  const cost    = parseFloat(f.unitCost) || 0;
+  const total   = qty * cost;
 
   const inp: React.CSSProperties = {
     width: "100%", padding: "8px 10px", border: "1px solid #d1d5db",
@@ -113,19 +115,18 @@ function EditItemModal({
         i.id === item.id
           ? { ...i, name: f.name.trim(), description: f.description.trim(),
               costCode: f.costCode, jobCostType: f.jobCostType, revenueType: f.revenueType,
-              unitCost: cost, quantityOrdered: qty, totalCost: total,
-              unitOfMeasure: f.unitOfMeasure, taxable: f.taxable }
+              unitCost: cost, quantityOrdered: qty, quantityReceived: qtyRec,
+              fulfillmentStatus: qty > 0 && qty === qtyRec ? "Fulfilled" : "Pending",
+              totalCost: total, unitOfMeasure: f.unitOfMeasure, taxable: f.taxable }
           : i
       );
       const newSubtotal = updated.reduce((s, i) => s + (i.totalCost || 0), 0);
       const poTaxPct = ({ "GST (5%)": 0.05, "HST ON (13%)": 0.13, "HST BC (12%)": 0.12, "PST (7%)": 0.07 } as Record<string,number>)[poSnap.data()?.taxRate || ""] ?? 0;
       const newTaxAmt = updated.filter(i => i.taxable).reduce((s, i) => s + (i.totalCost || 0), 0) * poTaxPct;
-      await updateDoc(doc(db, "purchaseOrders", poId), {
-        items: updated,
-        subtotal: newSubtotal,
-        taxAmount: newTaxAmt,
-        total: newSubtotal + newTaxAmt,
-      });
+      const allFulfilled = updated.length > 0 && updated.every(i => i.fulfillmentStatus === "Fulfilled");
+      const updates: Record<string, unknown> = { items: updated, subtotal: newSubtotal, taxAmount: newTaxAmt, total: newSubtotal + newTaxAmt };
+      if (allFulfilled) updates.status = "Fulfilled";
+      await updateDoc(doc(db, "purchaseOrders", poId), updates);
       onClose();
     } catch (e) { console.error(e); alert("Failed to save item."); }
     setSaving(false);
@@ -199,8 +200,8 @@ function EditItemModal({
             </div>
           </div>
 
-          {/* Unit Cost / Qty / UOM */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+          {/* Unit Cost / Qty Ordered / Qty Received / UOM */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 12 }}>
             <div>
               <span style={label}>Unit Cost</span>
               <div style={{ position: "relative" }}>
@@ -210,9 +211,14 @@ function EditItemModal({
               </div>
             </div>
             <div>
-              <span style={label}>Quantity</span>
+              <span style={label}>Qty Ordered</span>
               <input style={inp} type="number" min={0} value={f.quantity}
                 onChange={e => setF(p => ({ ...p, quantity: e.target.value }))} />
+            </div>
+            <div>
+              <span style={label}>Qty Received</span>
+              <input style={inp} type="number" min={0} value={f.quantityReceived}
+                onChange={e => setF(p => ({ ...p, quantityReceived: e.target.value }))} />
             </div>
             <div>
               <span style={label}>Unit of Measure</span>
@@ -291,13 +297,13 @@ function AddItemRow({ poId, jobNumber }: { poId: string; jobNumber: string }) {
       const newSubtotal = allItems.reduce((s, i) => s + (i.totalCost || 0), 0);
       const poTaxPct = ({ "GST (5%)": 0.05, "HST ON (13%)": 0.13, "HST BC (12%)": 0.12, "PST (7%)": 0.07 } as Record<string,number>)[poData?.taxRate || ""] ?? 0;
       const newTaxAmt = allItems.filter(i => i.taxable).reduce((s, i) => s + (i.totalCost || 0), 0) * poTaxPct;
-      await updateDoc(doc(db, "purchaseOrders", poId), {
-        items: allItems,
-        subtotal: newSubtotal,
-        taxAmount: newTaxAmt,
-        total: newSubtotal + newTaxAmt,
+      const allFulfilled = allItems.length > 0 && allItems.every(i => i.fulfillmentStatus === "Fulfilled");
+      const updates: Record<string, unknown> = {
+        items: allItems, subtotal: newSubtotal, taxAmount: newTaxAmt, total: newSubtotal + newTaxAmt,
         createdBy: auth.currentUser?.displayName || auth.currentUser?.email || "Unknown",
-      });
+      };
+      if (allFulfilled) updates.status = "Fulfilled";
+      await updateDoc(doc(db, "purchaseOrders", poId), updates);
       setF(blank);
       setOpen(false);
     } catch(e) { console.error(e); alert("Failed to add item."); }
@@ -691,12 +697,13 @@ export default function PODetailPage() {
                         <th style={{ ...thStyle, textAlign: "right" }}>Unit Cost</th>
                         <th style={{ ...thStyle, textAlign: "right" }}>Qty Ordered</th>
                         <th style={{ ...thStyle, textAlign: "right" }}>Qty Received</th>
+                        <th style={thStyle}>Status</th>
                         <th style={{ ...thStyle, textAlign: "right" }}>Total</th>
                       </tr>
                     </thead>
                     <tbody>
                       {items.length === 0 && (
-                        <tr><td colSpan={11} style={{ padding: "32px 12px", textAlign: "center", color: "#9ca3af", fontSize: 13 }}>No Purchase Order Lines</td></tr>
+                        <tr><td colSpan={12} style={{ padding: "32px 12px", textAlign: "center", color: "#9ca3af", fontSize: 13 }}>No Purchase Order Lines</td></tr>
                       )}
                       {items.map((item, i) => (
                         <tr key={item.id || i} style={{ borderBottom: "1px solid #f3f4f6" }}>
@@ -707,7 +714,7 @@ export default function PODetailPage() {
                               style={{ background: "none", border: "1px solid #e5e7eb", borderRadius: 5, padding: "3px 8px", fontSize: 11, fontWeight: 700, color: "#6b7280", cursor: "pointer" }}
                             >Edit</button>
                           </td>
-                          <td style={tdStyle}>{i + 1}</td>
+                          <td style={{ ...tdStyle, fontWeight: 600, color: "#374151" }}>{po.poNumber}-{i + 1}</td>
                           <td style={{ ...tdStyle, fontWeight: 600 }}>{item.name || "—"}</td>
                           <td style={tdStyle}>{item.jobCostType || "—"}</td>
                           <td style={tdStyle}>{item.description || "—"}</td>
@@ -716,6 +723,10 @@ export default function PODetailPage() {
                           <td style={{ ...tdStyle, textAlign: "right" }}>{fmtC(item.unitCost)}</td>
                           <td style={{ ...tdStyle, textAlign: "right" }}>{item.quantityOrdered ?? "—"}</td>
                           <td style={{ ...tdStyle, textAlign: "right" }}>{item.quantityReceived ?? 0}</td>
+                          <td style={tdStyle}>{(() => {
+                            const fulfilled = (item.quantityOrdered ?? 0) > 0 && item.quantityOrdered === item.quantityReceived;
+                            return <span style={{ background: fulfilled ? "#dcfce7" : "#f3f4f6", color: fulfilled ? "#166534" : "#6b7280", borderRadius: 4, padding: "2px 7px", fontSize: 11, fontWeight: 700 }}>{fulfilled ? "Fulfilled" : "Pending"}</span>;
+                          })()}</td>
                           <td style={{ ...tdStyle, textAlign: "right", fontWeight: 700 }}>{fmtC(item.totalCost)}</td>
                         </tr>
                       ))}
