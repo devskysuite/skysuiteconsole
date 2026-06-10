@@ -6,7 +6,8 @@ import { db, auth } from "../firebase";
 import { getOutlookToken } from "../utils/outlookToken";
 import { useRole, isAdminRole } from "../hooks/useRole";
 
-const callConflictCheckNow = httpsCallable(getFunctions(), "conflictCheckNow");
+const callConflictCheckNow  = httpsCallable(getFunctions(), "conflictCheckNow");
+const callOncallReminderNow = httpsCallable(getFunctions(), "oncallReminderNow");
 
 // ── Graph API config ────────────────────────────────────────────────────────
 const TENANT_ID = "1c1d62e8-f392-4caa-a8a6-0ce98e0913d9"; // skysuite ca tenant
@@ -164,6 +165,37 @@ export default function OnCallManagerPage() {
   const [addEndDate,setAddEndDate]=useState("");
   const [addSubmitting,setAddSubmitting]=useState(false);
   const [backupRefresh,setBackupRefresh]=useState(0);
+
+  // ── Manual trigger state (emergency buttons) ───────────────────────────────
+  const [triggerRunning,setTriggerRunning]=useState<"conflict"|"reminder"|null>(null);
+  const [triggerResult,setTriggerResult]=useState<{type:string;msg:string;ok:boolean}|null>(null);
+
+  async function runConflictNow(){
+    setTriggerRunning("conflict"); setTriggerResult(null);
+    try{
+      const res:any=await callConflictCheckNow({});
+      const d=res?.data||{};
+      if(d.ok===false) setTriggerResult({type:"conflict",msg:`⚠️ ${d.reason||"Could not run."}`,ok:false});
+      else if(!d.conflicts?.length) setTriggerResult({type:"conflict",msg:`✅ No conflicts found — confirmation texted to alert number.`,ok:true});
+      else setTriggerResult({type:"conflict",msg:`⚠️ Found ${d.conflicts.length} conflict day(s) across ${d.people} person(s) — texted alert number.`,ok:false});
+    }catch(e:any){ setTriggerResult({type:"conflict",msg:`Error: ${e?.message||"failed"}`,ok:false}); }
+    setTriggerRunning(null);
+  }
+
+  async function runReminderNow(){
+    setTriggerRunning("reminder"); setTriggerResult(null);
+    try{
+      const res:any=await callOncallReminderNow({});
+      const d=res?.data||{};
+      const onCall:string[]=d.onCall||[];
+      const sent=(d.smsSent||[]).filter((s:any)=>s.msg==="sent").length;
+      const msg=onCall.length
+        ? `✅ Reminder sent. On-call today: ${onCall.join(", ")}. ${sent} SMS sent.`
+        : `✅ No one scheduled on call today — admin notified.`;
+      setTriggerResult({type:"reminder",msg,ok:true});
+    }catch(e:any){ setTriggerResult({type:"reminder",msg:`Error: ${e?.message||"failed"}`,ok:false}); }
+    setTriggerRunning(null);
+  }
 
   // Auth user
   useEffect(()=>{ return onAuthStateChanged(auth, u=>{ if(u) setCurrentUser({uid:u.uid,displayName:u.displayName||u.email||"Me"}); }); },[]);
@@ -554,6 +586,35 @@ export default function OnCallManagerPage() {
         {roleAtLeast(role||"user",statVisMinRole)&&<TabBtn label="Stat Holidays" active={tab==="stats"} onClick={()=>switchTab("stats")}/>}
         {isAdmin&&<TabBtn label="Setup" active={tab==="setup"} onClick={()=>switchTab("setup")}/>}
       </div>
+
+      {/* ── Emergency manual triggers (admin only, always visible) ── */}
+      {isAdmin&&(
+        <div style={{background:"#fffbeb",border:"1px solid #fde68a",borderRadius:10,padding:"10px 16px",marginBottom:16,display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+          <span style={{fontSize:12,fontWeight:700,color:"#92400e",flexShrink:0}}>⚡ Manual Triggers</span>
+          <button
+            onClick={runConflictNow}
+            disabled={triggerRunning!==null}
+            style={{background:triggerRunning==="conflict"?"#9ca3af":"#dc2626",color:"#fff",border:"none",borderRadius:6,padding:"5px 14px",fontSize:12,fontWeight:700,cursor:triggerRunning?"not-allowed":"pointer"}}
+          >
+            {triggerRunning==="conflict"?"Checking…":"Run Conflict Check"}
+          </button>
+          <button
+            onClick={runReminderNow}
+            disabled={triggerRunning!==null}
+            style={{background:triggerRunning==="reminder"?"#9ca3af":"#1565c0",color:"#fff",border:"none",borderRadius:6,padding:"5px 14px",fontSize:12,fontWeight:700,cursor:triggerRunning?"not-allowed":"pointer"}}
+          >
+            {triggerRunning==="reminder"?"Sending…":"Send On-Call Reminder"}
+          </button>
+          {triggerResult&&(
+            <span style={{fontSize:12,color:triggerResult.ok?"#059669":"#dc2626",fontWeight:600}}>
+              {triggerResult.msg}
+            </span>
+          )}
+          {triggerResult&&(
+            <button onClick={()=>setTriggerResult(null)} style={{background:"none",border:"none",cursor:"pointer",color:"#9ca3af",fontSize:16,marginLeft:"auto",padding:0}}>✕</button>
+          )}
+        </div>
+      )}
 
       {/* ── CALENDAR TAB ── */}
       {tab==="calendar"&&(
