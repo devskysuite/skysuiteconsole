@@ -157,6 +157,7 @@ export default function OnCallManagerPage({ adminMode = false }: { adminMode?: b
   const [swapSubmitting,setSwapSubmitting]=useState(false);
   const [targetFutureEvents,setTargetFutureEvents]=useState<CalEvent[]>([]);
   const [rosterNames,setRosterNames]=useState<string[]>([]);
+  const [rotationOrders,setRotationOrders]=useState<Record<string,string[]>>({});
   // Add-event modal
   const [addModal,setAddModal]=useState<{date:string}|null>(null);
   const [addName,setAddName]=useState("");
@@ -208,6 +209,9 @@ export default function OnCallManagerPage({ adminMode = false }: { adminMode?: b
     // Load on-call roster
     getDoc(doc(db,"settings","onCallConfig")).then(snap=>{
       if(snap.exists()&&snap.data().employees) setRosterNames(snap.data().employees);
+    }).catch(()=>{});
+    getDoc(doc(db,"settings","rotationOrders")).then(snap=>{
+      if(snap.exists()) setRotationOrders(snap.data()||{});
     }).catch(()=>{});
   },[]);
 
@@ -553,6 +557,16 @@ export default function OnCallManagerPage({ adminMode = false }: { adminMode?: b
     setAddSubmitting(false);
   }
 
+  function getRotationPerson(dateStr: string): string {
+    const d = new Date(dateStr + "T12:00:00");
+    const y = d.getFullYear();
+    const ord = (rotationOrders[String(y)]?.length ? rotationOrders[String(y)] : rosterNames);
+    if (!ord.length) return "";
+    const jan1 = Date.UTC(y, 0, 1);
+    const since = Math.floor((Date.UTC(y, d.getMonth(), d.getDate()) - jan1) / 86400000);
+    return ord[((since % ord.length) + ord.length) % ord.length];
+  }
+
   const eventMap:Record<string,CalEvent[]>={};
   events.forEach(e=>{if(!eventMap[e.start])eventMap[e.start]=[];eventMap[e.start].push(e);});
   const todayStr=`${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,"0")}-${String(today.getDate()).padStart(2,"0")}`;
@@ -650,7 +664,7 @@ export default function OnCallManagerPage({ adminMode = false }: { adminMode?: b
                         <span style={{fontSize:inMonth?12:10,fontWeight:isToday?800:500,color:isToday?"#1565c0":"#9ca3af"}}>
                           {inMonth ? parseInt(date.slice(8)) : `${SHORT_MONTHS[parseInt(date.slice(5,7))-1]} ${parseInt(date.slice(8))}`}
                         </span>
-                        {isAdmin&&connected&&<button title="Add event" onClick={(e)=>{e.stopPropagation();setAddModal({date});setAddName("");setAddType("oncall");setAddMultiDay(false);setAddEndDate(date);}} style={{background:"none",border:"none",color:"#1565c0",fontSize:14,fontWeight:700,cursor:"pointer",lineHeight:1,padding:0}}>＋</button>}
+                        {isAdmin&&connected&&<button title="Add event" onClick={(e)=>{e.stopPropagation();setAddModal({date});setAddName(getRotationPerson(date));setAddType("oncall");setAddMultiDay(false);setAddEndDate(date);}} style={{background:"none",border:"none",color:"#1565c0",fontSize:14,fontWeight:700,cursor:"pointer",lineHeight:1,padding:0}}>＋</button>}
                       </div>
                       {dayEvs.map(ev=>{const c=pillStyle(ev.subject);const n=getName(ev.subject);return(
                         <div key={ev.id} style={{fontSize:11,fontWeight:600,background:c.bg,color:c.color,borderRadius:4,padding:"2px 5px",marginBottom:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
