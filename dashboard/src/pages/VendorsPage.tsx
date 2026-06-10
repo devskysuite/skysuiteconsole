@@ -344,7 +344,7 @@ export default function VendorsPage() {
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", flex: 1 }}>
+    <div style={{ display: "flex", flexDirection: "column" }}>
 
       {/* Header */}
       <div style={{ flexShrink: 0, display: "flex", alignItems: "flex-start", justifyContent: "space-between", padding: "20px 24px 16px", flexWrap: "wrap", gap: 12 }}>
@@ -401,7 +401,7 @@ export default function VendorsPage() {
       </div>
 
       {/* Table */}
-      <div style={{ flex: 1, overflow: "auto", minHeight: 0, borderTop: "1px solid #e5e7eb", background: "#fff" }}>
+      <div style={{ overflow: "auto", maxHeight: "calc(100vh - 350px)", borderTop: "1px solid #e5e7eb", background: "#fff" }}>
         {loading ? (
           <div style={{ textAlign: "center", padding: 80, color: "#9ca3af" }}>Loading vendors…</div>
         ) : vendors.length === 0 ? (

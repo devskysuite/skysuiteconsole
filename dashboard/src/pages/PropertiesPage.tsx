@@ -427,10 +427,7 @@ export default function PropertiesPage() {
   }
 
   return (
-    // flex:1 fills the height-constrained flex-column wrapper provided by AppLayout.
-    // The table wrapper (flex:1 inside) becomes the scroll container for both axes,
-    // which lets position:sticky top:0 work reliably on the <th> elements.
-    <div style={{ display: "flex", flexDirection: "column", flex: 1 }}>
+    <div style={{ display: "flex", flexDirection: "column" }}>
 
       {/* Header */}
       <div style={{ flexShrink: 0, display: "flex", alignItems: "flex-start", justifyContent: "space-between", padding: "20px 24px 16px", flexWrap: "wrap", gap: 12 }}>
@@ -501,9 +498,7 @@ export default function PropertiesPage() {
         </span>
       </div>
 
-      {/* Table — flex:1 fills remaining height; overflow:auto handles both axes.
-           Sticky headers use top:0 (relative to THIS scroll container, not the viewport). */}
-      <div style={{ flex: 1, overflow: "auto", minHeight: 0, borderTop: "1px solid #e5e7eb", background: "#fff" }}>
+      <div style={{ overflow: "auto", maxHeight: "calc(100vh - 350px)", borderTop: "1px solid #e5e7eb", background: "#fff" }}>
         {loading ? (
           <div style={{ textAlign: "center", padding: 80, color: "#9ca3af" }}>Loading properties…</div>
         ) : properties.length === 0 ? (
