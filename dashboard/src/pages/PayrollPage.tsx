@@ -102,6 +102,7 @@ export default function PayrollPage() {
   const [addOpen, setAddOpen]       = useState(false);
   const [addForm, setAddForm]       = useState(BLANK_ENTRY);
   const [savingAdd, setSavingAdd]   = useState(false);
+  const [cleaningUp, setCleaningUp] = useState(false);
   const [fieldUsers, setFieldUsers] = useState<string[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -182,6 +183,32 @@ export default function PayrollPage() {
     for (const [id, changes] of Object.entries(pendingEdits)) batch.update(doc(db,"payrollEntries",id), changes);
     await batch.commit();
     setPendingEdits({});
+  }
+
+  async function cleanUpOrphaned() {
+    if (!window.confirm("Remove payroll entries for cancelled or deleted visits? This cannot be undone.")) return;
+    setCleaningUp(true);
+    try {
+      const [paySnap, visitsSnap] = await Promise.all([
+        getDocs(query(collection(db, "payrollEntries"), where("source", "==", "visit"))),
+        getDocs(collection(db, "dispatchVisits")),
+      ]);
+      const cancelledIds = new Set(visitsSnap.docs.filter(d => d.data().status === "canceled").map(d => d.id));
+      const existingIds  = new Set(visitsSnap.docs.map(d => d.id));
+      const toDelete = paySnap.docs.filter(d => {
+        const vid = d.data().visitId as string | undefined;
+        if (!vid) return false;
+        return cancelledIds.has(vid) || !existingIds.has(vid);
+      });
+      if (toDelete.length === 0) { alert("No orphaned entries found."); setCleaningUp(false); return; }
+      for (let i = 0; i < toDelete.length; i += 450) {
+        const batch = writeBatch(db);
+        for (const d of toDelete.slice(i, i + 450)) batch.delete(doc(db, "payrollEntries", d.id));
+        await batch.commit();
+      }
+      alert(`Removed ${toDelete.length} orphaned payroll ${toDelete.length === 1 ? "entry" : "entries"}.`);
+    } catch (e) { console.error(e); alert("Cleanup failed. Check console."); }
+    setCleaningUp(false);
   }
 
   // Import from Excel
@@ -318,6 +345,13 @@ export default function PayrollPage() {
         <div style={{ marginLeft:"auto", display:"flex", gap:8, alignItems:"center" }}>
           {importing && <span style={{ fontSize:12, color:"#9ca3af" }}>Importing…</span>}
           <input ref={fileRef} type="file" accept=".xlsx,.xls" style={{ display:"none" }} onChange={handleFile} />
+          <button
+            onClick={cleanUpOrphaned}
+            disabled={cleaningUp}
+            style={{ background:"#fee2e2", border:"1px solid #fca5a5", borderRadius:6, padding:"6px 14px", fontSize:12, fontWeight:700, cursor:cleaningUp?"not-allowed":"pointer", color:"#991b1b", opacity:cleaningUp?0.6:1 }}
+          >
+            {cleaningUp ? "CLEANING…" : "CLEAN ORPHANED"}
+          </button>
           <button onClick={()=>fileRef.current?.click()} style={{ background:"#f3f4f6", border:"1px solid #d1d5db", borderRadius:6, padding:"6px 14px", fontSize:12, fontWeight:700, cursor:"pointer", color:"#374151" }}>
             IMPORT EXCEL
           </button>
