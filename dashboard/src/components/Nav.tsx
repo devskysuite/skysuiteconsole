@@ -127,6 +127,7 @@ const ACCOUNTING_ITEMS: { to: string; label: string; icon: React.ReactNode }[] =
 ];
 
 const ADMIN_ITEMS: { to: string; label: string; icon: React.ReactNode }[] = [
+  { to: "/on-call/admin",   label: "On-Call Manager",  icon: <IconPhone /> },
   { to: "/categories",      label: "Categories",       icon: <IconTag /> },
   { to: "/repair-contacts", label: "Manage Contacts",  icon: <IconContacts /> },
   { to: "/users",           label: "Users",            icon: <IconUsers /> },

@@ -113,6 +113,7 @@ export default function App() {
                       <Route path="/time-off" element={<TimeOffPage />} />
                       <Route path="/time-off/approvals" element={<TimeOffApprovalsPage />} />
                       <Route path="/on-call" element={<OnCallManagerPage />} />
+                      <Route path="/on-call/admin" element={<OnCallManagerPage adminMode={true} />} />
                       <Route path="/on-call/legacy" element={<OnCallPage />} />
                       <Route path="/on-call/manage" element={<OnCallAdminPage />} />
                       <Route path="/pid-tuning" element={<PidTuningPage />} />

@@ -94,12 +94,12 @@ const ROLE_LEVELS: Record<string,number>={user:0,manager:1,admin:2,owner:3};
 function roleAtLeast(userRole:string,minRole:string){return(ROLE_LEVELS[userRole]||0)>=(ROLE_LEVELS[minRole]||0);}
 
 // ── Main ─────────────────────────────────────────────────────────────────────
-export default function OnCallManagerPage() {
+export default function OnCallManagerPage({ adminMode = false }: { adminMode?: boolean }) {
   const role=useRole(), isAdmin=isAdminRole(role);
   const today=new Date();
   const [year,setYear]=useState(today.getFullYear());
   const [month,setMonth]=useState(today.getMonth());
-  const [tab,setTab]=useState<"calendar"|"swaps"|"stats"|"setup">("calendar");
+  const [tab,setTab]=useState<"calendar"|"swaps"|"stats"|"setup">(adminMode ? "swaps" : "calendar");
   const [refreshKey,setRefreshKey]=useState(0);
   function switchTab(t:"calendar"|"swaps"|"stats"|"setup"){setTab(t);setRefreshKey(k=>k+1);}
   const [statVisMinRole,setStatVisMinRole]=useState("manager");
@@ -581,10 +581,10 @@ export default function OnCallManagerPage() {
 
       {/* Tabs */}
       <div style={{display:"flex",gap:4,marginBottom:20,borderBottom:"2px solid #e5e7eb"}}>
-        <TabBtn label="Calendar" active={tab==="calendar"} onClick={()=>switchTab("calendar")}/>
-        <TabBtn label={`Swaps${pendingCount>0?` (${pendingCount})`:""}`} active={tab==="swaps"} onClick={()=>switchTab("swaps")}/>
-        {roleAtLeast(role||"user",statVisMinRole)&&<TabBtn label="Stat Holidays" active={tab==="stats"} onClick={()=>switchTab("stats")}/>}
-        {isAdmin&&<TabBtn label="Setup" active={tab==="setup"} onClick={()=>switchTab("setup")}/>}
+        {!adminMode&&<TabBtn label="Calendar" active={tab==="calendar"} onClick={()=>switchTab("calendar")}/>}
+        {adminMode&&<TabBtn label={`Swaps${pendingCount>0?` (${pendingCount})`:""}`} active={tab==="swaps"} onClick={()=>switchTab("swaps")}/>}
+        {adminMode&&roleAtLeast(role||"user",statVisMinRole)&&<TabBtn label="Stat Holidays" active={tab==="stats"} onClick={()=>switchTab("stats")}/>}
+        {adminMode&&isAdmin&&<TabBtn label="Setup" active={tab==="setup"} onClick={()=>switchTab("setup")}/>}
       </div>
 
       {/* ── Emergency manual triggers (admin only, always visible) ── */}
