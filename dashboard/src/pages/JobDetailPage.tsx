@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { addDoc, collection, doc, getDoc, getDocs, onSnapshot, orderBy, query, updateDoc, where } from "firebase/firestore";
 import { auth, db } from "../firebase";
 import CreateVisitModal from "./CreateVisitModal";
+import VisitDetailModal, { VisitData } from "./VisitDetailModal";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface Job {
@@ -41,22 +42,7 @@ interface PropertyInfo {
   propertyType?: string;
 }
 
-interface Visit {
-  id: string;
-  visitNumber: number;
-  status: string;        // dispatch board keys: scheduled / traveling / working / etc
-  date: string;          // YYYY-MM-DD
-  start: string;         // HH:MM
-  end: string;           // HH:MM
-  duration: number;
-  title: string;
-  description: string;
-  toDo: string;
-  department: string;
-  techName: string;
-  additionalTechnicians: string[];
-  jobNumber: string;
-}
+type Visit = VisitData;
 
 interface HistoryEntry {
   id: string;
@@ -192,6 +178,7 @@ export default function JobDetailPage() {
   const [showHistory, setShowHistory] = useState(false);
   const [statusBusy, setStatusBusy] = useState(false);
   const [addVisitOpen, setAddVisitOpen] = useState(false);
+  const [selectedVisit, setSelectedVisit] = useState<Visit | null>(null);
 
   // Edit mode
   const [editing, setEditing] = useState(false);
@@ -702,11 +689,15 @@ export default function JobDetailPage() {
                     return (
                       <div key={visit.id} style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, marginBottom: 16 }}>
                         {/* Visit header */}
-                        <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 18px", borderBottom: "1px solid #f3f4f6" }}>
+                        <div
+                          style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 18px", borderBottom: "1px solid #f3f4f6", cursor: "pointer" }}
+                          onClick={() => setSelectedVisit(visit)}
+                        >
                           <span style={{ fontSize: 14, fontWeight: 700, color: "#111827" }}>Visit #{visit.visitNumber}</span>
                           <select
                             value={visit.status}
-                            onChange={e => changeVisitStatus(visit.id, visit.visitNumber, e.target.value)}
+                            onClick={e => e.stopPropagation()}
+                            onChange={e => { e.stopPropagation(); changeVisitStatus(visit.id, visit.visitNumber, e.target.value); }}
                             style={{
                               background: vsc.bg, color: vsc.color,
                               border: `1px solid ${vsc.border}`,
@@ -852,6 +843,16 @@ export default function JobDetailPage() {
           visitNumber={visits.length + 1}
           onClose={() => setAddVisitOpen(false)}
           onCreated={() => setAddVisitOpen(false)}
+        />
+      )}
+
+      {selectedVisit && job && (
+        <VisitDetailModal
+          visit={selectedVisit}
+          customerName={job.customerName}
+          propertyName={job.propertyName}
+          onClose={() => setSelectedVisit(null)}
+          onSaved={() => setSelectedVisit(null)}
         />
       )}
     </div>
