@@ -508,16 +508,18 @@ function Row({ tech, days, byCell, calMap, onAdd, onOpen, onSwap, canEdit }: {
 
 function VisitModal({ init, onClose }: { init: { techUid: string; techName: string; date: string; visit?: Visit }; onClose: () => void }) {
   const v = init.visit;
+  const isCancelled = v?.status === "canceled";
   const [title, setTitle] = useState(v?.title || "");
   const [jobNumber, setJobNumber] = useState(v?.jobNumber || "");
   const [date, setDate] = useState(v?.date || init.date);
   const [start, setStart] = useState(v?.start || "08:00");
   const [end, setEnd] = useState(v?.end || "09:00");
-  const [status, setStatus] = useState(v?.status || "scheduled");
   const [priority, setPriority] = useState<string>(v?.priority || "normal");
   const [flagged, setFlagged] = useState(!!v?.flagged);
   const [notes, setNotes] = useState(v?.notes || "");
   const [busy, setBusy] = useState(false);
+  const [rescheduleMode, setRescheduleMode] = useState(false);
+  const [rescheduleDate, setRescheduleDate] = useState(v?.date || init.date);
 
   async function save() {
     if (!title.trim()) return;
@@ -525,11 +527,11 @@ function VisitModal({ init, onClose }: { init: { techUid: string; techName: stri
     const payload = {
       techUid: init.techUid, techName: init.techName, date,
       title: title.trim(), jobNumber: jobNumber.trim(),
-      start, end, status, priority, flagged, notes: notes.trim(),
+      start, end, priority, flagged, notes: notes.trim(),
     };
     try {
       if (v) await updateDoc(doc(db, "dispatchVisits", v.id), payload);
-      else await addDoc(collection(db, "dispatchVisits"), { ...payload, createdAt: serverTimestamp(), createdBy: auth.currentUser?.uid || "" });
+      else await addDoc(collection(db, "dispatchVisits"), { ...payload, status: "scheduled", createdAt: serverTimestamp(), createdBy: auth.currentUser?.uid || "" });
       onClose();
     } catch (e) { setBusy(false); }
   }
@@ -538,6 +540,24 @@ function VisitModal({ init, onClose }: { init: { techUid: string; techName: stri
     if (!window.confirm(`Delete "${v.title}"?`)) return;
     setBusy(true);
     try { await deleteDoc(doc(db, "dispatchVisits", v.id)); onClose(); } catch { setBusy(false); }
+  }
+  async function confirmReschedule() {
+    if (!v || !rescheduleDate) return;
+    setBusy(true);
+    try { await updateDoc(doc(db, "dispatchVisits", v.id), { date: rescheduleDate, status: "scheduled" }); onClose(); }
+    catch { setBusy(false); }
+  }
+  async function markComplete() {
+    if (!v) return;
+    setBusy(true);
+    try { await updateDoc(doc(db, "dispatchVisits", v.id), { status: "complete" }); onClose(); }
+    catch { setBusy(false); }
+  }
+  async function cancelVisit() {
+    if (!v || !window.confirm("Cancel this visit? This cannot be undone.")) return;
+    setBusy(true);
+    try { await updateDoc(doc(db, "dispatchVisits", v.id), { status: "canceled" }); onClose(); }
+    catch { setBusy(false); }
   }
 
   return (
@@ -559,11 +579,6 @@ function VisitModal({ init, onClose }: { init: { techUid: string; techName: stri
           <div style={{ flex: 1 }}><label style={s.lbl}>End</label><input type="time" style={s.inp} value={end} onChange={e => setEnd(e.target.value)} /></div>
         </div>
 
-        <label style={s.lbl}>Status</label>
-        <select style={s.inp} value={status} onChange={e => setStatus(e.target.value)}>
-          {STATUS_ORDER.map(k => <option key={k} value={k}>{STATUSES[k].label}</option>)}
-        </select>
-
         <div style={{ display: "flex", gap: 16, alignItems: "center", margin: "12px 0" }}>
           <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 600, color: "#374151" }}>
             <input type="checkbox" checked={priority === "high"} onChange={e => setPriority(e.target.checked ? "high" : "normal")} /> High priority
@@ -576,11 +591,44 @@ function VisitModal({ init, onClose }: { init: { techUid: string; techName: stri
         <label style={s.lbl}>Notes</label>
         <textarea style={{ ...s.inp, minHeight: 56, resize: "vertical" }} value={notes} onChange={e => setNotes(e.target.value)} />
 
+        {v && (
+          <div style={{ marginTop: 14 }}>
+            {isCancelled ? (
+              <div style={{ background: "#fee2e2", color: "#991b1b", border: "1px solid #fca5a5", borderRadius: 8, padding: "10px 14px", fontSize: 13, fontWeight: 700 }}>
+                ⛔ Cancelled — cannot be reopened
+              </div>
+            ) : (
+              <>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <button onClick={() => setRescheduleMode(m => !m)} disabled={busy} style={{ background: "#1565c0", color: "#fff", border: "none", borderRadius: 8, padding: "9px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+                    📅 Reschedule
+                  </button>
+                  <button onClick={markComplete} disabled={busy} style={{ background: "#16a34a", color: "#fff", border: "none", borderRadius: 8, padding: "9px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+                    ✓ Mark Complete
+                  </button>
+                  <button onClick={cancelVisit} disabled={busy} style={{ background: "transparent", color: "#dc2626", border: "1px solid #fca5a5", borderRadius: 8, padding: "9px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+                    ✕ Cancel Visit
+                  </button>
+                </div>
+                {rescheduleMode && (
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 10 }}>
+                    <input type="date" value={rescheduleDate} onChange={e => setRescheduleDate(e.target.value)} style={{ ...s.inp, flex: 1 }} />
+                    <button onClick={confirmReschedule} disabled={busy || !rescheduleDate} style={{ ...s.saveBtn, opacity: (busy || !rescheduleDate) ? 0.5 : 1, whiteSpace: "nowrap" }}>Confirm</button>
+                    <button onClick={() => setRescheduleMode(false)} style={s.cancelBtn}>✕</button>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        )}
+
         <div style={{ display: "flex", justifyContent: "space-between", marginTop: 16 }}>
           {v ? <button onClick={remove} disabled={busy} style={s.delBtn}>Delete</button> : <span />}
           <div style={{ display: "flex", gap: 10 }}>
-            <button onClick={onClose} style={s.cancelBtn}>Cancel</button>
-            <button onClick={save} disabled={busy || !title.trim()} style={{ ...s.saveBtn, opacity: (busy || !title.trim()) ? 0.5 : 1 }}>{busy ? "Saving…" : "Save"}</button>
+            <button onClick={onClose} style={s.cancelBtn}>Close</button>
+            {(!v || !isCancelled) && (
+              <button onClick={save} disabled={busy || !title.trim()} style={{ ...s.saveBtn, opacity: (busy || !title.trim()) ? 0.5 : 1 }}>{busy ? "Saving…" : "Save"}</button>
+            )}
           </div>
         </div>
       </div>
