@@ -278,14 +278,6 @@ export default function PartsAndPurchasingTab({ jobId, jobNumber }: Props) {
                       <Link to={`/purchase-orders/${po.id}`} onClick={e => e.stopPropagation()} style={{ color: "#1565c0", textDecoration: "none" }}>{po.poNumber}</Link>
                     </td>
                     <td style={td}>
-                      <select
-                        value={po.status}
-                        onClick={e => e.stopPropagation()}
-                        onChange={e => { e.stopPropagation(); changePOStatus(po.id, e.target.value); }}
-                        style={{ border: "none", background: "transparent", fontSize: 12, cursor: "pointer", outline: "none" }}
-                      >
-                        {PO_STATUSES.map(s => <option key={s}>{s}</option>)}
-                      </select>
                       <StatusBadge status={po.status} />
                     </td>
                     <td style={{ ...td, textAlign: "center" }}>{po.fieldOrder ? "Yes" : "No"}</td>
