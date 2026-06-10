@@ -151,9 +151,9 @@ export default function LaborRatesPage() {
                         <div style={{ position: "relative", display: "inline-block" }}>
                           <span style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", color: "#9ca3af", fontSize: 13, pointerEvents: "none" }}>$</span>
                           <input
-                            type="number" step="0.01" min="0"
+                            type="text" inputMode="decimal"
                             value={d[f]}
-                            onChange={e => set(u.id, f, e.target.value)}
+                            onChange={e => set(u.id, f, e.target.value.replace(/[^0-9.]/g, ""))}
                             placeholder="0.00"
                             style={inp}
                           />
