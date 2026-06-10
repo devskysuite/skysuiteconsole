@@ -697,15 +697,15 @@ export default function CustomerDetailPage() {
                 if (!s) return "—";
                 return new Date(s + (s.includes("T") ? "" : "T12:00:00")).toLocaleDateString("en-CA", { year:"numeric", month:"short", day:"numeric" });
               }
-              function PgBar({ page, total, setPage, count }: { page:number; total:number; setPage:React.Dispatch<React.SetStateAction<number>>; count:number }) {
+              function PgBar({ page, total, setPage, count }: { page:number; total:number; setPage:(n:number)=>void; count:number }) {
                 if (total <= 1) return null;
                 return (
                   <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginTop:10, fontSize:12, color:"#6b7280" }}>
                     <span>Rows per page: {JV_PAGE} &nbsp; {page*JV_PAGE+1}–{Math.min((page+1)*JV_PAGE, count)} of {count}</span>
                     <div style={{ display:"flex", gap:4 }}>
                       <button onClick={() => setPage(0)} disabled={page===0} style={{ ...pgBtn, opacity:page===0?0.35:1 }}>«</button>
-                      <button onClick={() => setPage(p=>Math.max(0,p-1))} disabled={page===0} style={{ ...pgBtn, opacity:page===0?0.35:1 }}>‹</button>
-                      <button onClick={() => setPage(p=>Math.min(total-1,p+1))} disabled={page>=total-1} style={{ ...pgBtn, opacity:page>=total-1?0.35:1 }}>›</button>
+                      <button onClick={() => setPage(Math.max(0, page-1))} disabled={page===0} style={{ ...pgBtn, opacity:page===0?0.35:1 }}>‹</button>
+                      <button onClick={() => setPage(Math.min(total-1, page+1))} disabled={page>=total-1} style={{ ...pgBtn, opacity:page>=total-1?0.35:1 }}>›</button>
                       <button onClick={() => setPage(total-1)} disabled={page>=total-1} style={{ ...pgBtn, opacity:page>=total-1?0.35:1 }}>»</button>
                     </div>
                   </div>
