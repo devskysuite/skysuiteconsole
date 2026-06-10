@@ -968,30 +968,6 @@ export default function JobDetailPage() {
                 <div style={{ marginTop: 24, fontSize: 12, color: "#9ca3af" }}>
                   Job created {fmtDate(job.createdAt)} by {job.createdBy || "Unknown"}
                 </div>
-
-                {/* History */}
-                <div style={{ marginTop: 28, borderTop: "1px solid #e5e7eb", paddingTop: 20 }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: "#6b7280", letterSpacing: 0.5, textTransform: "uppercase", marginBottom: 12 }}>Job History</div>
-                  {displayHistory.length === 0 ? (
-                    <div style={{ color: "#9ca3af", fontSize: 13 }}>No history recorded.</div>
-                  ) : (
-                    <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
-                      {[...displayHistory].reverse().map((entry, idx) => (
-                        <div key={entry.id || idx} style={{ display: "flex", gap: 10, paddingBottom: 14, paddingTop: idx > 0 ? 14 : 0, borderBottom: idx < displayHistory.length - 1 ? "1px solid #f3f4f6" : "none" }}>
-                          <div style={{ flexShrink: 0, paddingTop: 4 }}>
-                            <div style={{ width: 7, height: 7, borderRadius: "50%", background: "#0d2e5e" }} />
-                          </div>
-                          <div>
-                            <div style={{ fontSize: 13, fontWeight: 600, color: "#111827" }}>{entry.action}</div>
-                            <div style={{ fontSize: 11, color: "#6b7280", marginTop: 2 }}>{entry.performedBy}</div>
-                            <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 1 }}>{fmtDateTime(entry.timestamp)}</div>
-                            {entry.note && <div style={{ fontSize: 12, color: "#374151", marginTop: 4, fontStyle: "italic" }}>{entry.note}</div>}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
               </div>
             )}
 
