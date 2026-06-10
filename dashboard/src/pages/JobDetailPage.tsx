@@ -460,7 +460,11 @@ export default function JobDetailPage() {
         </span>
         {job.status === "Cancelled" ? (
           <>
-            <span style={{ fontSize: 11, color: "#991b1b", fontWeight: 600 }}>⛔ Cannot be reopened</span>
+            <button
+              onClick={() => changeJobStatus("In Progress")}
+              disabled={statusBusy}
+              style={{ background: "#fef3c7", color: "#92400e", border: "1px solid #fcd34d", borderRadius: 6, padding: "4px 10px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
+            >↩ Reopen</button>
             <button
               onClick={deleteJob}
               style={{ background: "#dc2626", color: "#fff", border: "none", borderRadius: 6, padding: "4px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
@@ -481,7 +485,7 @@ export default function JobDetailPage() {
               style={{ background: "#16a34a", color: "#fff", border: "none", borderRadius: 6, padding: "4px 10px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
             >✓ Complete</button>
             <button
-              onClick={() => { if (window.confirm("Cancel this job? It cannot be reopened.")) changeJobStatus("Cancelled"); }}
+              onClick={() => { if (window.confirm("Cancel this job?")) changeJobStatus("Cancelled"); }}
               disabled={statusBusy}
               style={{ background: "transparent", color: "#dc2626", border: "1px solid #fca5a5", borderRadius: 6, padding: "4px 10px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
             >✕ Cancel</button>
