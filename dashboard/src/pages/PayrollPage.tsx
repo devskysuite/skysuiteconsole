@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { addDoc, collection, doc, onSnapshot, query, updateDoc, where, writeBatch } from "firebase/firestore";
+import { addDoc, collection, doc, getDocs, onSnapshot, query, updateDoc, where, writeBatch } from "firebase/firestore";
 import { db, auth } from "../firebase";
 import * as XLSX from "xlsx";
 
@@ -97,9 +97,23 @@ export default function PayrollPage() {
   const [addOpen, setAddOpen]       = useState(false);
   const [addForm, setAddForm]       = useState(BLANK_ENTRY);
   const [savingAdd, setSavingAdd]   = useState(false);
+  const [fieldUsers, setFieldUsers] = useState<string[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const days = useMemo(() => weekDays(weekStart), [weekStart]);
+
+  // Load all field users once (showInDispatch = true)
+  useEffect(() => {
+    getDocs(query(collection(db,"users"), where("showInDispatch","==",true)))
+      .then(snap => {
+        const names = snap.docs
+          .map(d => (d.data().displayName as string) || (d.data().email as string) || "")
+          .filter(Boolean)
+          .sort((a,b) => a.localeCompare(b));
+        setFieldUsers(names);
+      })
+      .catch(() => {});
+  }, []);
 
   // Load entries for selected week
   useEffect(() => {
@@ -112,14 +126,17 @@ export default function PayrollPage() {
     return unsub;
   }, [days[0], days[6]]);
 
-  // Employee list from loaded entries
+  // Employee list: all field users, merged with any entry data for the week
   const employees = useMemo(() => {
     const map: Record<string,PayrollEntry[]> = {};
     for (const e of entries) { (map[e.employeeName]??=[]).push(e); }
-    return Object.entries(map)
-      .map(([name, list]) => ({ name, totals: sumEntries(list), disputed: list.filter(e=>e.reviewStatus==="DISPUTED").length, pending: list.filter(e=>e.reviewStatus==="PENDING_APPROVAL"||e.reviewStatus==="SUBMITTED").length }))
-      .sort((a,b) => a.name.localeCompare(b.name));
-  }, [entries]);
+    // Start with every field user (guaranteed to appear), then add anyone in entries who isn't a field user
+    const allNames = [...new Set([...fieldUsers, ...Object.keys(map)])].sort((a,b) => a.localeCompare(b));
+    return allNames.map(name => {
+      const list = map[name] ?? [];
+      return { name, totals: sumEntries(list), disputed: list.filter(e=>e.reviewStatus==="DISPUTED").length, pending: list.filter(e=>e.reviewStatus==="PENDING_APPROVAL"||e.reviewStatus==="SUBMITTED").length };
+    });
+  }, [entries, fieldUsers]);
 
   const disputedTotal = useMemo(() => entries.filter(e=>e.reviewStatus==="DISPUTED").length, [entries]);
   const approvedTotal = useMemo(() => entries.filter(e=>e.reviewStatus==="APPROVED").length, [entries]);
