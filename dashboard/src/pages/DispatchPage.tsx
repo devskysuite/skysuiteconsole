@@ -137,7 +137,7 @@ export default function DispatchPage() {
       {/* ── Header bar ── */}
       <div style={s.headerBar}>
         <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-          <span style={{ fontSize: 20, fontWeight: 800 }}>🗓 Dispatch</span>
+          <span style={{ fontSize: 20, fontWeight: 800 }}>🗓 Job Board</span>
           <div style={s.segment}>
             <button style={view === "day" ? s.segOn : s.segOff} onClick={() => setView("day")}>DAY</button>
             <button style={view === "week" ? s.segOn : s.segOff} onClick={() => setView("week")}>WEEK</button>
@@ -159,7 +159,7 @@ export default function DispatchPage() {
         <div style={{ padding: 40, textAlign: "center" }}><Spinner /></div>
       ) : techs.length === 0 ? (
         <div style={s.empty}>
-          No technicians on the dispatch board yet.<br />
+          No technicians on the Job Board yet.<br />
           Go to <strong>Admin → Users</strong> and turn on <strong>Show in Dispatch</strong> for the techs you want here.
         </div>
       ) : (

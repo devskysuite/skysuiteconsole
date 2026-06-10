@@ -634,9 +634,9 @@ export default function UsersPage() {
                   ? { borderColor: "#1565c0", color: "#fff", background: "#1565c0" }
                   : { borderColor: "#1565c0", color: "#1565c0" }) }}
                 onClick={() => toggleDispatch(u)}
-                title="Show this technician on the Dispatch board"
+                title="Show this technician on the Job Board"
               >
-                {u.showInDispatch ? "✓ On Dispatch" : "Add to Dispatch"}
+                {u.showInDispatch ? "✓ On Job Board" : "Add to Job Board"}
               </button>
             )}
 

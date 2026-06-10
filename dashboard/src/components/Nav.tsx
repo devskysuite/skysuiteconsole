@@ -100,7 +100,7 @@ function IconPricebook() {
 const BASE_LINKS = [
   { to: "/dashboard", label: "Tools" },
   { to: "/on-call",   label: "On-Call" },
-  { to: "/dispatch",  label: "Dispatch" },
+  { to: "/dispatch",  label: "Job Board" },
 ];
 
 const DIRECTORY_ITEMS: { to: string; label: string; icon: React.ReactNode }[] = [
