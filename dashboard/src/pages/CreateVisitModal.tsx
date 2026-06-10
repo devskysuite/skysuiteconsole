@@ -57,6 +57,7 @@ export default function CreateVisitModal({ jobId, jobNumber, customerName, prope
   const [multiple, setMultiple] = useState(false);
   const [errors, setErrors] = useState<Record<string, boolean>>({});
 
+  const [additionalTechs, setAdditionalTechs] = useState<string[]>([]);
   const [form, setForm] = useState({
     description: "",
     toDo: "",
@@ -65,7 +66,6 @@ export default function CreateVisitModal({ jobId, jobNumber, customerName, prope
     requiredCertifications: "",
     department: defaultDepartment || "",
     primaryTechUid: "",
-    additionalTechnicians: "",
     date: "",
     time: "",
     duration: "1",
@@ -106,6 +106,7 @@ export default function CreateVisitModal({ jobId, jobNumber, customerName, prope
 
   async function handleSave() {
     const errs: Record<string, boolean> = {};
+    if (!form.description.trim()) errs.description = true;
     if (!form.department) errs.department = true;
     if (Object.keys(errs).length) { setErrors(errs); return; }
 
@@ -161,9 +162,7 @@ export default function CreateVisitModal({ jobId, jobNumber, customerName, prope
         toDo:                     form.toDo,
         department:               form.department,
         duration,
-        additionalTechnicians:    form.additionalTechnicians
-          ? form.additionalTechnicians.split(",").map(s => s.trim()).filter(Boolean)
-          : [],
+        additionalTechnicians:    additionalTechs,
         requiredSkills:           form.requiredSkills
           ? form.requiredSkills.split(",").map(s => s.trim()).filter(Boolean)
           : [],
@@ -178,9 +177,6 @@ export default function CreateVisitModal({ jobId, jobNumber, customerName, prope
       });
 
       // Auto-create payroll entry for primary + additional techs
-      const additionalTechs = form.additionalTechnicians
-        ? form.additionalTechnicians.split(",").map((s: string) => s.trim()).filter(Boolean)
-        : [];
       const allTechs = [selectedTech?.name || "", ...additionalTechs].filter(Boolean);
       try {
         for (const techName of allTechs) {
@@ -255,8 +251,16 @@ export default function CreateVisitModal({ jobId, jobNumber, customerName, prope
 
           {/* Visit Description */}
           <div style={{ marginBottom: 16 }}>
-            <label style={lbl}>Visit Description</label>
-            <input style={inp} placeholder="Short description" {...bind("description")} />
+            <label style={{ ...lbl, display: "flex", justifyContent: "space-between" }}>
+              <span>Visit Description</span>
+              <span style={req}>REQUIRED</span>
+            </label>
+            <input
+              style={{ ...inp, borderColor: errors.description ? "#ef4444" : "#d1d5db" }}
+              placeholder="Short description"
+              {...bind("description")}
+            />
+            {errors.description && <div style={{ color: "#ef4444", fontSize: 11, marginTop: 3 }}>Description is required</div>}
           </div>
 
           {/* TO DO */}
@@ -309,7 +313,12 @@ export default function CreateVisitModal({ jobId, jobNumber, customerName, prope
               <select
                 style={{ ...inp, appearance: "auto" as React.CSSProperties["appearance"] }}
                 value={form.primaryTechUid}
-                onChange={e => setForm(f => ({ ...f, primaryTechUid: e.target.value }))}
+                onChange={e => {
+                  const newUid = e.target.value;
+                  const newName = techs.find(t => t.uid === newUid)?.name || "";
+                  setForm(f => ({ ...f, primaryTechUid: newUid }));
+                  setAdditionalTechs(prev => prev.filter(n => n !== newName));
+                }}
               >
                 <option value="">Select Primary Technician</option>
                 {techs.map(t => <option key={t.uid} value={t.uid}>{t.name}</option>)}
@@ -320,7 +329,32 @@ export default function CreateVisitModal({ jobId, jobNumber, customerName, prope
           {/* Additional Technicians */}
           <div style={{ marginBottom: 16 }}>
             <label style={lbl}>Additional Technicians</label>
-            <input style={inp} placeholder="Select Additional Technicians (comma-separated)" {...bind("additionalTechnicians")} />
+            {techs.filter(t => t.uid !== form.primaryTechUid).length === 0 ? (
+              <div style={{ fontSize: 12, color: "#9ca3af", padding: "8px 0" }}>
+                {form.primaryTechUid ? "No other technicians available" : "Select a primary technician first"}
+              </div>
+            ) : (
+              <div style={{ border: "1px solid #d1d5db", borderRadius: 6, padding: "6px 10px", maxHeight: 130, overflowY: "auto", background: "#fafafa" }}>
+                {techs.filter(t => t.uid !== form.primaryTechUid).map(t => (
+                  <label key={t.uid} style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 0", cursor: "pointer", fontSize: 13, color: "#111827" }}>
+                    <input
+                      type="checkbox"
+                      checked={additionalTechs.includes(t.name)}
+                      onChange={e => {
+                        if (e.target.checked) setAdditionalTechs(prev => [...prev, t.name]);
+                        else setAdditionalTechs(prev => prev.filter(n => n !== t.name));
+                      }}
+                    />
+                    {t.name}
+                  </label>
+                ))}
+              </div>
+            )}
+            {additionalTechs.length > 0 && (
+              <div style={{ fontSize: 11, color: "#6b7280", marginTop: 4 }}>
+                Selected: {additionalTechs.join(", ")}
+              </div>
+            )}
           </div>
 
           {/* Date / Time / Duration */}

@@ -50,7 +50,7 @@ interface PropertySnap { propertyAddress?: string; propertyType?: string; }
 interface VisitDraft {
   description: string; toDo: string; notes: string;
   forms: string; requiredSkills: string; requiredCertifications: string;
-  department: string; primaryTechUid: string; additionalTechnicians: string;
+  department: string; primaryTechUid: string; additionalTechnicians: string[];
   date: string; time: string; duration: string;
 }
 
@@ -167,7 +167,7 @@ export default function VisitDetailPage() {
       requiredCertifications: arrStr(visit.requiredCertifications),
       department:             visit.department || "",
       primaryTechUid:         visit.techUid || "",
-      additionalTechnicians:  arrStr(visit.additionalTechnicians),
+      additionalTechnicians:  Array.isArray(visit.additionalTechnicians) ? visit.additionalTechnicians : [],
       date:                   visit.date || "",
       time:                   visit.start || "",
       duration:               String(visit.duration || 1),
@@ -208,7 +208,7 @@ export default function VisitDetailPage() {
         department:             draft.department,
         techUid:                draft.primaryTechUid || "",
         techName:               selectedTech?.name || visit.techName || "",
-        additionalTechnicians:  draft.additionalTechnicians ? draft.additionalTechnicians.split(",").map(s => s.trim()).filter(Boolean) : [],
+        additionalTechnicians:  draft.additionalTechnicians,
         date:                   draft.date,
         start:                  draft.time,
         end:                    endTime,
@@ -412,10 +412,21 @@ export default function VisitDetailPage() {
               </div>
               <div>
                 <div style={{ fontSize:10, fontWeight:700, color:"#9ca3af", textTransform:"uppercase", letterSpacing:0.5, marginBottom:4 }}>Additional Technicians</div>
-                {editing && draft
-                  ? <input style={eInp} placeholder="Comma-separated" value={draft.additionalTechnicians} onChange={dSet("additionalTechnicians")} />
-                  : <div style={{ fontSize:13, color:"#111827" }}>{arrStr(visit.additionalTechnicians) || "—"}</div>
-                }
+                {editing && draft ? (
+                  <div style={{ border:"1px solid #93c5fd", borderRadius:5, padding:"6px 8px", maxHeight:130, overflowY:"auto", background:"#fafafa" }}>
+                    {techs.filter(t => t.uid !== draft.primaryTechUid).map(t => (
+                      <label key={t.uid} style={{ display:"flex", alignItems:"center", gap:6, padding:"3px 0", cursor:"pointer", fontSize:13, color:"#111827" }}>
+                        <input type="checkbox" checked={draft.additionalTechnicians.includes(t.name)} onChange={e => {
+                          setDraft(d => d ? { ...d, additionalTechnicians: e.target.checked ? [...d.additionalTechnicians, t.name] : d.additionalTechnicians.filter(n => n !== t.name) } : d);
+                        }} />
+                        {t.name}
+                      </label>
+                    ))}
+                    {techs.filter(t => t.uid !== draft.primaryTechUid).length === 0 && <span style={{ fontSize:12, color:"#9ca3af" }}>No other technicians available</span>}
+                  </div>
+                ) : (
+                  <div style={{ fontSize:13, color:"#111827" }}>{arrStr(visit.additionalTechnicians) || "—"}</div>
+                )}
               </div>
             </div>
           </Section>

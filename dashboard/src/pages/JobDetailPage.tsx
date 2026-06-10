@@ -199,6 +199,9 @@ export default function JobDetailPage() {
   const [addVisitOpen, setAddVisitOpen] = useState(false);
   const [rescheduleVisitId, setRescheduleVisitId] = useState<string | null>(null);
   const [rescheduleDate, setRescheduleDate] = useState("");
+  const [allTechs, setAllTechs] = useState<{ uid: string; name: string }[]>([]);
+  const [editingTechsId, setEditingTechsId] = useState<string | null>(null);
+  const [editTechs, setEditTechs] = useState<string[]>([]);
 
   // Edit mode
   const [editing, setEditing] = useState(false);
@@ -392,6 +395,18 @@ export default function JobDetailPage() {
     } catch (e) { console.error(e); }
     setSavingEdit(false);
   }
+
+  // Load dispatch techs (lazy)
+  useEffect(() => {
+    if (allTechs.length > 0) return;
+    getDocs(query(collection(db, "users"), where("showInDispatch", "==", true)))
+      .then(snap => setAllTechs(
+        snap.docs
+          .map(d => ({ uid: (d.data().uid as string) || d.id, name: (d.data().displayName as string) || (d.data().email as string) || "Unknown" }))
+          .filter(t => t.name)
+          .sort((a, b) => a.name.localeCompare(b.name))
+      )).catch(() => {});
+  }, []);
 
   // Merge sub-collection history with derived creation event as fallback
   const displayHistory: HistoryEntry[] = history.length > 0
@@ -768,9 +783,17 @@ export default function JobDetailPage() {
                           ) : (
                             <div style={{ display: "flex", gap: 6 }} onClick={e => e.stopPropagation()}>
                               <button
-                                onClick={() => { setRescheduleVisitId(rescheduleVisitId === visit.id ? null : visit.id); setRescheduleDate(visit.date || ""); }}
+                                onClick={() => { setRescheduleVisitId(rescheduleVisitId === visit.id ? null : visit.id); setRescheduleDate(visit.date || ""); setEditingTechsId(null); }}
                                 style={{ background: "#1565c0", color: "#fff", border: "none", borderRadius: 6, padding: "3px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}
                               >📅 Reschedule</button>
+                              <button
+                                onClick={() => {
+                                  setEditingTechsId(editingTechsId === visit.id ? null : visit.id);
+                                  setEditTechs(Array.isArray(visit.additionalTechnicians) ? visit.additionalTechnicians : []);
+                                  setRescheduleVisitId(null);
+                                }}
+                                style={{ background: "#7c3aed", color: "#fff", border: "none", borderRadius: 6, padding: "3px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}
+                              >👥 Techs</button>
                               <button
                                 onClick={() => changeVisitStatus(visit.id, visit.visitNumber, "complete")}
                                 style={{ background: "#16a34a", color: "#fff", border: "none", borderRadius: 6, padding: "3px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}
@@ -799,6 +822,37 @@ export default function JobDetailPage() {
                             >Confirm</button>
                             <button onClick={() => setRescheduleVisitId(null)}
                               style={{ background: "#6b7280", color: "#fff", border: "none", borderRadius: 6, padding: "5px 10px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>✕</button>
+                          </div>
+                        )}
+
+                        {/* Techs editor */}
+                        {editingTechsId === visit.id && (
+                          <div style={{ padding: "10px 18px", borderBottom: "1px solid #f3f4f6", background: "#f9fafb" }} onClick={e => e.stopPropagation()}>
+                            <div style={{ fontSize: 11, fontWeight: 700, color: "#7c3aed", marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.5 }}>Additional Technicians</div>
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
+                              {allTechs.filter(t => t.name !== visit.techName).map(t => (
+                                <label key={t.uid} style={{ display: "flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 6, border: `1px solid ${editTechs.includes(t.name) ? "#7c3aed" : "#d1d5db"}`, background: editTechs.includes(t.name) ? "#ede9fe" : "#fff", cursor: "pointer", fontSize: 12, fontWeight: 600, color: editTechs.includes(t.name) ? "#7c3aed" : "#374151" }}>
+                                  <input type="checkbox" style={{ display: "none" }} checked={editTechs.includes(t.name)} onChange={e => {
+                                    if (e.target.checked) setEditTechs(prev => [...prev, t.name]);
+                                    else setEditTechs(prev => prev.filter(n => n !== t.name));
+                                  }} />
+                                  {editTechs.includes(t.name) ? "✓ " : ""}{t.name}
+                                </label>
+                              ))}
+                              {allTechs.filter(t => t.name !== visit.techName).length === 0 && (
+                                <span style={{ fontSize: 12, color: "#9ca3af" }}>No other technicians available</span>
+                              )}
+                            </div>
+                            <div style={{ display: "flex", gap: 8 }}>
+                              <button
+                                onClick={async () => {
+                                  await updateDoc(doc(db, "dispatchVisits", visit.id), { additionalTechnicians: editTechs });
+                                  setEditingTechsId(null);
+                                }}
+                                style={{ background: "#7c3aed", color: "#fff", border: "none", borderRadius: 6, padding: "5px 16px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
+                              >Save</button>
+                              <button onClick={() => setEditingTechsId(null)} style={{ background: "#6b7280", color: "#fff", border: "none", borderRadius: 6, padding: "5px 10px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>✕</button>
+                            </div>
                           </div>
                         )}
 
