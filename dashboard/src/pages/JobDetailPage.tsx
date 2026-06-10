@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { addDoc, collection, doc, getDoc, onSnapshot, orderBy, query, updateDoc, where } from "firebase/firestore";
+import { addDoc, collection, doc, getDoc, getDocs, onSnapshot, orderBy, query, updateDoc, where } from "firebase/firestore";
 import { auth, db } from "../firebase";
 import CreateVisitModal from "./CreateVisitModal";
 
@@ -114,6 +114,46 @@ const JOB_STATUSES = ["Open", "In Progress", "Completed", "Cancelled", "Invoiced
 const VISIT_STATUSES = ["scheduled", "traveling", "working", "paused", "onhold", "canceled", "closed", "complete"];
 const TABS = ["Scheduling", "Quotes", "Tasks", "Forms & Attachments", "Parts & Purchasing", "Job Costing", "Reports & Invoices"];
 
+// Same option lists as CreateJobModal
+const WORK_TYPES  = ["Service Call","Quoted Work","Maintenance","Emergency","Project","Inspection","Commissioning","Start-up","Other"];
+const JOB_TYPES   = ["Service","Project","Quote","Emergency","Warranty"];
+const DEPARTMENTS = ["Electrical","Automation","Industrial","Commercial","HVAC","Plumbing","Maintenance","General","Other"];
+const PRIORITIES  = ["Low","Medium","High","Critical"];
+
+// ── Edit mode ─────────────────────────────────────────────────────────────────
+interface JobDraft {
+  billingCustomer: string; propertyRep: string; authorizedBy: string;
+  customerPO: string; customerWO: string;
+  workType: string; pricebook: string; jobType: string;
+  nte: string; quoteSubtotal: string; quoteTax: string; costAmount: string;
+  projectManager: string; accountManager: string; soldBy: string; preferredTechnician: string;
+  departmentsNeeded: string; priority: string; issueDescription: string;
+}
+
+const FIELD_LABELS: Record<string, string> = {
+  billingCustomer: "Billing Customer", propertyRep: "Property Rep", authorizedBy: "Authorized By",
+  customerPO: "Customer PO #", customerWO: "Customer WO #",
+  workType: "Work Type", pricebook: "Pricebook", jobType: "Job Type",
+  nte: "NTE", quoteSubtotal: "Quote Subtotal", quoteTax: "Quote Tax", costAmount: "Cost Amount",
+  projectManager: "Project Manager", accountManager: "Account Manager", soldBy: "Sold By",
+  preferredTechnician: "Preferred Technician", departmentsNeeded: "Departments",
+  priority: "Priority", issueDescription: "Issue Description",
+};
+
+const eInp: React.CSSProperties = {
+  width: "100%", padding: "5px 8px",
+  border: "1px solid #93c5fd", borderRadius: 5,
+  fontSize: 12, boxSizing: "border-box" as const,
+  color: "#111827", background: "#fff", outline: "none", marginTop: 2,
+};
+const eSel: React.CSSProperties = { ...eInp, appearance: "auto" as React.CSSProperties["appearance"] };
+
+// Prepend the current value if it isn't already in the option list, so the
+// select never silently shows blank for legacy/free-text values
+function withCurrent(list: string[], current: string): string[] {
+  return current && !list.includes(current) ? [current, ...list] : list;
+}
+
 // ── Sidebar helpers ───────────────────────────────────────────────────────────
 function SLabel({ children }: { children: React.ReactNode }) {
   return (
@@ -152,6 +192,14 @@ export default function JobDetailPage() {
   const [showHistory, setShowHistory] = useState(false);
   const [statusBusy, setStatusBusy] = useState(false);
   const [addVisitOpen, setAddVisitOpen] = useState(false);
+
+  // Edit mode
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState<JobDraft | null>(null);
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [users, setUsers] = useState<string[]>([]);
+  const [contacts, setContacts] = useState<string[]>([]);
+  const [pricebooks, setPricebooks] = useState<string[]>([]);
 
   // Job
   useEffect(() => {
@@ -214,6 +262,101 @@ export default function JobDetailPage() {
         timestamp: new Date().toISOString(),
       });
     } catch (e) { console.error(e); }
+  }
+
+  function startEdit() {
+    if (!job) return;
+    setDraft({
+      billingCustomer:     job.billingCustomer || "",
+      propertyRep:         job.propertyRep || "",
+      authorizedBy:        job.authorizedBy || "",
+      customerPO:          job.customerPO || "",
+      customerWO:          job.customerWO || "",
+      workType:            job.workType || "",
+      pricebook:           job.pricebook || "",
+      jobType:             job.jobType || "",
+      nte:                 job.nte ? String(job.nte) : "",
+      quoteSubtotal:       job.quoteSubtotal ? String(job.quoteSubtotal) : "",
+      quoteTax:            job.quoteTax ? String(job.quoteTax) : "",
+      costAmount:          job.costAmount ? String(job.costAmount) : "",
+      projectManager:      job.projectManager || "",
+      accountManager:      job.accountManager || "",
+      soldBy:              job.soldBy || "",
+      preferredTechnician: job.preferredTechnician || "",
+      departmentsNeeded:   job.departmentsNeeded || "",
+      priority:            job.priority || "",
+      issueDescription:    job.issueDescription || "",
+    });
+    setEditing(true);
+    // Lazily load dropdown data the first time edit mode opens
+    if (users.length === 0) {
+      getDocs(collection(db, "users")).then(snap => {
+        setUsers(snap.docs.map(d => d.data().displayName as string).filter(Boolean).sort((a, b) => a.localeCompare(b)));
+      }).catch(() => {});
+    }
+    if (contacts.length === 0 && job.customerId) {
+      getDocs(collection(db, "customers", job.customerId, "contacts")).then(snap => {
+        setContacts(snap.docs.map(d => d.data().name as string).filter(Boolean).sort((a, b) => a.localeCompare(b)));
+      }).catch(() => {});
+    }
+    if (pricebooks.length === 0) {
+      getDocs(collection(db, "pricebooks")).then(snap => {
+        setPricebooks(snap.docs.map(d => d.data().name as string).filter(Boolean).sort((a, b) => a.localeCompare(b)));
+      }).catch(() => {});
+    }
+  }
+
+  function cancelEdit() {
+    setEditing(false);
+    setDraft(null);
+  }
+
+  const dSet = (k: keyof JobDraft) =>
+    (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
+      setDraft(d => d ? { ...d, [k]: e.target.value } : d);
+
+  async function saveEdit() {
+    if (!jobId || !job || !draft || savingEdit) return;
+    setSavingEdit(true);
+    const updates: Record<string, string | number> = {
+      billingCustomer:     draft.billingCustomer,
+      propertyRep:         draft.propertyRep,
+      authorizedBy:        draft.authorizedBy,
+      customerPO:          draft.customerPO,
+      customerWO:          draft.customerWO,
+      workType:            draft.workType,
+      pricebook:           draft.pricebook,
+      jobType:             draft.jobType,
+      nte:                 parseFloat(draft.nte) || 0,
+      quoteSubtotal:       parseFloat(draft.quoteSubtotal) || 0,
+      quoteTax:            parseFloat(draft.quoteTax) || 0,
+      costAmount:          parseFloat(draft.costAmount) || 0,
+      projectManager:      draft.projectManager,
+      accountManager:      draft.accountManager,
+      soldBy:              draft.soldBy,
+      preferredTechnician: draft.preferredTechnician,
+      departmentsNeeded:   draft.departmentsNeeded,
+      priority:            draft.priority,
+      issueDescription:    draft.issueDescription,
+    };
+    const changed = Object.keys(updates).filter(k => {
+      const before = (job as unknown as Record<string, unknown>)[k] ?? (typeof updates[k] === "number" ? 0 : "");
+      return updates[k] !== before;
+    });
+    try {
+      if (changed.length > 0) {
+        await updateDoc(doc(db, "jobs", jobId), updates);
+        await addDoc(collection(db, "jobs", jobId, "history"), {
+          action:      "Job Edited",
+          performedBy: auth.currentUser?.displayName || auth.currentUser?.email || "Unknown",
+          timestamp:   new Date().toISOString(),
+          note:        "Changed: " + changed.map(k => FIELD_LABELS[k] || k).join(", "),
+        });
+      }
+      setEditing(false);
+      setDraft(null);
+    } catch (e) { console.error(e); }
+    setSavingEdit(false);
   }
 
   // Merge sub-collection history with derived creation event as fallback
@@ -282,7 +425,25 @@ export default function JobDetailPage() {
 
         {/* Right buttons */}
         <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
-          <button style={{ background: "none", border: "1px solid #d1d5db", borderRadius: 6, padding: "6px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", color: "#374151" }}>EDIT</button>
+          {editing ? (
+            <>
+              <button
+                onClick={cancelEdit}
+                disabled={savingEdit}
+                style={{ background: "none", border: "1px solid #d1d5db", borderRadius: 6, padding: "6px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", color: "#374151" }}
+              >CANCEL</button>
+              <button
+                onClick={saveEdit}
+                disabled={savingEdit}
+                style={{ background: "#16a34a", color: "#fff", border: "none", borderRadius: 6, padding: "6px 22px", fontSize: 12, fontWeight: 700, cursor: savingEdit ? "not-allowed" : "pointer", opacity: savingEdit ? 0.7 : 1 }}
+              >{savingEdit ? "SAVING…" : "SAVE"}</button>
+            </>
+          ) : (
+            <button
+              onClick={startEdit}
+              style={{ background: "none", border: "1px solid #d1d5db", borderRadius: 6, padding: "6px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", color: "#374151" }}
+            >EDIT</button>
+          )}
           <button style={{ background: "#0d2e5e", color: "#fff", border: "none", borderRadius: 6, padding: "6px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>OPEN JOB REPORT</button>
         </div>
       </div>
@@ -301,7 +462,9 @@ export default function JobDetailPage() {
           </SValue>
 
           <SLabel>Billing Customer</SLabel>
-          <SValue>{job.billingCustomer || job.customerName || "—"}</SValue>
+          {editing && draft
+            ? <input style={eInp} value={draft.billingCustomer} onChange={dSet("billingCustomer")} />
+            : <SValue>{job.billingCustomer || job.customerName || "—"}</SValue>}
 
           <SLabel>Property</SLabel>
           <SValue>
@@ -318,31 +481,55 @@ export default function JobDetailPage() {
           <SValue>{propInfo?.propertyAddress || "—"}</SValue>
 
           <SLabel>Authorized By</SLabel>
-          <SValue>{job.authorizedBy || "—"}</SValue>
+          {editing && draft
+            ? <select style={eSel} value={draft.authorizedBy} onChange={dSet("authorizedBy")}>
+                <option value="">Select...</option>
+                {withCurrent(contacts, draft.authorizedBy).map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            : <SValue>{job.authorizedBy || "—"}</SValue>}
 
           <SLabel>Property Representative</SLabel>
-          <SValue>{job.propertyRep || "—"}</SValue>
+          {editing && draft
+            ? <select style={eSel} value={draft.propertyRep} onChange={dSet("propertyRep")}>
+                <option value="">Select...</option>
+                {withCurrent(contacts, draft.propertyRep).map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            : <SValue>{job.propertyRep || "—"}</SValue>}
 
           <SLabel>Purchase Order (Customer)</SLabel>
-          <SValue>{job.customerPO || "—"}</SValue>
+          {editing && draft
+            ? <input style={eInp} value={draft.customerPO} onChange={dSet("customerPO")} />
+            : <SValue>{job.customerPO || "—"}</SValue>}
 
           <SLabel>Work Order (Customer)</SLabel>
-          <SValue>{job.customerWO || "—"}</SValue>
+          {editing && draft
+            ? <input style={eInp} value={draft.customerWO} onChange={dSet("customerWO")} />
+            : <SValue>{job.customerWO || "—"}</SValue>}
 
           <SLabel>Quote Subtotal</SLabel>
-          <SValue>{job.quoteSubtotal ? fmt$(job.quoteSubtotal) : "—"}</SValue>
+          {editing && draft
+            ? <input type="number" min="0" step="0.01" style={eInp} value={draft.quoteSubtotal} onChange={dSet("quoteSubtotal")} />
+            : <SValue>{job.quoteSubtotal ? fmt$(job.quoteSubtotal) : "—"}</SValue>}
 
           <SLabel>Quote Tax</SLabel>
-          <SValue>{job.quoteTax ? fmt$(job.quoteTax) : "—"}</SValue>
+          {editing && draft
+            ? <input type="number" min="0" step="0.01" style={eInp} value={draft.quoteTax} onChange={dSet("quoteTax")} />
+            : <SValue>{job.quoteTax ? fmt$(job.quoteTax) : "—"}</SValue>}
 
           <SLabel>Quote Total</SLabel>
-          <SValue>{fmt$(quoteTotal)}</SValue>
+          <SValue>{editing && draft
+            ? fmt$((parseFloat(draft.quoteSubtotal) || 0) + (parseFloat(draft.quoteTax) || 0))
+            : fmt$(quoteTotal)}</SValue>
 
           <SLabel>Amount Not to Exceed</SLabel>
-          <SValue>{job.nte ? fmt$(job.nte) : "—"}</SValue>
+          {editing && draft
+            ? <input type="number" min="0" step="0.01" style={eInp} value={draft.nte} onChange={dSet("nte")} />
+            : <SValue>{job.nte ? fmt$(job.nte) : "—"}</SValue>}
 
           <SLabel>Cost Amount</SLabel>
-          <SValue>{job.costAmount ? fmt$(job.costAmount) : "—"}</SValue>
+          {editing && draft
+            ? <input type="number" min="0" step="0.01" style={eInp} value={draft.costAmount} onChange={dSet("costAmount")} />
+            : <SValue>{job.costAmount ? fmt$(job.costAmount) : "—"}</SValue>}
         </div>
 
         {/* ── Main content ── */}
@@ -353,11 +540,39 @@ export default function JobDetailPage() {
 
             {/* Row 1: key fields */}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: "0 14px", marginBottom: 18 }}>
-              <FieldBlock label="Job Type"            value={job.jobType} />
-              <FieldBlock label="Project Manager"     value={job.projectManager} />
-              <FieldBlock label="Account Manager"     value={job.accountManager} />
-              <FieldBlock label="Sold By"             value={job.soldBy} />
-              <FieldBlock label="Preferred Technician" value={job.preferredTechnician} />
+              {editing && draft ? (
+                <>
+                  <div>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 }}>Job Type</div>
+                    <select style={eSel} value={draft.jobType} onChange={dSet("jobType")}>
+                      <option value="">Select...</option>
+                      {withCurrent(JOB_TYPES, draft.jobType).map(j => <option key={j} value={j}>{j}</option>)}
+                    </select>
+                  </div>
+                  {([
+                    ["Project Manager", "projectManager"],
+                    ["Account Manager", "accountManager"],
+                    ["Sold By", "soldBy"],
+                    ["Preferred Technician", "preferredTechnician"],
+                  ] as [string, keyof JobDraft][]).map(([label, key]) => (
+                    <div key={key}>
+                      <div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 }}>{label}</div>
+                      <select style={eSel} value={draft[key]} onChange={dSet(key)}>
+                        <option value="">Select...</option>
+                        {withCurrent(users, draft[key]).map(u => <option key={u} value={u}>{u}</option>)}
+                      </select>
+                    </div>
+                  ))}
+                </>
+              ) : (
+                <>
+                  <FieldBlock label="Job Type"            value={job.jobType} />
+                  <FieldBlock label="Project Manager"     value={job.projectManager} />
+                  <FieldBlock label="Account Manager"     value={job.accountManager} />
+                  <FieldBlock label="Sold By"             value={job.soldBy} />
+                  <FieldBlock label="Preferred Technician" value={job.preferredTechnician} />
+                </>
+              )}
               <FieldBlock label="Labor Rate"          value="—" />
               <FieldBlock label="Modifiers"           value="—" />
             </div>
@@ -365,7 +580,12 @@ export default function JobDetailPage() {
             {/* Departments */}
             <div style={{ marginBottom: 14 }}>
               <div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 5 }}>Departments</div>
-              {job.departmentsNeeded
+              {editing && draft ? (
+                <select style={{ ...eSel, maxWidth: 220 }} value={draft.departmentsNeeded} onChange={dSet("departmentsNeeded")}>
+                  <option value="">Select...</option>
+                  {withCurrent(DEPARTMENTS, draft.departmentsNeeded).map(d => <option key={d} value={d}>{d}</option>)}
+                </select>
+              ) : job.departmentsNeeded
                 ? <span style={{ background: "#f3f4f6", color: "#374151", fontSize: 12, fontWeight: 600, padding: "3px 12px", borderRadius: 99, border: "1px solid #e5e7eb" }}>{job.departmentsNeeded}</span>
                 : <span style={{ color: "#9ca3af", fontSize: 13 }}>—</span>
               }
@@ -373,8 +593,26 @@ export default function JobDetailPage() {
 
             {/* Issue / Priority / Office Notes */}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 140px 1fr", gap: "0 20px", marginBottom: 14 }}>
-              <FieldBlock label="Issue Description" value={job.issueDescription} />
-              <FieldBlock label="Priority"          value={job.priority} />
+              {editing && draft ? (
+                <>
+                  <div>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 }}>Issue Description</div>
+                    <textarea rows={3} style={{ ...eInp, resize: "vertical", minHeight: 60, fontFamily: "inherit" }} value={draft.issueDescription} onChange={dSet("issueDescription")} />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 }}>Priority</div>
+                    <select style={eSel} value={draft.priority} onChange={dSet("priority")}>
+                      <option value="">Select...</option>
+                      {withCurrent(PRIORITIES, draft.priority).map(p => <option key={p} value={p}>{p}</option>)}
+                    </select>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <FieldBlock label="Issue Description" value={job.issueDescription} />
+                  <FieldBlock label="Priority"          value={job.priority} />
+                </>
+              )}
               <div>
                 <div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 }}>Office Notes</div>
                 <div style={{ fontSize: 12, color: "#1565c0", cursor: "pointer" }}>Add / View / Edit all office notes for job</div>
@@ -383,11 +621,32 @@ export default function JobDetailPage() {
 
             {/* Work Type / Pricebook */}
             <div style={{ display: "grid", gridTemplateColumns: "180px 200px", gap: "0 20px" }}>
-              <FieldBlock label="Work Type" value={job.workType} />
-              <div>
-                <div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 }}>Pricebook</div>
-                <div style={{ fontSize: 13, color: "#1565c0", fontWeight: 600 }}>{job.pricebook || "—"}</div>
-              </div>
+              {editing && draft ? (
+                <>
+                  <div>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 }}>Work Type</div>
+                    <select style={eSel} value={draft.workType} onChange={dSet("workType")}>
+                      <option value="">Select...</option>
+                      {withCurrent(WORK_TYPES, draft.workType).map(w => <option key={w} value={w}>{w}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 }}>Pricebook</div>
+                    <select style={eSel} value={draft.pricebook} onChange={dSet("pricebook")}>
+                      <option value="">Select...</option>
+                      {withCurrent(pricebooks, draft.pricebook).map(p => <option key={p} value={p}>{p}</option>)}
+                    </select>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <FieldBlock label="Work Type" value={job.workType} />
+                  <div>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 }}>Pricebook</div>
+                    <div style={{ fontSize: 13, color: "#1565c0", fontWeight: 600 }}>{job.pricebook || "—"}</div>
+                  </div>
+                </>
+              )}
             </div>
           </div>
 
