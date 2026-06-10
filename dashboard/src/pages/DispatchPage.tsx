@@ -6,6 +6,7 @@ import {
 import { db, auth } from "../firebase";
 import { useIsAdmin } from "../hooks/useIsAdmin";
 import Spinner from "../components/Spinner";
+import { getOutlookToken } from "../utils/outlookToken";
 
 type Visit = {
   id: string;
@@ -27,6 +28,10 @@ type Visit = {
 };
 
 type Tech = { uid: string; name: string; section?: string };
+
+// Calendar events pulled from Outlook (vacation / on-call)
+type CalChip = { type: "vacation" | "oncall"; label: string };
+type CalMap  = Record<string, CalChip[]>; // key: "firstName|YYYY-MM-DD"
 
 // Status → label + colors (modeled on the dispatch board screenshot)
 const STATUSES: Record<string, { label: string; bg: string; fg: string; border: string }> = {
@@ -82,6 +87,7 @@ export default function DispatchPage() {
   const [activeStatus, setActiveStatus] = useState<string>("all"); // "all" or a status key
 
   const [modal, setModal] = useState<{ techUid: string; techName: string; date: string; visit?: Visit } | null>(null);
+  const [calMap, setCalMap] = useState<CalMap>({});
 
   // Technicians flagged to show on the dispatch board
   useEffect(() => {
@@ -106,6 +112,66 @@ export default function DispatchPage() {
   }, []);
 
   const days = useMemo(() => (view === "week" ? weekDays(anchor) : [anchor]), [view, anchor]);
+
+  // Pull vacation + on-call events from Outlook for the displayed date range
+  useEffect(() => {
+    const start = days[0];
+    const end   = days[days.length - 1];
+    // Add one day to end so the calendarView includes the last day
+    const endD = new Date(end + "T00:00:00"); endD.setDate(endD.getDate() + 1);
+    const endStr = fmtYMD(endD);
+
+    let cancelled = false;
+    getOutlookToken().then(async token => {
+      if (!token || token === "disconnected" || cancelled) return;
+      try {
+        const CAL_ID = "AAMkADgyOGUwMDUyLTNiZjMtNGQzNi1hNTgwLTQ2M2IzYzE2YmQ5MgBGAAAAAACGxuDePTlOQawDDU8UfW0gBwBxt6lSDH0kQY0tk4wDjNk8AAAAAAEGAABxt6lSDH0kQY0tk4wDjNk8AAALmQObAAA=";
+        const headers = { Authorization: `Bearer ${token}`, Prefer: 'outlook.timezone="America/Toronto"' };
+        const evs: any[] = [];
+        let url = `https://graph.microsoft.com/v1.0/me/calendars/${encodeURIComponent(CAL_ID)}/calendarView?startDateTime=${start}T00:00:00&endDateTime=${endStr}T00:00:00&$top=200&$select=subject,start,end`;
+        while (url) {
+          const res  = await fetch(url, { headers });
+          const json = await res.json();
+          if (!res.ok || cancelled) return;
+          evs.push(...(json.value || []));
+          url = json["@odata.nextLink"] || null;
+        }
+        if (cancelled) return;
+
+        const map: CalMap = {};
+        const TZ = "America/Toronto";
+
+        for (const ev of evs) {
+          const subj = (ev.subject || "") as string;
+          const sl   = subj.toLowerCase();
+          let type: "vacation" | "oncall" | null = null;
+          if (sl.includes("vacation")) type = "vacation";
+          else if (sl.includes("on call") || sl.includes("oncall")) type = "oncall";
+          if (!type) continue;
+
+          // Extract first name: "John - On Call" → "john"
+          const firstName = subj.split(/[\s-–]+/)[0].trim().toLowerCase();
+          if (!firstName) continue;
+
+          // Expand multi-day events across each day in range
+          const evStart = new Date(ev.start?.dateTime ? ev.start.dateTime + "Z" : ev.start?.date + "T00:00:00");
+          const evEnd   = new Date(ev.end?.dateTime   ? ev.end.dateTime   + "Z" : ev.end?.date   + "T00:00:00");
+          const cur = new Date(evStart);
+          while (cur < evEnd) {
+            const d = cur.toLocaleDateString("en-CA", { timeZone: TZ });
+            if (d >= start && d <= end) {
+              const key = `${firstName}|${d}`;
+              (map[key] ||= []).push({ type, label: subj });
+            }
+            cur.setDate(cur.getDate() + 1);
+          }
+        }
+        setCalMap(map);
+      } catch {}
+    }).catch(() => {});
+
+    return () => { cancelled = true; };
+  }, [days[0], days[days.length - 1]]);
 
   // Index visits by techUid|date
   const byCell = useMemo(() => {
@@ -180,7 +246,7 @@ export default function DispatchPage() {
 
             {/* Tech rows */}
             {techs.map(t => (
-              <Row key={t.uid} tech={t} days={days} byCell={byCell}
+              <Row key={t.uid} tech={t} days={days} byCell={byCell} calMap={calMap}
                 onAdd={(date) => setModal({ techUid: t.uid, techName: t.name, date })}
                 onOpen={(v) => {
                   if (v.jobId) { navigate(`/jobs/${v.jobId}`); }
@@ -218,10 +284,11 @@ export default function DispatchPage() {
   );
 }
 
-function Row({ tech, days, byCell, onAdd, onOpen, canEdit }: {
-  tech: Tech; days: string[]; byCell: Record<string, Visit[]>;
+function Row({ tech, days, byCell, calMap, onAdd, onOpen, canEdit }: {
+  tech: Tech; days: string[]; byCell: Record<string, Visit[]>; calMap: CalMap;
   onAdd: (date: string) => void; onOpen: (v: Visit) => void; canEdit: boolean;
 }) {
+  const firstName = tech.name.split(/\s+/)[0].toLowerCase();
   return (
     <>
       <div style={s.techCell}>
@@ -233,8 +300,19 @@ function Row({ tech, days, byCell, onAdd, onOpen, canEdit }: {
       </div>
       {days.map(d => {
         const cellVisits = byCell[`${tech.uid}|${d}`] || [];
+        const chips = calMap[`${firstName}|${d}`] || [];
         return (
           <div key={d} style={s.cell} onClick={() => canEdit && onAdd(d)} title={canEdit ? "Click to add a visit" : ""}>
+            {chips.map((chip, i) => (
+              <div key={i} style={{
+                borderRadius: 5, padding: "4px 8px", marginBottom: 5, fontSize: 11, fontWeight: 700,
+                background: chip.type === "vacation" ? "#fff7ed" : "#f5f3ff",
+                color:      chip.type === "vacation" ? "#c2410c"  : "#6d28d9",
+                border:     `1px solid ${chip.type === "vacation" ? "#fed7aa" : "#ddd6fe"}`,
+              }}>
+                {chip.type === "vacation" ? "☀ Vacation" : "📞 On Call"}
+              </div>
+            ))}
             {cellVisits.map(v => {
               const st = STATUSES[v.status] || STATUSES.scheduled;
               return (

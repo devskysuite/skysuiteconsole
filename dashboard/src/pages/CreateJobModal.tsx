@@ -263,7 +263,7 @@ export default function CreateJobModal({ property, onClose, onCreated }: Props) 
             property:      form.propertyName || "",
             location:      "",
             notes:         "",
-            rt:            visitDuration,
+            rt:            0,
             ot:            0,
             dt:            0,
             pto:           0,

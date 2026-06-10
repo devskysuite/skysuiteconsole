@@ -154,8 +154,8 @@ export default function PayrollPage() {
   function selectEmployee(name: string) {
     setSelectedEmp(name);
     setPendingEdits({});
-    const empDays = entries.filter(e=>e.employeeName===name).map(e=>e.date);
-    setActiveDay(days.find(d=>empDays.includes(d)) ?? days[0]);
+    const today = todayYMD();
+    setActiveDay(days.includes(today) ? today : days[0]);
   }
 
   function shiftWeek(dir: number) {

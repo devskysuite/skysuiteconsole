@@ -183,7 +183,7 @@ export default function CreateVisitModal({ jobId, jobNumber, customerName, prope
           property:      propertyName,
           location:      "",
           notes:         "",
-          rt:            duration,
+          rt:            0,
           ot:            0,
           dt:            0,
           pto:           0,
