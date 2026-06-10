@@ -13,12 +13,16 @@ type Visit = {
   date: string;        // YYYY-MM-DD
   title: string;       // customer / job name
   jobNumber?: string;
+  jobId?: string;      // linked job ID (if created from a job)
+  visitNumber?: number;
   start?: string;      // HH:MM (24h)
   end?: string;        // HH:MM
+  duration?: number;
   status: string;      // see STATUSES keys
   priority?: "high" | "normal" | "";
   flagged?: boolean;
   notes?: string;
+  department?: string;
 };
 
 type Tech = { uid: string; name: string; section?: string };
@@ -240,7 +244,8 @@ function Row({ tech, days, byCell, onAdd, onOpen, canEdit }: {
                     </span>
                   </div>
                   <div style={{ fontWeight: 700, fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{v.title}</div>
-                  {v.jobNumber && <div style={{ fontSize: 10, opacity: 0.85 }}>{v.jobNumber}</div>}
+                  {v.jobNumber && <div style={{ fontSize: 10, opacity: 0.85 }}>{v.jobNumber}{v.visitNumber ? ` · Visit #${v.visitNumber}` : ""}</div>}
+                  {v.department && <div style={{ fontSize: 10, opacity: 0.75 }}>{v.department}</div>}
                   {(v.start || v.end) && <div style={{ fontSize: 10, opacity: 0.85 }}>{fmtTime(v.start)}{v.end ? ` - ${fmtTime(v.end)}` : ""}</div>}
                 </div>
               );

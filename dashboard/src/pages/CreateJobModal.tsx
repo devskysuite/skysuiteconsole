@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { addDoc, collection, doc, getDocs, runTransaction } from "firebase/firestore";
+import { addDoc, collection, doc, getDocs, query, runTransaction, where } from "firebase/firestore";
 import { auth, db } from "../firebase";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -52,11 +52,19 @@ async function reserveJobNumber(): Promise<string> {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function CreateJobModal({ property, onClose, onCreated }: Props) {
-  const [users, setUsers]       = useState<string[]>([]);
-  const [contacts, setContacts] = useState<{ id: string; name: string; role: string }[]>([]);
+  const [users, setUsers]           = useState<string[]>([]);
+  const [contacts, setContacts]     = useState<{ id: string; name: string; role: string }[]>([]);
   const [pricebooks, setPricebooks] = useState<{ id: string; name: string; isDefault: boolean }[]>([]);
-  const [saving, setSaving]     = useState(false);
-  const [errors, setErrors]     = useState<Record<string, boolean>>({});
+  const [dispatchTechs, setDispatchTechs] = useState<{ uid: string; name: string }[]>([]);
+  const [saving, setSaving]         = useState(false);
+  const [errors, setErrors]         = useState<Record<string, boolean>>({});
+  const [visitOpen, setVisitOpen]   = useState(false);
+  const [visitForm, setVisitForm]   = useState({
+    description: "", toDo: "", forms: "",
+    requiredSkills: "", requiredCertifications: "",
+    department: "", primaryTechUid: "", crew: "",
+    additionalTechnicians: "", date: "", time: "", duration: "1",
+  });
 
   const [form, setForm] = useState({
     customer:                   property.customerName || "",
@@ -82,7 +90,6 @@ export default function CreateJobModal({ property, onClose, onCreated }: Props) 
     departmentsNeeded:          "",
     priority:                   "",
     issueDescription:           "",
-    createVisit:                false,
   });
 
   // Load users, contacts, and pricebooks
@@ -112,6 +119,13 @@ export default function CreateJobModal({ property, onClose, onCreated }: Props) 
       setPricebooks(books);
       const def = books.find(b => b.isDefault);
       if (def) setForm(f => f.pricebook ? f : { ...f, pricebook: def.name });
+    }).catch(() => {});
+
+    getDocs(query(collection(db, "users"), where("showInDispatch", "==", true))).then(snap => {
+      const list = snap.docs
+        .map(d => ({ uid: (d.data().uid as string) || d.id, name: (d.data().displayName as string) || (d.data().email as string) || "Unknown" }))
+        .filter(t => t.name).sort((a, b) => a.name.localeCompare(b.name));
+      setDispatchTechs(list);
     }).catch(() => {});
   }, [property.customerId]);
 
@@ -180,7 +194,6 @@ export default function CreateJobModal({ property, onClose, onCreated }: Props) 
         departmentsNeeded:           form.departmentsNeeded,
         priority:                    form.priority,
         issueDescription:            form.issueDescription,
-        createVisit:                 form.createVisit,
         status:                      "Open",
         createdAt:                   now,
         createdBy:                   performer,
@@ -194,22 +207,45 @@ export default function CreateJobModal({ property, onClose, onCreated }: Props) 
       });
 
       // Create Visit #1 if requested
-      if (form.createVisit) {
-        const visitRef = await addDoc(collection(db, "jobs", ref.id, "visits"), {
-          visitNumber:            1,
-          status:                 "Scheduled",
-          scheduledFor:           "",
-          department:             form.departmentsNeeded,
-          primaryTechnician:      "",
-          additionalTechnicians:  "",
-          description:            form.issueDescription,
-          createdAt:              now,
+      if (visitOpen) {
+        const dept = visitForm.department || form.departmentsNeeded;
+        const selectedTech = dispatchTechs.find(t => t.uid === visitForm.primaryTechUid);
+        let endTime = "";
+        if (visitForm.time) {
+          const [h, m] = visitForm.time.split(":").map(Number);
+          const totalMin = h * 60 + m + Math.round((parseFloat(visitForm.duration) || 1) * 60);
+          endTime = `${String(Math.floor(totalMin / 60) % 24).padStart(2, "0")}:${String(totalMin % 60).padStart(2, "0")}`;
+        }
+        await addDoc(collection(db, "dispatchVisits"), {
+          techUid:                  visitForm.primaryTechUid || "",
+          techName:                 selectedTech?.name || "",
+          date:                     visitForm.date || "",
+          title:                    visitForm.description || `${form.customer}${form.propertyName ? " – " + form.propertyName : ""}`,
+          jobNumber,
+          start:                    visitForm.time || "",
+          end:                      endTime,
+          status:                   "scheduled",
+          priority:                 "normal",
+          flagged:                  false,
+          notes:                    visitForm.toDo || "",
+          jobId:                    ref.id,
+          visitNumber:              1,
+          description:              visitForm.description,
+          toDo:                     visitForm.toDo,
+          department:               dept,
+          duration:                 parseFloat(visitForm.duration) || 1,
+          crew:                     visitForm.crew,
+          additionalTechnicians:    visitForm.additionalTechnicians ? visitForm.additionalTechnicians.split(",").map(s => s.trim()).filter(Boolean) : [],
+          requiredSkills:           visitForm.requiredSkills ? visitForm.requiredSkills.split(",").map(s => s.trim()).filter(Boolean) : [],
+          requiredCertifications:   visitForm.requiredCertifications ? visitForm.requiredCertifications.split(",").map(s => s.trim()).filter(Boolean) : [],
+          forms:                    visitForm.forms ? visitForm.forms.split(",").map(s => s.trim()).filter(Boolean) : [],
+          createdAt:                now,
+          createdBy:                performer,
         });
         await addDoc(collection(db, "jobs", ref.id, "history"), {
-          action:      `Visit #1 Added`,
+          action:      "Visit #1 Added",
           performedBy: performer,
           timestamp:   now,
-          note:        `Visit ID: ${visitRef.id}`,
         });
       }
 
@@ -426,12 +462,118 @@ export default function CreateJobModal({ property, onClose, onCreated }: Props) 
           />
         </div>
 
-        {/* ── Row 9: Create visit checkbox ── */}
-        <div style={{ marginTop: 20 }}>
-          <label style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 13, color: "#374151", cursor: "pointer" }}>
-            <input type="checkbox" style={{ marginTop: 2, flexShrink: 0 }} {...bindCheck("createVisit")} />
-            <span>Create Visit #1 Along with Job:</span>
-          </label>
+        {/* ── Visit section toggle ── */}
+        <div style={{ marginTop: 28, borderTop: "2px solid #e5e7eb", paddingTop: 20 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: visitOpen ? 20 : 0 }}>
+            <span style={{ fontSize: 15, fontWeight: 700, color: "#111827" }}>Add Visit #1</span>
+            <button
+              type="button"
+              onClick={() => setVisitOpen(v => !v)}
+              style={{
+                position: "relative", width: 44, height: 24, borderRadius: 12,
+                background: visitOpen ? "#1565c0" : "#d1d5db",
+                border: "none", cursor: "pointer", flexShrink: 0, transition: "background 0.2s",
+              }}
+            >
+              <span style={{
+                position: "absolute", top: 4, left: visitOpen ? 23 : 4,
+                width: 16, height: 16, borderRadius: "50%", background: "#fff",
+                transition: "left 0.2s", boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
+                display: "block",
+              }} />
+            </button>
+          </div>
+
+          {visitOpen && (
+            <div>
+              {/* Visit Description */}
+              <div style={{ marginBottom: 16 }}>
+                <label style={lbl}><span>Visit Description</span></label>
+                <input style={inp} placeholder="Short description" value={visitForm.description} onChange={e => setVisitForm(f => ({ ...f, description: e.target.value }))} />
+              </div>
+
+              {/* TO DO */}
+              <div style={{ marginBottom: 16 }}>
+                <label style={{ ...lbl, fontSize: 9 }}><span>To Do – Actions before dispatch. Leave empty if there are no actions</span></label>
+                <textarea rows={3} style={{ ...inp, resize: "vertical", minHeight: 72, fontFamily: "inherit" }} placeholder="TO DO" value={visitForm.toDo} onChange={e => setVisitForm(f => ({ ...f, toDo: e.target.value }))} />
+              </div>
+
+              {/* Forms */}
+              <div style={{ marginBottom: 16 }}>
+                <label style={lbl}><span>Forms</span></label>
+                <input style={inp} placeholder="Select Forms (comma-separated)" value={visitForm.forms} onChange={e => setVisitForm(f => ({ ...f, forms: e.target.value }))} />
+              </div>
+
+              {/* Required Skills + Certifications */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 28px", marginBottom: 16 }}>
+                <div>
+                  <label style={lbl}><span>Required Skills</span></label>
+                  <input style={inp} placeholder="Select required skills" value={visitForm.requiredSkills} onChange={e => setVisitForm(f => ({ ...f, requiredSkills: e.target.value }))} />
+                </div>
+                <div>
+                  <label style={lbl}><span>Required Certifications</span></label>
+                  <input style={inp} placeholder="Select required certifications" value={visitForm.requiredCertifications} onChange={e => setVisitForm(f => ({ ...f, requiredCertifications: e.target.value }))} />
+                </div>
+              </div>
+
+              {/* Department + Primary Technician */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 28px", marginBottom: 16 }}>
+                <div>
+                  <label style={lbl}><span>Department</span><span style={req}>REQUIRED</span></label>
+                  <select
+                    style={{ ...inp, appearance: "auto" as React.CSSProperties["appearance"] }}
+                    value={visitForm.department || form.departmentsNeeded}
+                    onChange={e => setVisitForm(f => ({ ...f, department: e.target.value }))}
+                  >
+                    <option value="">Select Department</option>
+                    {DEPARTMENTS.map(d => <option key={d} value={d}>{d}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={lbl}><span>Primary Technician</span></label>
+                  <select
+                    style={{ ...inp, appearance: "auto" as React.CSSProperties["appearance"] }}
+                    value={visitForm.primaryTechUid}
+                    onChange={e => setVisitForm(f => ({ ...f, primaryTechUid: e.target.value }))}
+                  >
+                    <option value="">Select Primary Technician</option>
+                    {dispatchTechs.map(t => <option key={t.uid} value={t.uid}>{t.name}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              {/* Crew */}
+              <div style={{ marginBottom: 16 }}>
+                <label style={lbl}><span>Crew</span></label>
+                <input style={inp} placeholder="Select Crew" value={visitForm.crew} onChange={e => setVisitForm(f => ({ ...f, crew: e.target.value }))} />
+              </div>
+
+              {/* Additional Technicians */}
+              <div style={{ marginBottom: 16 }}>
+                <label style={lbl}><span>Additional Technicians</span></label>
+                <input style={inp} placeholder="Select Additional Technicians (comma-separated)" value={visitForm.additionalTechnicians} onChange={e => setVisitForm(f => ({ ...f, additionalTechnicians: e.target.value }))} />
+              </div>
+
+              {/* Date / Time / Duration */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 140px", gap: "0 28px" }}>
+                <div>
+                  <label style={lbl}><span>Date</span></label>
+                  <input type="date" style={inp} value={visitForm.date} onChange={e => setVisitForm(f => ({ ...f, date: e.target.value }))} />
+                </div>
+                <div>
+                  <label style={lbl}><span>Time</span></label>
+                  <input type="time" style={inp} value={visitForm.time} onChange={e => setVisitForm(f => ({ ...f, time: e.target.value }))} />
+                </div>
+                <div>
+                  <label style={lbl}><span>Duration</span></label>
+                  <div style={{ position: "relative" }}>
+                    <input type="number" min="0.5" step="0.5" style={{ ...inp, paddingRight: 34 }} value={visitForm.duration} onChange={e => setVisitForm(f => ({ ...f, duration: e.target.value }))} />
+                    <span style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", fontSize: 12, color: "#9ca3af", pointerEvents: "none" }}>hr</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

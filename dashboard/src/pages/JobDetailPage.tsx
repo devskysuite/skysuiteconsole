@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { addDoc, collection, doc, getDoc, onSnapshot, orderBy, query, updateDoc } from "firebase/firestore";
+import { addDoc, collection, doc, getDoc, onSnapshot, orderBy, query, updateDoc, where } from "firebase/firestore";
 import { auth, db } from "../firebase";
+import CreateVisitModal from "./CreateVisitModal";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface Job {
@@ -43,12 +44,18 @@ interface PropertyInfo {
 interface Visit {
   id: string;
   visitNumber: number;
-  status: string;
-  scheduledFor: string;
-  department: string;
-  primaryTechnician: string;
-  additionalTechnicians: string;
+  status: string;        // dispatch board keys: scheduled / traveling / working / etc
+  date: string;          // YYYY-MM-DD
+  start: string;         // HH:MM
+  end: string;           // HH:MM
+  duration: number;
+  title: string;
   description: string;
+  toDo: string;
+  department: string;
+  techName: string;
+  additionalTechnicians: string[];
+  jobNumber: string;
 }
 
 interface HistoryEntry {
@@ -71,6 +78,12 @@ function fmtDateTime(iso: string): string {
   if (!iso) return "—";
   return new Date(iso).toLocaleString("en-CA", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
+function fmtTime(t: string): string {
+  if (!t) return "";
+  const [h, m] = t.split(":").map(Number);
+  const ap = h >= 12 ? "pm" : "am";
+  return `${h % 12 === 0 ? 12 : h % 12}:${String(m).padStart(2, "0")} ${ap}`;
+}
 
 // ── Colours ───────────────────────────────────────────────────────────────────
 const JOB_STATUS_COLORS: Record<string, { bg: string; color: string; border: string }> = {
@@ -82,14 +95,23 @@ const JOB_STATUS_COLORS: Record<string, { bg: string; color: string; border: str
 };
 
 const VISIT_STATUS_COLORS: Record<string, { bg: string; color: string; border: string }> = {
-  "Scheduled":    { bg: "#dbeafe", color: "#1e40af", border: "#93c5fd" },
-  "In Progress":  { bg: "#fef3c7", color: "#92400e", border: "#fcd34d" },
-  "Completed":    { bg: "#dcfce7", color: "#166534", border: "#86efac" },
-  "Cancelled":    { bg: "#f3f4f6", color: "#374151", border: "#d1d5db" },
+  scheduled:  { bg: "#eef2f7", color: "#0d2e5e", border: "#cbd5e1" },
+  traveling:  { bg: "#dbeafe", color: "#1e40af", border: "#93c5fd" },
+  working:    { bg: "#1565c0", color: "#ffffff", border: "#0d47a1" },
+  paused:     { bg: "#fef9c3", color: "#854d0e", border: "#fde047" },
+  onhold:     { bg: "#ffedd5", color: "#9a3412", border: "#fdba74" },
+  canceled:   { bg: "#fee2e2", color: "#991b1b", border: "#fca5a5" },
+  closed:     { bg: "#f3f4f6", color: "#6b7280", border: "#d1d5db" },
+  complete:   { bg: "#dcfce7", color: "#166534", border: "#86efac" },
+};
+const VISIT_STATUS_LABELS: Record<string, string> = {
+  scheduled: "Scheduled", traveling: "Traveling", working: "Working",
+  paused: "Paused", onhold: "On Hold", canceled: "Canceled",
+  closed: "Closed", complete: "Complete",
 };
 
 const JOB_STATUSES = ["Open", "In Progress", "Completed", "Cancelled", "Invoiced"];
-const VISIT_STATUSES = ["Scheduled", "In Progress", "Completed", "Cancelled"];
+const VISIT_STATUSES = ["scheduled", "traveling", "working", "paused", "onhold", "canceled", "closed", "complete"];
 const TABS = ["Scheduling", "Quotes", "Tasks", "Forms & Attachments", "Parts & Purchasing", "Job Costing", "Reports & Invoices"];
 
 // ── Sidebar helpers ───────────────────────────────────────────────────────────
@@ -129,6 +151,7 @@ export default function JobDetailPage() {
   const [activeTab, setActiveTab] = useState("Scheduling");
   const [showHistory, setShowHistory] = useState(false);
   const [statusBusy, setStatusBusy] = useState(false);
+  const [addVisitOpen, setAddVisitOpen] = useState(false);
 
   // Job
   useEffect(() => {
@@ -147,11 +170,11 @@ export default function JobDetailPage() {
       .catch(() => {});
   }, [job?.propertyId]);
 
-  // Visits
+  // Visits — stored in dispatchVisits with jobId field
   useEffect(() => {
     if (!jobId) return;
     return onSnapshot(
-      query(collection(db, "jobs", jobId, "visits"), orderBy("visitNumber", "asc")),
+      query(collection(db, "dispatchVisits"), where("jobId", "==", jobId), orderBy("visitNumber", "asc")),
       snap => setVisits(snap.docs.map(d => ({ id: d.id, ...d.data() } as Visit))),
       () => {}
     );
@@ -184,9 +207,9 @@ export default function JobDetailPage() {
   async function changeVisitStatus(visitId: string, visitNumber: number, newStatus: string) {
     if (!jobId) return;
     try {
-      await updateDoc(doc(db, "jobs", jobId, "visits", visitId), { status: newStatus });
+      await updateDoc(doc(db, "dispatchVisits", visitId), { status: newStatus });
       await addDoc(collection(db, "jobs", jobId, "history"), {
-        action: `Visit #${visitNumber} status changed to "${newStatus}"`,
+        action: `Visit #${visitNumber} status changed to "${VISIT_STATUS_LABELS[newStatus] || newStatus}"`,
         performedBy: auth.currentUser?.displayName || auth.currentUser?.email || "Unknown",
         timestamp: new Date().toISOString(),
       });
@@ -392,11 +415,26 @@ export default function JobDetailPage() {
 
             {activeTab === "Scheduling" && (
               <div>
+                {/* ── Add Visit button ── */}
+                <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 16 }}>
+                  <button
+                    onClick={() => setAddVisitOpen(true)}
+                    style={{ background: "#16a34a", color: "#fff", border: "none", borderRadius: 6, padding: "8px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}
+                  >
+                    + Add Visit
+                  </button>
+                </div>
+
                 {visits.length === 0 ? (
-                  <div style={{ color: "#9ca3af", fontSize: 14, textAlign: "center", paddingTop: 40 }}>No visits</div>
+                  <div style={{ color: "#9ca3af", fontSize: 14, textAlign: "center", paddingTop: 40 }}>
+                    No visits — click + Add Visit to schedule one
+                  </div>
                 ) : (
                   visits.map(visit => {
-                    const vsc = VISIT_STATUS_COLORS[visit.status] || VISIT_STATUS_COLORS.Scheduled;
+                    const vsc = VISIT_STATUS_COLORS[visit.status] || VISIT_STATUS_COLORS.scheduled;
+                    const addlTechs = Array.isArray(visit.additionalTechnicians)
+                      ? visit.additionalTechnicians.join(", ")
+                      : (visit.additionalTechnicians as unknown as string) || "";
                     return (
                       <div key={visit.id} style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, marginBottom: 16 }}>
                         {/* Visit header */}
@@ -413,7 +451,7 @@ export default function JobDetailPage() {
                               appearance: "auto" as React.CSSProperties["appearance"],
                             }}
                           >
-                            {VISIT_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                            {VISIT_STATUSES.map(s => <option key={s} value={s}>{VISIT_STATUS_LABELS[s]}</option>)}
                           </select>
                         </div>
 
@@ -421,30 +459,44 @@ export default function JobDetailPage() {
                         <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "0 16px", padding: "14px 18px" }}>
                           <div>
                             <div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3, display: "flex", alignItems: "center", gap: 4 }}>
-                              <span>📅</span> Scheduled for
+                              📅 Scheduled for
                             </div>
-                            <div style={{ fontSize: 13, color: "#111827" }}>{visit.scheduledFor ? fmtDate(visit.scheduledFor) : "—"}</div>
+                            <div style={{ fontSize: 13, color: "#111827" }}>
+                              {visit.date ? fmtDate(visit.date) : "—"}
+                              {visit.start ? ` · ${fmtTime(visit.start)}` : ""}
+                              {visit.duration ? ` (${visit.duration}h)` : ""}
+                            </div>
                           </div>
                           <div>
-                            <div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 }}>Department name</div>
+                            <div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 }}>Department</div>
                             <div style={{ fontSize: 13, color: "#111827" }}>{visit.department || "—"}</div>
                           </div>
                           <div>
                             <div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3, display: "flex", alignItems: "center", gap: 4 }}>
-                              <span>👤</span> Primary technician
+                              👤 Primary Technician
                             </div>
-                            <div style={{ fontSize: 13, color: "#111827" }}>{visit.primaryTechnician || "—"}</div>
+                            <div style={{ fontSize: 13, color: "#111827" }}>{visit.techName || "—"}</div>
                           </div>
                           <div>
-                            <div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 }}>Additional technicians</div>
-                            <div style={{ fontSize: 13, color: "#111827" }}>{visit.additionalTechnicians || "—"}</div>
+                            <div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 }}>Additional Technicians</div>
+                            <div style={{ fontSize: 13, color: "#111827" }}>{addlTechs || "—"}</div>
                           </div>
                         </div>
 
-                        {visit.description && (
-                          <div style={{ padding: "0 18px 14px" }}>
-                            <div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 }}>Visit Description</div>
-                            <div style={{ fontSize: 13, fontWeight: 600, color: "#111827" }}>{visit.description}</div>
+                        {(visit.description || visit.toDo) && (
+                          <div style={{ display: "grid", gridTemplateColumns: visit.description && visit.toDo ? "1fr 1fr" : "1fr", gap: "0 16px", padding: "0 18px 14px" }}>
+                            {visit.description && (
+                              <div>
+                                <div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 }}>Visit Description</div>
+                                <div style={{ fontSize: 13, fontWeight: 600, color: "#111827" }}>{visit.description}</div>
+                              </div>
+                            )}
+                            {visit.toDo && (
+                              <div>
+                                <div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 }}>To Do</div>
+                                <div style={{ fontSize: 13, color: "#374151", whiteSpace: "pre-line" }}>{visit.toDo}</div>
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
@@ -452,7 +504,6 @@ export default function JobDetailPage() {
                   })
                 )}
 
-                {/* Created date footer */}
                 <div style={{ marginTop: 24, fontSize: 12, color: "#9ca3af" }}>
                   Job created {fmtDate(job.createdAt)} by {job.createdBy || "Unknown"}
                 </div>
@@ -523,6 +574,20 @@ export default function JobDetailPage() {
             )}
           </div>
         </div>
+      )}
+
+      {/* ── Add Visit modal ── */}
+      {addVisitOpen && job && (
+        <CreateVisitModal
+          jobId={job.id}
+          jobNumber={job.jobNumber}
+          customerName={job.customerName}
+          propertyName={job.propertyName}
+          defaultDepartment={job.departmentsNeeded}
+          visitNumber={visits.length + 1}
+          onClose={() => setAddVisitOpen(false)}
+          onCreated={() => setAddVisitOpen(false)}
+        />
       )}
     </div>
   );
