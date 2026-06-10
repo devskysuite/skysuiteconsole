@@ -1,24 +1,21 @@
 import { useEffect, useState } from "react";
 import { onAuthStateChanged } from "firebase/auth";
 import {
-  addDoc, collection, doc, getDocs, onSnapshot,
+  addDoc, collection, doc, getDoc, getDocs, onSnapshot,
   query, updateDoc, deleteDoc, where,
 } from "firebase/firestore";
-import { doc as fsDoc, getDoc as fsGetDoc, setDoc as fsSetDoc } from "firebase/firestore";
 import { getFunctions, httpsCallable } from "firebase/functions";
-import { auth, db } from "../firebase";
-
-const callSyncVacation     = httpsCallable(getFunctions(), "syncVacationEvent");
-const callNotifyApprovers  = httpsCallable(getFunctions(), "notifyApproversSms");
-const callVacation         = httpsCallable(getFunctions(), "vacationAction");
 import { useToast } from "../components/Toast";
 import { useRole, canApproveTimeOff, isAdminRole } from "../hooks/useRole";
 import TimeOffNotifySettings from "../components/TimeOffNotifySettings";
 import { fmtISODate, timeOffStatusBadge } from "../utils/formatting";
 import type { TimeOffRequest } from "../types";
+import { auth, db } from "../firebase";
+import { getOutlookToken } from "../utils/outlookToken";
 
-const TENANT_ID = "1c1d62e8-f392-4caa-a8a6-0ce98e0913d9";
-const CLIENT_ID  = "9a1a21f1-40a3-4872-a4d6-888bd51d116d";
+const callSyncVacation     = httpsCallable(getFunctions(), "syncVacationEvent");
+const callNotifyApprovers  = httpsCallable(getFunctions(), "notifyApproversSms");
+const callVacation         = httpsCallable(getFunctions(), "vacationAction");
 const CAL_ID     = "AAMkADgyOGUwMDUyLTNiZjMtNGQzNi1hNTgwLTQ2M2IzYzE2YmQ5MgBGAAAAAACGxuDePTlOQawDDU8UfW0gBwBxt6lSDH0kQY0tk4wDjNk8AAAAAAEGAABxt6lSDH0kQY0tk4wDjNk8AAALmQObAAA=";
 const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 const SHORT_MONTHS = MONTHS.map(m=>m.slice(0,3));
@@ -80,22 +77,11 @@ export default function TimeOffPage() {
   }, [canApprove]);
 
   // Outlook token
+  // Outlook token — use shared utility so the refresh token is never burned twice
   useEffect(() => {
-    (async () => {
-      try {
-        const snap = await fsGetDoc(fsDoc(db, "settings", "outlookOnCall"));
-        if (!snap.exists() || !snap.data().refreshToken) return;
-        const r = await fetch(`https://login.microsoftonline.com/${TENANT_ID}/oauth2/v2.0/token`, {
-          method: "POST",
-          body: new URLSearchParams({ client_id: CLIENT_ID, refresh_token: snap.data().refreshToken, grant_type: "refresh_token", scope: "Calendars.ReadWrite offline_access" }),
-        });
-        const d = await r.json();
-        if (d.access_token) {
-          setToken(d.access_token);
-          try { await fsSetDoc(fsDoc(db, "settings", "outlookOnCall"), { refreshToken: d.refresh_token }, { merge: true }); } catch {}
-        }
-      } catch {}
-    })();
+    getOutlookToken().then(t => {
+      if (t && t !== "disconnected") setToken(t);
+    }).catch(() => {});
   }, []);
 
   // Load vacation events from the dedicated Vacation calendar (server-side)
@@ -207,7 +193,7 @@ export default function TimeOffPage() {
       });
       // Notify approvers per the configured method(s). Always visible in the Approvals tab regardless.
       try {
-        const nSnap = await fsGetDoc(fsDoc(db, "settings", "timeOffNotify"));
+        const nSnap = await getDoc(doc(db, "settings", "timeOffNotify"));
         const notify = nSnap.data() || {};
         if (notify.sms) {
           callNotifyApprovers({ employeeName: currentUser.displayName, startDate, endDate: effectiveEnd }).catch(() => {});

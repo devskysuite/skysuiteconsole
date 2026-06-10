@@ -3,6 +3,7 @@ import { doc, getDoc, setDoc, collection, addDoc, onSnapshot, updateDoc, serverT
 import { onAuthStateChanged } from "firebase/auth";
 import { getFunctions, httpsCallable } from "firebase/functions";
 import { db, auth } from "../firebase";
+import { getOutlookToken } from "../utils/outlookToken";
 import { useRole, isAdminRole } from "../hooks/useRole";
 
 const callConflictCheckNow = httpsCallable(getFunctions(), "conflictCheckNow");
@@ -21,28 +22,6 @@ interface UserInfo  { uid: string; displayName: string; }
 function genVerifier() { const a=new Uint8Array(64); crypto.getRandomValues(a); return btoa(String.fromCharCode(...a)).replace(/\+/g,"-").replace(/\//g,"_").replace(/=/g,""); }
 async function genChallenge(v: string) { const b=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(v)); return btoa(String.fromCharCode(...new Uint8Array(b))).replace(/\+/g,"-").replace(/\//g,"_").replace(/=/g,""); }
 
-// ── Token ────────────────────────────────────────────────────────────────────
-async function refreshToken(rt: string): Promise<{access:string;refresh:string;expiresAt:number}|null|"invalid_grant"> {
-  try {
-    const r = await fetch(`https://login.microsoftonline.com/${TENANT_ID}/oauth2/v2.0/token`, {
-      method:"POST", body: new URLSearchParams({ client_id:CLIENT_ID, refresh_token:rt, grant_type:"refresh_token", scope:"Calendars.ReadWrite offline_access" })
-    });
-    let d: any;
-    try { d = await r.json(); } catch { return null; }
-    if (d.access_token) {
-      return {
-        access:    d.access_token,
-        refresh:   d.refresh_token || rt,
-        // expires_in is seconds; store with 5-min buffer
-        expiresAt: Date.now() + ((d.expires_in || 3600) - 300) * 1000,
-      };
-    }
-    // invalid_grant = token permanently revoked/expired; anything else may be transient
-    return d.error === "invalid_grant" ? "invalid_grant" : null;
-  } catch {
-    return null;
-  }
-}
 
 async function graphFetch(token:string, path:string, method="GET", body?:any) {
   const r = await fetch(`https://graph.microsoft.com/v1.0${path}`, {
@@ -208,58 +187,23 @@ export default function OnCallManagerPage() {
     return unsub;
   },[]);
 
-  // Load shared Outlook token from Firestore (one admin logs in once; all users share it)
-  // Strategy: cache the access token + expiry in Firestore so most loads never call Microsoft.
-  // Only refresh when the cached access token is expired/missing — this eliminates the race
-  // condition where multiple simultaneous users each try to rotate the same refresh token,
-  // which causes Microsoft to invalidate it and everyone loses connection.
+  // Load shared Outlook token — shared utility handles caching, lock, and rotation
   useEffect(()=>{
     async function load() {
       try {
-        const snap=await getDoc(doc(db,"settings","outlookOnCall"));
-        if(snap.exists()&&snap.data().refreshToken) {
-          const data=snap.data();
-          const now=Date.now();
-          // Use cached access token if it still has >5 min remaining (buffer already baked in)
-          if(data.accessToken && data.tokenExpiresAt && data.tokenExpiresAt > now) {
-            setAccessToken(data.accessToken);
-            setConnected(true);
-          } else {
-            // Access token missing or expired — refresh it (rare: once per hour max)
-            const t=await refreshToken(data.refreshToken);
-            if(t && t !== "invalid_grant"){
-              setAccessToken(t.access);
-              setConnected(true);
-              // Persist new access token + expiry + rotated refresh token so the
-              // next user to load gets the cached version without calling Microsoft
-              try{
-                await setDoc(doc(db,"settings","outlookOnCall"),{
-                  refreshToken:  t.refresh,
-                  accessToken:   t.access,
-                  tokenExpiresAt: t.expiresAt,
-                },{merge:true});
-              }catch{}
-            } else if(t === "invalid_grant"){
-              // Token permanently revoked — clear stale credentials from Firestore
-              // so the next admin knows to reconnect rather than seeing a silent failure
-              try{
-                await setDoc(doc(db,"settings","outlookOnCall"),{
-                  refreshToken: null, accessToken: null, tokenExpiresAt: null,
-                },{merge:true});
-              }catch{}
-              setError("Outlook connection expired. An admin needs to click \"Connect Outlook\" to reconnect.");
-            }
-            // t === null means transient network/parse error — leave connected false,
-            // user can reload to retry (no destructive Firestore writes)
-          }
+        const t = await getOutlookToken();
+        if (t && t !== "disconnected") {
+          setAccessToken(t);
+          setConnected(true);
+        } else if (t === "disconnected") {
+          setError("Outlook connection expired. An admin needs to click \"Connect Outlook\" to reconnect.");
         }
+        // t === null is a transient network error — leave connected false, user can reload
       } catch {}
       try {
         const cfg=await getDoc(doc(db,"settings","oncallConfig"));
         if(cfg.exists()&&cfg.data().statVisMinRole) setStatVisMinRole(cfg.data().statVisMinRole);
       } catch {}
-      // Only clear the loading gate here if there's no OAuth callback in flight.
-      // When ?code= is present the callback useEffect owns clearing tokenLoading.
       if(!new URLSearchParams(window.location.search).has("code")) setTokenLoading(false);
     }
     load();
