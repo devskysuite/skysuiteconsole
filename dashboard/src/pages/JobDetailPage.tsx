@@ -1099,9 +1099,9 @@ export default function JobDetailPage() {
                   )}
 
                   {/* Materials — Parts Used on Visits */}
-                  <div style={{ marginTop: 24, fontSize: 13, fontWeight: 700, color: "#6b7280", letterSpacing: 0.5, textTransform: "uppercase", marginBottom: 12 }}>Materials — Parts Used on Visits</div>
+                  <div style={{ marginTop: 24, fontSize: 13, fontWeight: 700, color: "#6b7280", letterSpacing: 0.5, textTransform: "uppercase", marginBottom: 12 }}>Materials — Inventory</div>
                   {costLoaded && visitParts.length === 0 && (
-                    <div style={{ color: "#9ca3af", fontSize: 13, fontStyle: "italic", paddingBottom: 8 }}>No parts recorded on visits for this job.</div>
+                    <div style={{ color: "#9ca3af", fontSize: 13, fontStyle: "italic", paddingBottom: 8 }}>No inventory recorded on visits for this job.</div>
                   )}
                   {costLoaded && visitParts.length > 0 && (
                     <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden" }}>
@@ -1156,7 +1156,7 @@ export default function JobDetailPage() {
                           <span>Materials (POs)</span><span>{`$${poTotal.toLocaleString("en-CA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</span>
                         </div>
                         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12, fontSize: 13, color: "#374151" }}>
-                          <span>Materials (Visit Parts)</span><span>{`$${partsTotal.toLocaleString("en-CA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</span>
+                          <span>Materials (Inventory)</span><span>{`$${partsTotal.toLocaleString("en-CA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</span>
                         </div>
                         <div style={{ borderTop: "1px solid #bfdbfe", paddingTop: 10, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                           <span style={{ fontWeight: 800, fontSize: 14, color: "#1e3a8a" }}>Combined Total</span>

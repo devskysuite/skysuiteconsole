@@ -477,9 +477,9 @@ export default function PartsAndPurchasingTab({ jobId, jobNumber }: Props) {
 
       {/* ── Parts Used on Visits ── */}
       <div>
-        <SectionHead title="Parts Used on Visits" />
+        <SectionHead title="Inventory" />
         {visitParts.length === 0 ? (
-          <div style={{ color: "#9ca3af", fontSize: 13, fontStyle: "italic", padding: "10px 0" }}>No parts recorded on visits for this job.</div>
+          <div style={{ color: "#9ca3af", fontSize: 13, fontStyle: "italic", padding: "10px 0" }}>No inventory recorded on visits for this job.</div>
         ) : (
           <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden" }}>
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
