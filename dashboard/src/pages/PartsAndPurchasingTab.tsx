@@ -14,6 +14,7 @@ interface POItem {
   quantityReceived: number;
   unitCost: number;
   totalCost: number;
+  taxable?: boolean;
 }
 
 interface Bill {
@@ -40,6 +41,9 @@ interface PurchaseOrder {
   items: POItem[];
   bills: Bill[];
   total: number;
+  taxRate?: string;
+  subtotal?: number;
+  taxAmount?: number;
 }
 
 interface Props { jobId: string; jobNumber: string; }
