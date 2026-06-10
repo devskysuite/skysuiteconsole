@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   addDoc, collection, deleteDoc, doc,
-  getDocs, getDoc, onSnapshot, orderBy, query, updateDoc, setDoc, where,
+  getDocs, getDoc, limit, onSnapshot, query, updateDoc, setDoc, where,
 } from "firebase/firestore";
 import { db, auth } from "../firebase";
 import { useIsAdmin } from "../hooks/useIsAdmin";
@@ -135,13 +135,17 @@ export default function CustomerDetailPage() {
   const [showNoteInput,  setShowNoteInput]  = useState(false);
 
   // Jobs & Visits state
-  const [jobsList,         setJobsList]         = useState<JobRow[]>([]);
-  const [visitsList,       setVisitsList]       = useState<VisitRow[]>([]);
-  const [jobsVisitsLoaded, setJobsVisitsLoaded] = useState(false);
-  const [jobsFilter,       setJobsFilter]       = useState<"All" | "Today" | "Mine">("All");
-  const [jobsPage,         setJobsPage]         = useState(0);
-  const [pastPage,         setPastPage]         = useState(0);
+  const [jobsList,     setJobsList]     = useState<JobRow[]>([]);
+  const [visitsList,   setVisitsList]   = useState<VisitRow[]>([]);
+  const [jvStarted,    setJvStarted]    = useState(false);
+  const [jobsReady,    setJobsReady]    = useState(false);
+  const [visitsReady,  setVisitsReady]  = useState(false);
+  const [jobsTrunc,    setJobsTrunc]    = useState(false);
+  const [jobsFilter,   setJobsFilter]   = useState<"All" | "Today" | "Mine">("All");
+  const [jobsPage,     setJobsPage]     = useState(0);
+  const [pastPage,     setPastPage]     = useState(0);
   const JV_PAGE = 25;
+  const JV_JOB_LIMIT = 100;
 
   // Properties pagination
   type PropPageSize = 25 | 50 | 75 | 100;
@@ -194,40 +198,52 @@ export default function CustomerDetailPage() {
     }).catch(() => {});
   }, [customerId]);
 
-  // Jobs & Visits — lazy load when tab opens
+  // Jobs & Visits — two-phase lazy load: jobs first (fast), visits in background
   useEffect(() => {
-    if (tab !== "Jobs & Visits" || jobsVisitsLoaded || !customer) return;
-    async function load() {
-      const jobSnap = await getDocs(
-        query(collection(db, "jobs"), where("customerName", "==", customer!.name), orderBy("jobNumber", "desc"))
-      ).catch(() => null);
-      const jobs: JobRow[] = (jobSnap?.docs || []).map(d => ({ id: d.id, ...(d.data() as Omit<JobRow,"id">) }));
-      setJobsList(jobs);
+    if (tab !== "Jobs & Visits" || jvStarted || !customer) return;
+    setJvStarted(true);
 
+    async function load() {
+      // Phase 1: load up to JV_JOB_LIMIT jobs — shows jobs table immediately
+      const jobSnap = await getDocs(
+        query(collection(db, "jobs"), where("customerName", "==", customer!.name), limit(JV_JOB_LIMIT + 1))
+      ).catch(() => null);
+      const raw = jobSnap?.docs || [];
+      const truncated = raw.length > JV_JOB_LIMIT;
+      const docs = truncated ? raw.slice(0, JV_JOB_LIMIT) : raw;
+      const jobs: JobRow[] = docs.map(d => ({ id: d.id, ...(d.data() as Omit<JobRow,"id">) }));
+      jobs.sort((a, b) => {
+        const n = (s: string) => parseInt(s.replace(/\D/g, "") || "0");
+        return n(b.jobNumber || "") - n(a.jobNumber || "");
+      });
+      setJobsList(jobs);
+      setJobsTrunc(truncated);
+      setJobsReady(true); // ← jobs table renders NOW
+
+      // Phase 2: load visits for those jobs in background
+      if (jobs.length === 0) { setVisitsReady(true); return; }
       const jobIds = jobs.map(j => j.id);
-      if (jobIds.length > 0) {
-        const all: VisitRow[] = [];
-        for (let i = 0; i < jobIds.length; i += 10) {
-          const batch = jobIds.slice(i, i + 10);
-          const vSnap = await getDocs(
-            query(collection(db, "dispatchVisits"), where("jobId", "in", batch), orderBy("date", "desc"))
-          ).catch(() => null);
-          if (vSnap) {
-            const jobMap = Object.fromEntries(jobs.map(j => [j.id, j.propertyName]));
-            all.push(...vSnap.docs.map(d => ({
-              id: d.id,
-              propertyName: jobMap[d.data().jobId] || "",
-              ...(d.data() as Omit<VisitRow,"id"|"propertyName">),
-            })));
-          }
+      const jobMap = Object.fromEntries(jobs.map(j => [j.id, j.propertyName]));
+      const all: VisitRow[] = [];
+      for (let i = 0; i < jobIds.length; i += 10) {
+        const batch = jobIds.slice(i, i + 10);
+        const vSnap = await getDocs(
+          query(collection(db, "dispatchVisits"), where("jobId", "in", batch))
+        ).catch(() => null);
+        if (vSnap) {
+          all.push(...vSnap.docs.map(d => ({
+            id: d.id,
+            propertyName: jobMap[d.data().jobId] || "",
+            ...(d.data() as Omit<VisitRow,"id"|"propertyName">),
+          })));
         }
-        all.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
-        setVisitsList(all);
       }
-      setJobsVisitsLoaded(true);
+      all.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+      setVisitsList(all);
+      setVisitsReady(true); // ← visits sections render NOW
     }
     load();
-  }, [tab, customer, jobsVisitsLoaded]);
+  }, [tab, customer, jvStarted]);
 
   async function saveNotes() {
     if (!customerId) return;
@@ -681,7 +697,7 @@ export default function CustomerDetailPage() {
                 if (!s) return "—";
                 return new Date(s + (s.includes("T") ? "" : "T12:00:00")).toLocaleDateString("en-CA", { year:"numeric", month:"short", day:"numeric" });
               }
-              function PgBar({ page, total, setPage, count }: { page:number; total:number; setPage:(n:number)=>void; count:number }) {
+              function PgBar({ page, total, setPage, count }: { page:number; total:number; setPage:React.Dispatch<React.SetStateAction<number>>; count:number }) {
                 if (total <= 1) return null;
                 return (
                   <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginTop:10, fontSize:12, color:"#6b7280" }}>
@@ -716,7 +732,7 @@ export default function CustomerDetailPage() {
                       {filterBtn("My jobs","Mine")}
                     </div>
 
-                    {!jobsVisitsLoaded ? (
+                    {!jobsReady ? (
                       <div style={{ color:"#9ca3af", padding:"24px 0" }}>Loading…</div>
                     ) : filteredJobs.length === 0 ? (
                       <div style={{ color:"#9ca3af", padding:"24px 0", textAlign:"center" }}>No jobs found.</div>
@@ -759,6 +775,9 @@ export default function CustomerDetailPage() {
                           </table>
                         </div>
                         <PgBar page={jobsSafePage} total={jobsTotalPages} setPage={setJobsPage} count={filteredJobs.length} />
+                        {jobsTrunc && (
+                          <div style={{ fontSize:12, color:"#9ca3af", marginTop:6 }}>Showing most recent {JV_JOB_LIMIT} jobs.</div>
+                        )}
                       </>
                     )}
                   </div>
@@ -766,45 +785,53 @@ export default function CustomerDetailPage() {
                   {/* Current visits */}
                   <div>
                     <div style={{ fontSize:14, fontWeight:700, color:"#111827", marginBottom:10 }}>Current visits</div>
-                    <div style={{ border:"1px solid #e5e7eb", borderRadius:8, overflow:"hidden" }}>
-                      <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
-                        <thead>
-                          <tr style={{ background:"#f9fafb", borderBottom:"1px solid #e5e7eb" }}>
-                            <th style={th}>Event type</th>
-                            <th style={th}>Job</th>
-                            <th style={th}>Status</th>
-                            <th style={th}>Date</th>
-                            <th style={th}>Description</th>
-                            <th style={th}>Property</th>
-                            <th style={th}>Assigned to</th>
-                          </tr>
-                        </thead>
-                        <tbody style={{ background:"#fff" }}>
-                          {currentVisits.length === 0 ? (
-                            <tr><td colSpan={7} style={{ padding:"24px", textAlign:"center", color:"#9ca3af", fontSize:13 }}>No upcoming visits</td></tr>
-                          ) : currentVisits.map(v => (
-                            <tr key={v.id} style={{ borderBottom:"1px solid #f3f4f6" }}>
-                              <td style={td}>Job</td>
-                              <td style={{ ...td, fontWeight:700 }}>
-                                <Link to={`/jobs/${v.jobId}`} style={{ color:"#1565c0", textDecoration:"none" }}>{v.jobNumber}</Link>
-                              </td>
-                              <td style={td}><StatusBadge s={v.status} map={VISIT_STATUS} /></td>
-                              <td style={td}>{fmtD(v.date)}</td>
-                              <td style={{ ...td, maxWidth:200, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" as const }}>{v.description || v.title || "—"}</td>
-                              <td style={td}>{v.propertyName || "—"}</td>
-                              <td style={td}>{[v.techName, ...(v.additionalTechnicians || [])].filter(Boolean).join(", ") || "—"}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                    <div style={{ textAlign:"right", fontSize:12, color:"#9ca3af", marginTop:6 }}>Rows per page: {JV_PAGE} &nbsp; {currentVisits.length === 0 ? "0–0 of 0" : `1–${Math.min(JV_PAGE, currentVisits.length)} of ${currentVisits.length}`}</div>
+                    {!visitsReady ? (
+                      <div style={{ color:"#9ca3af", padding:"16px 0", fontSize:13 }}>Loading visits…</div>
+                    ) : (
+                      <>
+                        <div style={{ border:"1px solid #e5e7eb", borderRadius:8, overflow:"hidden" }}>
+                          <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
+                            <thead>
+                              <tr style={{ background:"#f9fafb", borderBottom:"1px solid #e5e7eb" }}>
+                                <th style={th}>Event type</th>
+                                <th style={th}>Job</th>
+                                <th style={th}>Status</th>
+                                <th style={th}>Date</th>
+                                <th style={th}>Description</th>
+                                <th style={th}>Property</th>
+                                <th style={th}>Assigned to</th>
+                              </tr>
+                            </thead>
+                            <tbody style={{ background:"#fff" }}>
+                              {currentVisits.length === 0 ? (
+                                <tr><td colSpan={7} style={{ padding:"24px", textAlign:"center", color:"#9ca3af", fontSize:13 }}>No upcoming visits</td></tr>
+                              ) : currentVisits.map(v => (
+                                <tr key={v.id} style={{ borderBottom:"1px solid #f3f4f6" }}>
+                                  <td style={td}>Job</td>
+                                  <td style={{ ...td, fontWeight:700 }}>
+                                    <Link to={`/jobs/${v.jobId}`} style={{ color:"#1565c0", textDecoration:"none" }}>{v.jobNumber}</Link>
+                                  </td>
+                                  <td style={td}><StatusBadge s={v.status} map={VISIT_STATUS} /></td>
+                                  <td style={td}>{fmtD(v.date)}</td>
+                                  <td style={{ ...td, maxWidth:200, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" as const }}>{v.description || v.title || "—"}</td>
+                                  <td style={td}>{v.propertyName || "—"}</td>
+                                  <td style={td}>{[v.techName, ...(v.additionalTechnicians || [])].filter(Boolean).join(", ") || "—"}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                        <div style={{ textAlign:"right", fontSize:12, color:"#9ca3af", marginTop:6 }}>Rows per page: {JV_PAGE} &nbsp; {currentVisits.length === 0 ? "0–0 of 0" : `1–${Math.min(JV_PAGE, currentVisits.length)} of ${currentVisits.length}`}</div>
+                      </>
+                    )}
                   </div>
 
                   {/* Past visits */}
                   <div>
                     <div style={{ fontSize:14, fontWeight:700, color:"#111827", marginBottom:10 }}>Past visits</div>
-                    {pastVisits.length === 0 ? (
+                    {!visitsReady ? (
+                      <div style={{ color:"#9ca3af", padding:"16px 0", fontSize:13 }}>Loading visits…</div>
+                    ) : pastVisits.length === 0 ? (
                       <div style={{ color:"#9ca3af", padding:"16px 0" }}>No past visits.</div>
                     ) : (
                       <>
