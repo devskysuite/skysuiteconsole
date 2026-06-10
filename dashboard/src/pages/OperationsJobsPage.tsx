@@ -153,7 +153,7 @@ export default function OperationsJobsPage() {
   const td: React.CSSProperties = { padding: "7px 8px", fontSize: 12, color: "#374151", verticalAlign: "middle", borderBottom: "1px solid #f3f4f6", whiteSpace: "nowrap" };
 
   return (
-    <div style={{ background: "#f9fafb", height: "calc(100vh - 56px)", display: "flex", flexDirection: "column" }}>
+    <div style={{ background: "#f9fafb", height: "calc(100vh - 96px)", display: "flex", flexDirection: "column" }}>
       {/* Toolbar */}
       <div style={{ background: "#fff", borderBottom: "1px solid #e5e7eb", padding: "12px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexShrink: 0 }}>
         <div>

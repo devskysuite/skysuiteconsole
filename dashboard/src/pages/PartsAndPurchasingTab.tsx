@@ -223,8 +223,8 @@ export default function PartsAndPurchasingTab({ jobId, jobNumber }: Props) {
     }).catch(err => console.error("Visit parts query error:", err));
   }, [jobId]);
 
-  const allItems = pos.flatMap(po => (po.items || []).map(item => ({ ...item, poNumber: po.poNumber, vendor: po.vendor || item.description })));
-  const allBills = pos.flatMap(po => (po.bills || []).map(bill => ({ ...bill, poNumber: po.poNumber })));
+  const allItems = pos.flatMap(po => (po.items || []).map(item => ({ ...item, poId: po.id, poNumber: po.poNumber, vendor: po.vendor || item.description })));
+  const allBills = pos.flatMap(po => (po.bills || []).map(bill => ({ ...bill, poId: po.id, poNumber: po.poNumber })));
   const poGrandTotal      = pos.reduce((s, p) => s + (p.total || 0), 0);
   const itemGrandTotal    = allItems.reduce((s, i) => s + (i.totalCost || 0), 0);
   const billGrandTotal    = allBills.reduce((s, b) => s + (b.total || 0), 0);
@@ -417,7 +417,9 @@ export default function PartsAndPurchasingTab({ jobId, jobNumber }: Props) {
               <tbody>
                 {allItems.map((item, i) => (
                   <tr key={item.id + i} style={{ borderBottom: "1px solid #f3f4f6" }}>
-                    <td style={{ ...td, fontWeight: 700, color: "#1565c0" }}>{item.poNumber}</td>
+                    <td style={{ ...td, fontWeight: 700 }}>
+                      <Link to={`/purchase-orders/${item.poId}`} style={{ color: "#1565c0", textDecoration: "none" }}>{item.poNumber}</Link>
+                    </td>
                     <td style={td}>{item.name || item.description || "—"}</td>
                     <td style={td}>{item.vendor || "—"}</td>
                     <td style={td}><StatusBadge status={item.fulfillmentStatus} /></td>
@@ -459,7 +461,9 @@ export default function PartsAndPurchasingTab({ jobId, jobNumber }: Props) {
                     <td style={td}>{b.billNumber || "—"}</td>
                     <td style={td}>{b.receiptNumber || "—"}</td>
                     <td style={td}>{b.vendor || "—"}</td>
-                    <td style={{ ...td, fontWeight: 700, color: "#1565c0" }}>{b.poNumber}</td>
+                    <td style={{ ...td, fontWeight: 700 }}>
+                      <Link to={`/purchase-orders/${b.poId}`} style={{ color: "#1565c0", textDecoration: "none" }}>{b.poNumber}</Link>
+                    </td>
                     <td style={td}>{fmtDate(b.dateIssued)}</td>
                     <td style={td}>{b.createdBy || "—"}</td>
                     <td style={{ ...td, textAlign: "right", fontWeight: 600 }}>{fmtC(b.total)}</td>
