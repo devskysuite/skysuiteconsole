@@ -53,6 +53,7 @@ async function reserveJobNumber(): Promise<string> {
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function CreateJobModal({ property, onClose, onCreated }: Props) {
   const [users, setUsers]       = useState<string[]>([]);
+  const [contacts, setContacts] = useState<{ id: string; name: string; role: string }[]>([]);
   const [pricebooks, setPricebooks] = useState<{ id: string; name: string; isDefault: boolean }[]>([]);
   const [saving, setSaving]     = useState(false);
   const [errors, setErrors]     = useState<Record<string, boolean>>({});
@@ -84,7 +85,7 @@ export default function CreateJobModal({ property, onClose, onCreated }: Props) 
     createVisit:                false,
   });
 
-  // Load users for dropdowns
+  // Load users, contacts, and pricebooks
   useEffect(() => {
     getDocs(collection(db, "users")).then(snap => {
       const names = snap.docs
@@ -93,16 +94,26 @@ export default function CreateJobModal({ property, onClose, onCreated }: Props) 
         .sort((a, b) => a.localeCompare(b));
       setUsers(names);
     }).catch(() => {});
+
+    if (property.customerId) {
+      getDocs(collection(db, "customers", property.customerId, "contacts")).then(snap => {
+        const list = snap.docs
+          .map(d => ({ id: d.id, name: d.data().name as string, role: d.data().role as string || "" }))
+          .filter(c => c.name)
+          .sort((a, b) => a.name.localeCompare(b.name));
+        setContacts(list);
+      }).catch(() => {});
+    }
+
     getDocs(collection(db, "pricebooks")).then(snap => {
       const books = snap.docs
         .map(d => ({ id: d.id, name: d.data().name as string, isDefault: d.data().isDefault as boolean }))
         .sort((a, b) => a.name.localeCompare(b.name));
       setPricebooks(books);
-      // Pre-select default pricebook if none chosen yet
       const def = books.find(b => b.isDefault);
       if (def) setForm(f => f.pricebook ? f : { ...f, pricebook: def.name });
     }).catch(() => {});
-  }, []);
+  }, [property.customerId]);
 
   // Close on Escape
   useEffect(() => {
@@ -197,6 +208,18 @@ export default function CreateJobModal({ property, onClose, onCreated }: Props) 
     </div>
   );
 
+  const ContactSelect = ({ k, label }: { k: keyof typeof form; label: string }) => (
+    <div>
+      <label style={lbl}><span>{label}</span></label>
+      <select style={sel()} {...bind(k)}>
+        <option value="">Select...</option>
+        {contacts.map(c => (
+          <option key={c.id} value={c.name}>{c.name}{c.role ? ` (${c.role})` : ""}</option>
+        ))}
+      </select>
+    </div>
+  );
+
   const MoneyField = ({ k, label }: { k: keyof typeof form; label: string }) => (
     <div>
       <label style={lbl}><span>{label}</span></label>
@@ -243,13 +266,7 @@ export default function CreateJobModal({ property, onClose, onCreated }: Props) 
             </label>
             <input style={inp} {...bind("propertyName")} />
           </div>
-          <div>
-            <label style={lbl}><span>Property Rep</span></label>
-            <select style={sel()} {...bind("propertyRep")}>
-              <option value="">Select...</option>
-              {users.map(u => <option key={u} value={u}>{u}</option>)}
-            </select>
-          </div>
+          <ContactSelect k="propertyRep" label="Property Rep" />
         </div>
 
         {/* ── Row 2: Billing ── */}
@@ -317,7 +334,7 @@ export default function CreateJobModal({ property, onClose, onCreated }: Props) 
             <label style={lbl}><span>Customer WO #</span></label>
             <input style={inp} {...bind("customerWO")} />
           </div>
-          <UserSelect k="authorizedBy" label="Authorized By" />
+          <ContactSelect k="authorizedBy" label="Authorized By" />
         </div>
 
         {/* ── Row 5: Money fields ── */}

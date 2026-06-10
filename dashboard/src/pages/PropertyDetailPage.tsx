@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { doc, getDoc, updateDoc } from "firebase/firestore";
+import { collection, doc, getDoc, onSnapshot, query, updateDoc, where } from "firebase/firestore";
 import { db } from "../firebase";
 import { useIsAdmin } from "../hooks/useIsAdmin";
 import CreateJobModal from "./CreateJobModal";
@@ -129,6 +129,8 @@ export default function PropertyDetailPage() {
   const [tab, setTab]             = useState<Tab>("Jobs & Visits");
   const [editOpen, setEditOpen]   = useState(false);
   const [createJobOpen, setCreateJobOpen] = useState(false);
+  const [jobs, setJobs]           = useState<any[]>([]);
+  const [jobsLoading, setJobsLoading] = useState(true);
 
   useEffect(() => {
     if (!propertyId) return;
@@ -138,6 +140,21 @@ export default function PropertyDetailPage() {
         setLoading(false);
       })
       .catch(() => setLoading(false));
+  }, [propertyId]);
+
+  useEffect(() => {
+    if (!propertyId) return;
+    return onSnapshot(
+      query(collection(db, "jobs"), where("propertyId", "==", propertyId)),
+      snap => {
+        const list = snap.docs
+          .map(d => ({ id: d.id, ...d.data() }))
+          .sort((a: any, b: any) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+        setJobs(list);
+        setJobsLoading(false);
+      },
+      () => setJobsLoading(false)
+    );
   }, [propertyId]);
 
   async function saveEdit(data: Partial<Property>) {
@@ -310,18 +327,51 @@ export default function PropertyDetailPage() {
                   <table style={{ width: "100%", borderCollapse: "collapse" }}>
                     <thead>
                       <tr>
-                        {["Job", "Visits", "Job Type", "Status", "Issue Description", "Tags", "Created On", "Outstanding Balance", "Overdue Balance", "Amount Quoted", "Age (Days)", "Project Manager"].map(h => (
+                        {["Job", "Visits", "Job Type", "Status", "Issue Description", "Created On", "Amount Quoted", "Age (Days)", "Project Manager"].map(h => (
                           <th key={h} style={{ padding: "9px 14px", textAlign: "left", fontSize: 11, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: 0.4, whiteSpace: "nowrap", background: "#f9fafb", borderBottom: "1px solid #e5e7eb" }}>{h}</th>
                         ))}
                       </tr>
                     </thead>
                     <tbody>
-                      <tr>
-                        <td colSpan={12} style={{ padding: "40px 20px", textAlign: "center", color: "#9ca3af", fontSize: 14 }}>No jobs</td>
-                      </tr>
+                      {jobsLoading ? (
+                        <tr><td colSpan={9} style={{ padding: "40px 20px", textAlign: "center", color: "#9ca3af", fontSize: 14 }}>Loading…</td></tr>
+                      ) : jobs.length === 0 ? (
+                        <tr><td colSpan={9} style={{ padding: "40px 20px", textAlign: "center", color: "#9ca3af", fontSize: 14 }}>No jobs</td></tr>
+                      ) : jobs.map((job: any) => {
+                        const age = job.createdAt
+                          ? Math.floor((Date.now() - new Date(job.createdAt).getTime()) / 86_400_000)
+                          : "—";
+                        const createdOn = job.createdAt
+                          ? new Date(job.createdAt).toLocaleDateString("en-CA")
+                          : "—";
+                        const STATUS_COLORS: Record<string, { bg: string; color: string }> = {
+                          Open:       { bg: "#dbeafe", color: "#1e40af" },
+                          "In Progress": { bg: "#fef3c7", color: "#92400e" },
+                          Completed:  { bg: "#dcfce7", color: "#166534" },
+                          Cancelled:  { bg: "#f3f4f6", color: "#6b7280" },
+                        };
+                        const sc = STATUS_COLORS[job.status] || { bg: "#f3f4f6", color: "#6b7280" };
+                        return (
+                          <tr key={job.id} style={{ borderBottom: "1px solid #f0f0f0" }}>
+                            <td style={{ padding: "10px 14px", fontSize: 13, fontWeight: 700, color: "#1565c0", whiteSpace: "nowrap" }}>{job.jobNumber || "—"}</td>
+                            <td style={{ padding: "10px 14px", fontSize: 13, color: "#6b7280" }}>—</td>
+                            <td style={{ padding: "10px 14px", fontSize: 13, color: "#374151" }}>{job.jobType || "—"}</td>
+                            <td style={{ padding: "10px 14px" }}>
+                              <span style={{ background: sc.bg, color: sc.color, fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 99 }}>{job.status || "—"}</span>
+                            </td>
+                            <td style={{ padding: "10px 14px", fontSize: 13, color: "#374151", maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{job.issueDescription || "—"}</td>
+                            <td style={{ padding: "10px 14px", fontSize: 13, color: "#374151", whiteSpace: "nowrap" }}>{createdOn}</td>
+                            <td style={{ padding: "10px 14px", fontSize: 13, color: "#374151", whiteSpace: "nowrap" }}>{job.quoteSubtotal ? fmt$(job.quoteSubtotal) : "—"}</td>
+                            <td style={{ padding: "10px 14px", fontSize: 13, color: "#374151" }}>{age}</td>
+                            <td style={{ padding: "10px 14px", fontSize: 13, color: "#374151" }}>{job.projectManager || "—"}</td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
-                  <div style={{ padding: "10px 16px", fontSize: 12, color: "#9ca3af", borderTop: "1px solid #e5e7eb", display: "flex", justifyContent: "flex-end" }}>Rows per page: 25 &nbsp;·&nbsp; 0–0 of 0</div>
+                  <div style={{ padding: "10px 16px", fontSize: 12, color: "#9ca3af", borderTop: "1px solid #e5e7eb", display: "flex", justifyContent: "flex-end" }}>
+                    {jobs.length} job{jobs.length !== 1 ? "s" : ""}
+                  </div>
                 </div>
 
                 {/* Current visits */}
