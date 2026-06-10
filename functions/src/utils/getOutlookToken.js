@@ -19,13 +19,7 @@ export async function getOutlookAccessToken() {
 
   const res = await fetch(`https://login.microsoftonline.com/${TENANT_ID}/oauth2/v2.0/token`, {
     method:  "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-      // SPA-issued refresh tokens may only be redeemed via cross-origin requests
-      // (AADSTS9002327). Supplying an Origin header satisfies that requirement
-      // for server-side redemption.
-      "Origin": "https://skysuite.ca",
-    },
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body:    new URLSearchParams(params).toString(),
   });
   const json = await res.json();
