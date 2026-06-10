@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { addDoc, arrayUnion, collection, doc, getDoc, onSnapshot, query, updateDoc, where } from "firebase/firestore";
-import { auth, db } from "../firebase";
+import { arrayUnion, collection, doc, getDoc, onSnapshot, query, updateDoc, where } from "firebase/firestore";
+import { db } from "../firebase";
+import CreatePOModal from "./CreatePOModal";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface POItem {
@@ -536,7 +537,7 @@ export default function PartsAndPurchasingTab({ jobId, jobNumber }: Props) {
         </div>
       )}
 
-      {addPOOpen && <AddPOModal jobId={jobId} jobNumber={jobNumber} onClose={() => setAddPOOpen(false)} />}
+      {addPOOpen && <CreatePOModal jobId={jobId} jobNumber={jobNumber} onClose={() => setAddPOOpen(false)} />}
     </div>
   );
 }

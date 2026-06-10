@@ -103,6 +103,43 @@ function IconPayroll() {
     </svg>
   );
 }
+function IconBriefcase() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="7" width="20" height="14" rx="2"/>
+      <path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/>
+    </svg>
+  );
+}
+function IconFileText() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+      <polyline points="14 2 14 8 20 8"/>
+      <line x1="16" y1="13" x2="8" y2="13"/>
+      <line x1="16" y1="17" x2="8" y2="17"/>
+    </svg>
+  );
+}
+function IconShoppingCart() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="9" cy="21" r="1"/>
+      <circle cx="20" cy="21" r="1"/>
+      <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/>
+    </svg>
+  );
+}
+function IconReceipt() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1z"/>
+      <line x1="8" y1="9" x2="16" y2="9"/>
+      <line x1="8" y1="13" x2="16" y2="13"/>
+      <line x1="8" y1="17" x2="13" y2="17"/>
+    </svg>
+  );
+}
 
 // ── Nav data ──────────────────────────────────────────────────────────────────
 const BASE_LINKS = [
@@ -125,6 +162,29 @@ const RESOURCE_ITEMS: { to: string; label: string; icon: React.ReactNode }[] = [
 const ACCOUNTING_ITEMS: { to: string; label: string; icon: React.ReactNode }[] = [
   { to: "/accounting/payroll",      label: "Payroll",            icon: <IconPayroll /> },
   { to: "/accounting/labor-rates",  label: "Labor Rate Settings", icon: <IconSliders /> },
+];
+
+// Operations dropdown: grouped structure
+const OPERATIONS_GROUPS = [
+  {
+    heading: null,
+    items: [
+      { to: "/operations/jobs",   label: "Jobs",   icon: <IconBriefcase /> },
+    ],
+  },
+  {
+    heading: "Sales",
+    items: [
+      { to: "/operations/quotes", label: "Quotes", icon: <IconFileText /> },
+    ],
+  },
+  {
+    heading: "Procurement",
+    items: [
+      { to: "/operations/purchase-orders",  label: "Purchase Orders",  icon: <IconShoppingCart /> },
+      { to: "/operations/receipts-bills",   label: "Receipts & Bills", icon: <IconReceipt /> },
+    ],
+  },
 ];
 
 const ADMIN_ITEMS: { to: string; label: string; icon: React.ReactNode }[] = [
@@ -157,11 +217,13 @@ export default function Nav() {
   const [resourcesMenuOpen, setResourcesMenuOpen] = useState(false);
   const [directoryMenuOpen, setDirectoryMenuOpen] = useState(false);
   const [accountingMenuOpen, setAccountingMenuOpen] = useState(false);
+  const [operationsMenuOpen, setOperationsMenuOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const dropdownRef    = useRef<HTMLDivElement>(null);
   const resourcesRef   = useRef<HTMLDivElement>(null);
   const directoryRef   = useRef<HTMLDivElement>(null);
   const accountingRef  = useRef<HTMLDivElement>(null);
+  const operationsRef  = useRef<HTMLDivElement>(null);
   const [userName, setUserName] = useState("");
   const [pendingTimeOff, setPendingTimeOff] = useState(0);
 
@@ -196,6 +258,7 @@ export default function Nav() {
       if (resourcesRef.current && !resourcesRef.current.contains(e.target as Node)) setResourcesMenuOpen(false);
       if (directoryRef.current && !directoryRef.current.contains(e.target as Node)) setDirectoryMenuOpen(false);
       if (accountingRef.current && !accountingRef.current.contains(e.target as Node)) setAccountingMenuOpen(false);
+      if (operationsRef.current && !operationsRef.current.contains(e.target as Node)) setOperationsMenuOpen(false);
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
@@ -206,6 +269,7 @@ export default function Nav() {
     setResourcesMenuOpen(false);
     setDirectoryMenuOpen(false);
     setAccountingMenuOpen(false);
+    setOperationsMenuOpen(false);
     setMobileMenuOpen(false);
   }, [pathname]);
 
@@ -293,6 +357,42 @@ export default function Nav() {
           )}
         </div>
 
+        {/* Operations dropdown */}
+        <div ref={operationsRef} style={{ position: "relative" }}>
+          {(() => {
+            const allOpPaths = OPERATIONS_GROUPS.flatMap(g => g.items.map(i => i.to));
+            const isActive = allOpPaths.some(p => pathname === p || pathname.startsWith(p + "/"));
+            return (
+              <button
+                style={{ ...styles.dropBtn, ...(isActive ? styles.linkActive : {}) }}
+                onClick={() => setOperationsMenuOpen(v => !v)}
+              >
+                Operations <Caret open={operationsMenuOpen} />
+              </button>
+            );
+          })()}
+          {operationsMenuOpen && (
+            <div style={styles.dropdown}>
+              {OPERATIONS_GROUPS.map((group, gi) => (
+                <div key={gi}>
+                  {group.heading && (
+                    <div style={{ padding: "8px 18px 4px", fontSize: 10, fontWeight: 800, color: "#9ca3af", textTransform: "uppercase" as const, letterSpacing: 0.8 }}>
+                      {group.heading}
+                    </div>
+                  )}
+                  {gi > 0 && !group.heading && <div style={{ height: 1, background: "#f3f4f6", margin: "4px 0" }} />}
+                  {group.items.map(item => (
+                    <Link key={item.to} to={item.to} style={{ ...styles.dropdownItem, ...(pathname === item.to || pathname.startsWith(item.to + "/") ? styles.dropdownItemActive : {}) }}>
+                      <span style={{ ...styles.itemIcon, color: pathname.startsWith(item.to) ? "#1565c0" : "#6b7280" }}>{item.icon}</span>
+                      {item.label}
+                    </Link>
+                  ))}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
         {/* Accounting dropdown */}
         <div ref={accountingRef} style={{ position: "relative" }}>
           <button
@@ -347,6 +447,7 @@ export default function Nav() {
     <div className={`mobile-nav-panel${mobileMenuOpen ? " open" : ""}`}>
       {BASE_LINKS.map(l => <Link key={l.to} to={l.to} className="mobile-nav-link">{l.label}</Link>)}
       <Link to="/time-off" className="mobile-nav-link">Vacation</Link>
+      {OPERATIONS_GROUPS.flatMap(g => g.items).map(item => <Link key={item.to} to={item.to} className="mobile-nav-link">{item.label}</Link>)}
       {DIRECTORY_ITEMS.map(item => <Link key={item.to} to={item.to} className="mobile-nav-link">{item.label}</Link>)}
       {RESOURCE_ITEMS.map(item => <Link key={item.to} to={item.to} className="mobile-nav-link">{item.label}</Link>)}
       {ACCOUNTING_ITEMS.map(item => <Link key={item.to} to={item.to} className="mobile-nav-link">{item.label}</Link>)}
