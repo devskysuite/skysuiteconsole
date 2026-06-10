@@ -39,10 +39,10 @@ export default function LaborRatesPage() {
         const init: Record<string, Draft> = {};
         for (const u of list) {
           init[u.id] = {
-            rt:        u.laborRates?.rt != null ? String(u.laborRates.rt) : "",
-            ot:        u.laborRates?.ot != null ? String(u.laborRates.ot) : "",
-            dt:        u.laborRates?.dt != null ? String(u.laborRates.dt) : "",
-            pto:       u.laborRates?.pto != null ? String(u.laborRates.pto) : "",
+            rt:        u.laborRates?.rt != null ? String(u.laborRates.rt) : "79.94",
+            ot:        u.laborRates?.ot != null ? String(u.laborRates.ot) : "98.71",
+            dt:        u.laborRates?.dt != null ? String(u.laborRates.dt) : "117.49",
+            pto:       u.laborRates?.pto != null ? String(u.laborRates.pto) : "0",
             laborType: u.laborType || "",
           };
         }
@@ -51,6 +51,14 @@ export default function LaborRatesPage() {
       })
       .catch(() => setLoading(false));
   }, []);
+
+  const [savingAll, setSavingAll] = useState(false);
+
+  async function saveAll() {
+    setSavingAll(true);
+    await Promise.all(users.map(u => save(u.id)));
+    setSavingAll(false);
+  }
 
   async function save(uid: string) {
     const d = drafts[uid];
@@ -83,9 +91,20 @@ export default function LaborRatesPage() {
 
         {/* Header */}
         <div style={{ marginBottom: 24 }}>
-          <div style={{ fontSize: 20, fontWeight: 800, color: "#111827" }}>Labor Rate Settings</div>
-          <div style={{ fontSize: 13, color: "#6b7280", marginTop: 4 }}>
-            Payroll rates per field employee — used for job costing calculations.
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div>
+              <div style={{ fontSize: 20, fontWeight: 800, color: "#111827" }}>Labor Rate Settings</div>
+              <div style={{ fontSize: 13, color: "#6b7280", marginTop: 4 }}>
+                Payroll rates per field employee — used for job costing calculations.
+              </div>
+            </div>
+            <button
+              onClick={saveAll}
+              disabled={savingAll || users.length === 0}
+              style={{ background: "#0d2e5e", color: "#fff", border: "none", borderRadius: 8, padding: "9px 22px", fontSize: 13, fontWeight: 700, cursor: savingAll ? "not-allowed" : "pointer", opacity: savingAll ? 0.7 : 1 }}
+            >
+              {savingAll ? "Saving…" : "Save All"}
+            </button>
           </div>
         </div>
 
