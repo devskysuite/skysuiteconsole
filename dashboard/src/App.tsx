@@ -63,11 +63,22 @@ function AppLayout({ children }: { children: React.ReactNode }) {
   // can use flex:1 on its outer div and the inner overflow:auto table wrapper
   // becomes the sole scroll context, making position:sticky on <th top:0> work.
   const isDirectoryList = pathname === "/customers" || pathname === "/properties" || pathname === "/vendors";
+
+  // Prevent body from becoming a scroll container on directory pages.
+  // overflow:hidden on AppLayout itself breaks the inner table scroll, so we
+  // target the body instead — same effect on body scroll, no side effects on children.
+  useEffect(() => {
+    if (isDirectoryList) {
+      document.body.style.overflow = "hidden";
+      return () => { document.body.style.overflow = ""; };
+    }
+  }, [isDirectoryList]);
+
   if (isDirectoryList) {
     return (
       <>
         <Nav />
-        <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 96px)", overflow: "hidden" }}>
+        <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 96px)" }}>
           {children}
         </div>
       </>
