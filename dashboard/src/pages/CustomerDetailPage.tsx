@@ -2,9 +2,9 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   addDoc, collection, deleteDoc, doc,
-  getDoc, onSnapshot, query, updateDoc, setDoc, where,
+  getDocs, getDoc, onSnapshot, orderBy, query, updateDoc, setDoc, where,
 } from "firebase/firestore";
-import { db } from "../firebase";
+import { db, auth } from "../firebase";
 import { useIsAdmin } from "../hooks/useIsAdmin";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -37,6 +37,18 @@ interface Property {
 }
 interface Contact {
   id?: string; name: string; role: string; email: string; phone: string;
+}
+interface JobRow {
+  id: string; jobNumber: string; status?: string; jobType?: string;
+  issueDescription?: string; title?: string; tags?: string;
+  propertyName?: string; createdAt?: string; visitCount?: number;
+  totalBilled?: number; outstandingBalance?: number;
+}
+interface VisitRow {
+  id: string; jobId: string; jobNumber: string; status?: string;
+  date?: string; description?: string; title?: string;
+  techName?: string; additionalTechnicians?: string[];
+  propertyName?: string;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -122,6 +134,15 @@ export default function CustomerDetailPage() {
   const [notesSaved,     setNotesSaved]     = useState(false);
   const [showNoteInput,  setShowNoteInput]  = useState(false);
 
+  // Jobs & Visits state
+  const [jobsList,         setJobsList]         = useState<JobRow[]>([]);
+  const [visitsList,       setVisitsList]       = useState<VisitRow[]>([]);
+  const [jobsVisitsLoaded, setJobsVisitsLoaded] = useState(false);
+  const [jobsFilter,       setJobsFilter]       = useState<"All" | "Today" | "Mine">("All");
+  const [jobsPage,         setJobsPage]         = useState(0);
+  const [pastPage,         setPastPage]         = useState(0);
+  const JV_PAGE = 25;
+
   // Properties pagination
   type PropPageSize = 25 | 50 | 75 | 100;
   const PROP_PAGE_SIZES: PropPageSize[] = [25, 50, 75, 100];
@@ -172,6 +193,41 @@ export default function CustomerDetailPage() {
       if (snap.exists()) setNotes(snap.data().text || "");
     }).catch(() => {});
   }, [customerId]);
+
+  // Jobs & Visits — lazy load when tab opens
+  useEffect(() => {
+    if (tab !== "Jobs & Visits" || jobsVisitsLoaded || !customer) return;
+    async function load() {
+      const jobSnap = await getDocs(
+        query(collection(db, "jobs"), where("customerName", "==", customer!.name), orderBy("jobNumber", "desc"))
+      ).catch(() => null);
+      const jobs: JobRow[] = (jobSnap?.docs || []).map(d => ({ id: d.id, ...(d.data() as Omit<JobRow,"id">) }));
+      setJobsList(jobs);
+
+      const jobIds = jobs.map(j => j.id);
+      if (jobIds.length > 0) {
+        const all: VisitRow[] = [];
+        for (let i = 0; i < jobIds.length; i += 10) {
+          const batch = jobIds.slice(i, i + 10);
+          const vSnap = await getDocs(
+            query(collection(db, "dispatchVisits"), where("jobId", "in", batch), orderBy("date", "desc"))
+          ).catch(() => null);
+          if (vSnap) {
+            const jobMap = Object.fromEntries(jobs.map(j => [j.id, j.propertyName]));
+            all.push(...vSnap.docs.map(d => ({
+              id: d.id,
+              propertyName: jobMap[d.data().jobId] || "",
+              ...(d.data() as Omit<VisitRow,"id"|"propertyName">),
+            })));
+          }
+        }
+        all.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+        setVisitsList(all);
+      }
+      setJobsVisitsLoaded(true);
+    }
+    load();
+  }, [tab, customer, jobsVisitsLoaded]);
 
   async function saveNotes() {
     if (!customerId) return;
@@ -580,11 +636,222 @@ export default function CustomerDetailPage() {
               </>
             )}
 
+            {/* ── Jobs & Visits tab ── */}
+            {tab === "Jobs & Visits" && (() => {
+              const today = new Date().toISOString().slice(0, 10);
+              const myName = auth.currentUser?.displayName || auth.currentUser?.email || "";
+
+              const filteredJobs = jobsList.filter(j => {
+                if (jobsFilter === "Today") return visitsList.some(v => v.jobId === j.id && v.date === today);
+                if (jobsFilter === "Mine")  return (j as any).projectManager === myName;
+                return true;
+              });
+              const jobsTotalPages = Math.max(1, Math.ceil(filteredJobs.length / JV_PAGE));
+              const jobsSafePage   = Math.min(jobsPage, jobsTotalPages - 1);
+              const jobsSlice      = filteredJobs.slice(jobsSafePage * JV_PAGE, jobsSafePage * JV_PAGE + JV_PAGE);
+
+              const currentVisits = visitsList.filter(v => v.date && v.date >= today);
+              const pastVisits    = visitsList.filter(v => !v.date || v.date < today);
+              const pastTotal     = Math.max(1, Math.ceil(pastVisits.length / JV_PAGE));
+              const pastSafe      = Math.min(pastPage, pastTotal - 1);
+              const pastSlice     = pastVisits.slice(pastSafe * JV_PAGE, pastSafe * JV_PAGE + JV_PAGE);
+
+              const JOB_STATUS: Record<string, {bg:string;color:string}> = {
+                "Open":             { bg:"#dbeafe", color:"#1e40af" },
+                "In Progress":      { bg:"#fef3c7", color:"#92400e" },
+                "Complete":         { bg:"#dcfce7", color:"#166534" },
+                "Completed":        { bg:"#dcfce7", color:"#166534" },
+                "Cancelled":        { bg:"#fee2e2", color:"#991b1b" },
+                "Ready to Invoice": { bg:"#f3e8ff", color:"#6b21a8" },
+              };
+              const VISIT_STATUS: Record<string, {bg:string;color:string}> = {
+                "complete":    { bg:"#dcfce7", color:"#166534" },
+                "completed":   { bg:"#dcfce7", color:"#166534" },
+                "converted":   { bg:"#ede9fe", color:"#6d28d9" },
+                "scheduled":   { bg:"#dbeafe", color:"#1e40af" },
+                "in_progress": { bg:"#fef3c7", color:"#92400e" },
+              };
+              function StatusBadge({ s, map }: { s?: string; map: Record<string,{bg:string;color:string}> }) {
+                if (!s) return <span style={{ color:"#9ca3af" }}>—</span>;
+                const c = map[s] || map[s.toLowerCase()] || { bg:"#f3f4f6", color:"#6b7280" };
+                const label = s.charAt(0).toUpperCase() + s.slice(1);
+                return <span style={{ background:c.bg, color:c.color, borderRadius:4, padding:"2px 7px", fontSize:11, fontWeight:700 }}>{label}</span>;
+              }
+              function fmtD(s?: string) {
+                if (!s) return "—";
+                return new Date(s + (s.includes("T") ? "" : "T12:00:00")).toLocaleDateString("en-CA", { year:"numeric", month:"short", day:"numeric" });
+              }
+              function PgBar({ page, total, setPage, count }: { page:number; total:number; setPage:(n:number)=>void; count:number }) {
+                if (total <= 1) return null;
+                return (
+                  <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginTop:10, fontSize:12, color:"#6b7280" }}>
+                    <span>Rows per page: {JV_PAGE} &nbsp; {page*JV_PAGE+1}–{Math.min((page+1)*JV_PAGE, count)} of {count}</span>
+                    <div style={{ display:"flex", gap:4 }}>
+                      <button onClick={() => setPage(0)} disabled={page===0} style={{ ...pgBtn, opacity:page===0?0.35:1 }}>«</button>
+                      <button onClick={() => setPage(p=>Math.max(0,p-1))} disabled={page===0} style={{ ...pgBtn, opacity:page===0?0.35:1 }}>‹</button>
+                      <button onClick={() => setPage(p=>Math.min(total-1,p+1))} disabled={page>=total-1} style={{ ...pgBtn, opacity:page>=total-1?0.35:1 }}>›</button>
+                      <button onClick={() => setPage(total-1)} disabled={page>=total-1} style={{ ...pgBtn, opacity:page>=total-1?0.35:1 }}>»</button>
+                    </div>
+                  </div>
+                );
+              }
+
+              const filterBtn = (label: string, key: typeof jobsFilter) => (
+                <button key={key} onClick={() => { setJobsFilter(key); setJobsPage(0); }} style={{
+                  padding:"5px 14px", borderRadius:99, fontSize:13, fontWeight:600, cursor:"pointer", border:"none",
+                  background: jobsFilter===key ? "#1565c0" : "#f3f4f6",
+                  color: jobsFilter===key ? "#fff" : "#374151",
+                }}>{label}</button>
+              );
+
+              return (
+                <div style={{ display:"flex", flexDirection:"column", gap:28 }}>
+
+                  {/* Jobs */}
+                  <div>
+                    <div style={{ fontSize:14, fontWeight:700, color:"#111827", marginBottom:10 }}>Jobs</div>
+                    <div style={{ display:"flex", gap:6, marginBottom:14 }}>
+                      {filterBtn("All","All")}
+                      {filterBtn("Scheduled for today","Today")}
+                      {filterBtn("My jobs","Mine")}
+                    </div>
+
+                    {!jobsVisitsLoaded ? (
+                      <div style={{ color:"#9ca3af", padding:"24px 0" }}>Loading…</div>
+                    ) : filteredJobs.length === 0 ? (
+                      <div style={{ color:"#9ca3af", padding:"24px 0", textAlign:"center" }}>No jobs found.</div>
+                    ) : (
+                      <>
+                        <div style={{ border:"1px solid #e5e7eb", borderRadius:8, overflow:"hidden" }}>
+                          <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
+                            <thead>
+                              <tr style={{ background:"#f9fafb", borderBottom:"1px solid #e5e7eb" }}>
+                                <th style={th}>Job</th>
+                                <th style={{ ...th, textAlign:"center" as const }}>Visits</th>
+                                <th style={th}>Job Type</th>
+                                <th style={th}>Status</th>
+                                <th style={th}>Issue Description</th>
+                                <th style={th}>Tags</th>
+                                <th style={th}>Property</th>
+                                <th style={th}>Created On</th>
+                                <th style={{ ...th, textAlign:"right" as const }}>Outstanding Balance</th>
+                              </tr>
+                            </thead>
+                            <tbody style={{ background:"#fff" }}>
+                              {jobsSlice.map(j => (
+                                <tr key={j.id} style={{ borderBottom:"1px solid #f3f4f6" }}>
+                                  <td style={{ ...td, fontWeight:700 }}>
+                                    <Link to={`/jobs/${j.id}`} style={{ color:"#1565c0", textDecoration:"none" }}>{j.jobNumber}</Link>
+                                  </td>
+                                  <td style={{ ...td, textAlign:"center" as const }}>{j.visitCount ?? "—"}</td>
+                                  <td style={td}>{j.jobType || "Service"}</td>
+                                  <td style={td}><StatusBadge s={j.status} map={JOB_STATUS} /></td>
+                                  <td style={{ ...td, maxWidth:200, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" as const }} title={j.issueDescription || j.title}>{j.issueDescription || j.title || "—"}</td>
+                                  <td style={{ ...td, color:"#6b7280" }}>{j.tags || "—"}</td>
+                                  <td style={td}>{j.propertyName || "—"}</td>
+                                  <td style={td}>{fmtD(j.createdAt)}</td>
+                                  <td style={{ ...td, textAlign:"right" as const }}>
+                                    {j.totalBilled ? <span style={{ color: j.totalBilled > 0 ? "#dc2626" : undefined, fontWeight:600 }}>{fmt$(j.totalBilled)}</span> : "$0.00"}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                        <PgBar page={jobsSafePage} total={jobsTotalPages} setPage={setJobsPage} count={filteredJobs.length} />
+                      </>
+                    )}
+                  </div>
+
+                  {/* Current visits */}
+                  <div>
+                    <div style={{ fontSize:14, fontWeight:700, color:"#111827", marginBottom:10 }}>Current visits</div>
+                    <div style={{ border:"1px solid #e5e7eb", borderRadius:8, overflow:"hidden" }}>
+                      <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
+                        <thead>
+                          <tr style={{ background:"#f9fafb", borderBottom:"1px solid #e5e7eb" }}>
+                            <th style={th}>Event type</th>
+                            <th style={th}>Job</th>
+                            <th style={th}>Status</th>
+                            <th style={th}>Date</th>
+                            <th style={th}>Description</th>
+                            <th style={th}>Property</th>
+                            <th style={th}>Assigned to</th>
+                          </tr>
+                        </thead>
+                        <tbody style={{ background:"#fff" }}>
+                          {currentVisits.length === 0 ? (
+                            <tr><td colSpan={7} style={{ padding:"24px", textAlign:"center", color:"#9ca3af", fontSize:13 }}>No upcoming visits</td></tr>
+                          ) : currentVisits.map(v => (
+                            <tr key={v.id} style={{ borderBottom:"1px solid #f3f4f6" }}>
+                              <td style={td}>Job</td>
+                              <td style={{ ...td, fontWeight:700 }}>
+                                <Link to={`/jobs/${v.jobId}`} style={{ color:"#1565c0", textDecoration:"none" }}>{v.jobNumber}</Link>
+                              </td>
+                              <td style={td}><StatusBadge s={v.status} map={VISIT_STATUS} /></td>
+                              <td style={td}>{fmtD(v.date)}</td>
+                              <td style={{ ...td, maxWidth:200, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" as const }}>{v.description || v.title || "—"}</td>
+                              <td style={td}>{v.propertyName || "—"}</td>
+                              <td style={td}>{[v.techName, ...(v.additionalTechnicians || [])].filter(Boolean).join(", ") || "—"}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div style={{ textAlign:"right", fontSize:12, color:"#9ca3af", marginTop:6 }}>Rows per page: {JV_PAGE} &nbsp; {currentVisits.length === 0 ? "0–0 of 0" : `1–${Math.min(JV_PAGE, currentVisits.length)} of ${currentVisits.length}`}</div>
+                  </div>
+
+                  {/* Past visits */}
+                  <div>
+                    <div style={{ fontSize:14, fontWeight:700, color:"#111827", marginBottom:10 }}>Past visits</div>
+                    {pastVisits.length === 0 ? (
+                      <div style={{ color:"#9ca3af", padding:"16px 0" }}>No past visits.</div>
+                    ) : (
+                      <>
+                        <div style={{ border:"1px solid #e5e7eb", borderRadius:8, overflow:"hidden" }}>
+                          <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
+                            <thead>
+                              <tr style={{ background:"#f9fafb", borderBottom:"1px solid #e5e7eb" }}>
+                                <th style={th}>Event type</th>
+                                <th style={th}>Job</th>
+                                <th style={th}>Status</th>
+                                <th style={th}>Date</th>
+                                <th style={th}>Description</th>
+                                <th style={th}>Property</th>
+                                <th style={th}>Assigned to</th>
+                              </tr>
+                            </thead>
+                            <tbody style={{ background:"#fff" }}>
+                              {pastSlice.map(v => (
+                                <tr key={v.id} style={{ borderBottom:"1px solid #f3f4f6" }}>
+                                  <td style={td}>Job</td>
+                                  <td style={{ ...td, fontWeight:700 }}>
+                                    <Link to={`/jobs/${v.jobId}`} style={{ color:"#1565c0", textDecoration:"none" }}>{v.jobNumber}</Link>
+                                  </td>
+                                  <td style={td}><StatusBadge s={v.status} map={VISIT_STATUS} /></td>
+                                  <td style={td}>{fmtD(v.date)}</td>
+                                  <td style={{ ...td, maxWidth:220, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" as const }}>{v.description || v.title || "—"}</td>
+                                  <td style={td}>{v.propertyName || "—"}</td>
+                                  <td style={td}>{[v.techName, ...(v.additionalTechnicians || [])].filter(Boolean).join(", ") || "—"}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                        <PgBar page={pastSafe} total={pastTotal} setPage={setPastPage} count={pastVisits.length} />
+                      </>
+                    )}
+                  </div>
+
+                </div>
+              );
+            })()}
+
             {/* ── Stub tabs ── */}
-            {tab !== "Properties" && tab !== "Contacts" && (
+            {tab !== "Properties" && tab !== "Contacts" && tab !== "Jobs & Visits" && (
               <div style={{ textAlign: "center", padding: "48px 0", color: "#9ca3af" }}>
                 <div style={{ fontSize: 28, marginBottom: 8, opacity: 0.4 }}>
-                  {tab === "Jobs & Visits" ? "🔧" : tab === "Attachments" ? "📎" : tab === "History" ? "🕐" : tab === "Accounting" ? "💰" : "📄"}
+                  {tab === "Attachments" ? "📎" : tab === "History" ? "🕐" : tab === "Accounting" ? "💰" : "📄"}
                 </div>
                 <p style={{ fontSize: 14, fontWeight: 500 }}>{tab} coming soon</p>
               </div>
