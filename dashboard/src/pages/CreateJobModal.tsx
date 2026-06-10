@@ -62,7 +62,7 @@ export default function CreateJobModal({ property, onClose, onCreated }: Props) 
   const [visitForm, setVisitForm]   = useState({
     description: "", toDo: "", forms: "",
     requiredSkills: "", requiredCertifications: "",
-    department: "", primaryTechUid: "", crew: "",
+    department: "", primaryTechUid: "",
     additionalTechnicians: "", date: "", time: "", duration: "1",
   });
 
@@ -234,7 +234,6 @@ export default function CreateJobModal({ property, onClose, onCreated }: Props) 
           toDo:                     visitForm.toDo,
           department:               dept,
           duration:                 parseFloat(visitForm.duration) || 1,
-          crew:                     visitForm.crew,
           additionalTechnicians:    visitForm.additionalTechnicians ? visitForm.additionalTechnicians.split(",").map(s => s.trim()).filter(Boolean) : [],
           requiredSkills:           visitForm.requiredSkills ? visitForm.requiredSkills.split(",").map(s => s.trim()).filter(Boolean) : [],
           requiredCertifications:   visitForm.requiredCertifications ? visitForm.requiredCertifications.split(",").map(s => s.trim()).filter(Boolean) : [],
@@ -540,12 +539,6 @@ export default function CreateJobModal({ property, onClose, onCreated }: Props) 
                     {dispatchTechs.map(t => <option key={t.uid} value={t.uid}>{t.name}</option>)}
                   </select>
                 </div>
-              </div>
-
-              {/* Crew */}
-              <div style={{ marginBottom: 16 }}>
-                <label style={lbl}><span>Crew</span></label>
-                <input style={inp} placeholder="Select Crew" value={visitForm.crew} onChange={e => setVisitForm(f => ({ ...f, crew: e.target.value }))} />
               </div>
 
               {/* Additional Technicians */}

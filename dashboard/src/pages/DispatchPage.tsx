@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   collection, onSnapshot, query, addDoc, updateDoc, deleteDoc, doc, serverTimestamp,
 } from "firebase/firestore";
@@ -70,6 +71,7 @@ function initials(name: string) {
 
 export default function DispatchPage() {
   const isAdmin = useIsAdmin();
+  const navigate = useNavigate();
   const [techs, setTechs] = useState<Tech[]>([]);
   const [visits, setVisits] = useState<Visit[]>([]);
   const [loading, setLoading] = useState(true);
@@ -180,7 +182,10 @@ export default function DispatchPage() {
             {techs.map(t => (
               <Row key={t.uid} tech={t} days={days} byCell={byCell}
                 onAdd={(date) => setModal({ techUid: t.uid, techName: t.name, date })}
-                onOpen={(v) => setModal({ techUid: t.uid, techName: t.name, date: v.date, visit: v })}
+                onOpen={(v) => {
+                  if (v.jobId) { navigate(`/jobs/${v.jobId}`); }
+                  else { setModal({ techUid: t.uid, techName: t.name, date: v.date, visit: v }); }
+                }}
                 canEdit={!!isAdmin} />
             ))}
           </div>

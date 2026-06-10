@@ -219,11 +219,16 @@ export default function JobDetailPage() {
   }, [job?.propertyId]);
 
   // Visits — stored in dispatchVisits with jobId field
+  // Note: no orderBy here to avoid requiring a composite Firestore index; sort client-side
   useEffect(() => {
     if (!jobId) return;
     return onSnapshot(
-      query(collection(db, "dispatchVisits"), where("jobId", "==", jobId), orderBy("visitNumber", "asc")),
-      snap => setVisits(snap.docs.map(d => ({ id: d.id, ...d.data() } as Visit))),
+      query(collection(db, "dispatchVisits"), where("jobId", "==", jobId)),
+      snap => setVisits(
+        snap.docs
+          .map(d => ({ id: d.id, ...d.data() } as Visit))
+          .sort((a, b) => (a.visitNumber || 0) - (b.visitNumber || 0))
+      ),
       () => {}
     );
   }, [jobId]);
@@ -843,6 +848,7 @@ export default function JobDetailPage() {
           customerName={job.customerName}
           propertyName={job.propertyName}
           defaultDepartment={job.departmentsNeeded}
+          defaultTechName={job.preferredTechnician}
           visitNumber={visits.length + 1}
           onClose={() => setAddVisitOpen(false)}
           onCreated={() => setAddVisitOpen(false)}

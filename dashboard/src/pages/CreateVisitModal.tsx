@@ -10,6 +10,7 @@ interface Props {
   customerName: string;
   propertyName: string;
   defaultDepartment?: string;
+  defaultTechName?: string;
   visitNumber: number;
   onClose: () => void;
   onCreated?: () => void;
@@ -50,7 +51,7 @@ function Toggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void 
 }
 
 // ── Main component ─────────────────────────────────────────────────────────────
-export default function CreateVisitModal({ jobId, jobNumber, customerName, propertyName, defaultDepartment, visitNumber, onClose, onCreated }: Props) {
+export default function CreateVisitModal({ jobId, jobNumber, customerName, propertyName, defaultDepartment, defaultTechName, visitNumber, onClose, onCreated }: Props) {
   const [techs, setTechs] = useState<{ uid: string; name: string }[]>([]);
   const [saving, setSaving] = useState(false);
   const [multiple, setMultiple] = useState(false);
@@ -64,7 +65,6 @@ export default function CreateVisitModal({ jobId, jobNumber, customerName, prope
     requiredCertifications: "",
     department: defaultDepartment || "",
     primaryTechUid: "",
-    crew: "",
     additionalTechnicians: "",
     date: "",
     time: "",
@@ -79,9 +79,14 @@ export default function CreateVisitModal({ jobId, jobNumber, customerName, prope
           .filter(t => t.name)
           .sort((a, b) => a.name.localeCompare(b.name));
         setTechs(list);
+        // Auto-select preferred technician if provided
+        if (defaultTechName) {
+          const match = list.find(t => t.name === defaultTechName);
+          if (match) setForm(f => ({ ...f, primaryTechUid: match.uid }));
+        }
       })
       .catch(() => {});
-  }, []);
+  }, [defaultTechName]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -141,7 +146,6 @@ export default function CreateVisitModal({ jobId, jobNumber, customerName, prope
         toDo:                     form.toDo,
         department:               form.department,
         duration:                 parseFloat(form.duration) || 1,
-        crew:                     form.crew,
         additionalTechnicians:    form.additionalTechnicians
           ? form.additionalTechnicians.split(",").map(s => s.trim()).filter(Boolean)
           : [],
@@ -259,12 +263,6 @@ export default function CreateVisitModal({ jobId, jobNumber, customerName, prope
                 {techs.map(t => <option key={t.uid} value={t.uid}>{t.name}</option>)}
               </select>
             </div>
-          </div>
-
-          {/* Crew */}
-          <div style={{ marginBottom: 16 }}>
-            <label style={lbl}>Crew</label>
-            <input style={inp} placeholder="Select Crew" {...bind("crew")} />
           </div>
 
           {/* Additional Technicians */}
