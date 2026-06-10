@@ -353,7 +353,9 @@ export default function PropertyDetailPage() {
                         const sc = STATUS_COLORS[job.status] || { bg: "#f3f4f6", color: "#6b7280" };
                         return (
                           <tr key={job.id} style={{ borderBottom: "1px solid #f0f0f0" }}>
-                            <td style={{ padding: "10px 14px", fontSize: 13, fontWeight: 700, color: "#1565c0", whiteSpace: "nowrap" }}>{job.jobNumber || "—"}</td>
+                            <td style={{ padding: "10px 14px", whiteSpace: "nowrap" }}>
+                              <Link to={`/jobs/${job.id}`} style={{ fontSize: 13, fontWeight: 700, color: "#1565c0", textDecoration: "none" }}>{job.jobNumber || "—"}</Link>
+                            </td>
                             <td style={{ padding: "10px 14px", fontSize: 13, color: "#6b7280" }}>—</td>
                             <td style={{ padding: "10px 14px", fontSize: 13, color: "#374151" }}>{job.jobType || "—"}</td>
                             <td style={{ padding: "10px 14px" }}>

@@ -1,0 +1,529 @@
+import { useEffect, useState } from "react";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import { addDoc, collection, doc, getDoc, onSnapshot, orderBy, query, updateDoc } from "firebase/firestore";
+import { auth, db } from "../firebase";
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+interface Job {
+  id: string;
+  jobNumber: string;
+  customerId: string;
+  customerName: string;
+  propertyId: string;
+  propertyName: string;
+  propertyRep: string;
+  billingCustomer: string;
+  customerPO: string;
+  workType: string;
+  pricebook: string;
+  jobType: string;
+  customerWO: string;
+  authorizedBy: string;
+  nte: number;
+  quoteSubtotal: number;
+  quoteTax: number;
+  costAmount: number;
+  projectManager: string;
+  accountManager: string;
+  soldBy: string;
+  preferredTechnician: string;
+  departmentsNeeded: string;
+  priority: string;
+  issueDescription: string;
+  status: string;
+  createdAt: string;
+  createdBy: string;
+}
+
+interface PropertyInfo {
+  propertyAddress?: string;
+  propertyType?: string;
+}
+
+interface Visit {
+  id: string;
+  visitNumber: number;
+  status: string;
+  scheduledFor: string;
+  department: string;
+  primaryTechnician: string;
+  additionalTechnicians: string;
+  description: string;
+}
+
+interface HistoryEntry {
+  id: string;
+  action: string;
+  performedBy: string;
+  timestamp: string;
+  note?: string;
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function fmt$(n: number): string {
+  return "$" + (n || 0).toLocaleString("en-CA", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function fmtDate(iso: string): string {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleDateString("en-CA", { year: "numeric", month: "short", day: "numeric" });
+}
+function fmtDateTime(iso: string): string {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleString("en-CA", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+// ── Colours ───────────────────────────────────────────────────────────────────
+const JOB_STATUS_COLORS: Record<string, { bg: string; color: string; border: string }> = {
+  "Open":         { bg: "#dbeafe", color: "#1e40af", border: "#93c5fd" },
+  "In Progress":  { bg: "#fef3c7", color: "#92400e", border: "#fcd34d" },
+  "Completed":    { bg: "#dcfce7", color: "#166534", border: "#86efac" },
+  "Cancelled":    { bg: "#f3f4f6", color: "#374151", border: "#d1d5db" },
+  "Invoiced":     { bg: "#ede9fe", color: "#5b21b6", border: "#c4b5fd" },
+};
+
+const VISIT_STATUS_COLORS: Record<string, { bg: string; color: string; border: string }> = {
+  "Scheduled":    { bg: "#dbeafe", color: "#1e40af", border: "#93c5fd" },
+  "In Progress":  { bg: "#fef3c7", color: "#92400e", border: "#fcd34d" },
+  "Completed":    { bg: "#dcfce7", color: "#166534", border: "#86efac" },
+  "Cancelled":    { bg: "#f3f4f6", color: "#374151", border: "#d1d5db" },
+};
+
+const JOB_STATUSES = ["Open", "In Progress", "Completed", "Cancelled", "Invoiced"];
+const VISIT_STATUSES = ["Scheduled", "In Progress", "Completed", "Cancelled"];
+const TABS = ["Scheduling", "Quotes", "Tasks", "Forms & Attachments", "Parts & Purchasing", "Job Costing", "Reports & Invoices"];
+
+// ── Sidebar helpers ───────────────────────────────────────────────────────────
+function SLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 2, marginTop: 14 }}>
+      {children}
+    </div>
+  );
+}
+function SValue({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{ fontSize: 13, color: "#111827", wordBreak: "break-word" }}>
+      {children || "—"}
+    </div>
+  );
+}
+function FieldBlock({ label, value }: { label: string; value?: string | null }) {
+  return (
+    <div>
+      <div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 }}>{label}</div>
+      <div style={{ fontSize: 13, color: "#111827" }}>{value || "—"}</div>
+    </div>
+  );
+}
+
+// ── Main page ─────────────────────────────────────────────────────────────────
+export default function JobDetailPage() {
+  const { jobId } = useParams<{ jobId: string }>();
+  const navigate = useNavigate();
+
+  const [job, setJob] = useState<Job | null>(null);
+  const [propInfo, setPropInfo] = useState<PropertyInfo | null>(null);
+  const [visits, setVisits] = useState<Visit[]>([]);
+  const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState("Scheduling");
+  const [showHistory, setShowHistory] = useState(false);
+  const [statusBusy, setStatusBusy] = useState(false);
+
+  // Job
+  useEffect(() => {
+    if (!jobId) return;
+    return onSnapshot(doc(db, "jobs", jobId), snap => {
+      setJob(snap.exists() ? ({ id: snap.id, ...snap.data() } as Job) : null);
+      setLoading(false);
+    });
+  }, [jobId]);
+
+  // Property info (address + type)
+  useEffect(() => {
+    if (!job?.propertyId) return;
+    getDoc(doc(db, "properties", job.propertyId))
+      .then(snap => { if (snap.exists()) setPropInfo(snap.data() as PropertyInfo); })
+      .catch(() => {});
+  }, [job?.propertyId]);
+
+  // Visits
+  useEffect(() => {
+    if (!jobId) return;
+    return onSnapshot(
+      query(collection(db, "jobs", jobId, "visits"), orderBy("visitNumber", "asc")),
+      snap => setVisits(snap.docs.map(d => ({ id: d.id, ...d.data() } as Visit))),
+      () => {}
+    );
+  }, [jobId]);
+
+  // History (ascending — oldest first, panel will reverse)
+  useEffect(() => {
+    if (!jobId) return;
+    return onSnapshot(
+      query(collection(db, "jobs", jobId, "history"), orderBy("timestamp", "asc")),
+      snap => setHistory(snap.docs.map(d => ({ id: d.id, ...d.data() } as HistoryEntry))),
+      () => {}
+    );
+  }, [jobId]);
+
+  async function changeJobStatus(newStatus: string) {
+    if (!jobId || !job || newStatus === job.status || statusBusy) return;
+    setStatusBusy(true);
+    try {
+      await updateDoc(doc(db, "jobs", jobId), { status: newStatus });
+      await addDoc(collection(db, "jobs", jobId, "history"), {
+        action: `Status changed to "${newStatus}"`,
+        performedBy: auth.currentUser?.displayName || auth.currentUser?.email || "Unknown",
+        timestamp: new Date().toISOString(),
+      });
+    } catch (e) { console.error(e); }
+    setStatusBusy(false);
+  }
+
+  async function changeVisitStatus(visitId: string, visitNumber: number, newStatus: string) {
+    if (!jobId) return;
+    try {
+      await updateDoc(doc(db, "jobs", jobId, "visits", visitId), { status: newStatus });
+      await addDoc(collection(db, "jobs", jobId, "history"), {
+        action: `Visit #${visitNumber} status changed to "${newStatus}"`,
+        performedBy: auth.currentUser?.displayName || auth.currentUser?.email || "Unknown",
+        timestamp: new Date().toISOString(),
+      });
+    } catch (e) { console.error(e); }
+  }
+
+  // Merge sub-collection history with derived creation event as fallback
+  const displayHistory: HistoryEntry[] = history.length > 0
+    ? history
+    : job
+      ? [{ id: "__created", action: "Job Created", performedBy: job.createdBy || "Unknown", timestamp: job.createdAt || "" }]
+      : [];
+
+  if (loading) {
+    return <div style={{ padding: 60, textAlign: "center", color: "#9ca3af" }}>Loading…</div>;
+  }
+  if (!job) {
+    return (
+      <div style={{ padding: 60, textAlign: "center" }}>
+        <div style={{ color: "#374151", fontWeight: 600, marginBottom: 12 }}>Job not found</div>
+        <button onClick={() => navigate(-1)} style={{ color: "#1565c0", background: "none", border: "none", cursor: "pointer", fontSize: 14 }}>← Go back</button>
+      </div>
+    );
+  }
+
+  const jsc = JOB_STATUS_COLORS[job.status] || JOB_STATUS_COLORS.Open;
+  const quoteTotal = (job.quoteSubtotal || 0) + (job.quoteTax || 0);
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 64px)", background: "#f9fafb" }}>
+
+      {/* ── Breadcrumb ── */}
+      <div style={{ padding: "8px 24px", fontSize: 12, color: "#9ca3af", background: "#fff", borderBottom: "1px solid #f0f0f0", flexShrink: 0 }}>
+        <span>Operations</span>
+        <span style={{ margin: "0 6px", color: "#d1d5db" }}>/</span>
+        <Link to="/properties" style={{ color: "#6b7280", textDecoration: "none" }}>Jobs</Link>
+      </div>
+
+      {/* ── Job header bar ── */}
+      <div style={{ background: "#fff", borderBottom: "1px solid #e5e7eb", padding: "10px 20px", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", flexShrink: 0 }}>
+        {/* Job number */}
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ fontSize: 15, fontWeight: 800, color: "#111827", whiteSpace: "nowrap" }}>Job: {job.jobNumber}</span>
+        </div>
+
+        {/* Status dropdown */}
+        <select
+          value={job.status}
+          onChange={e => changeJobStatus(e.target.value)}
+          disabled={statusBusy}
+          style={{
+            background: jsc.bg, color: jsc.color,
+            border: `1px solid ${jsc.border}`,
+            borderRadius: 6, padding: "4px 10px",
+            fontSize: 12, fontWeight: 700, cursor: "pointer",
+            appearance: "auto" as React.CSSProperties["appearance"],
+          }}
+        >
+          {JOB_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
+
+        {/* Status pills */}
+        <span style={{ background: "#f3f4f6", color: "#6b7280", fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: 99, border: "1px solid #e5e7eb", whiteSpace: "nowrap" }}>No Quotes ▾</span>
+        <span style={{ background: "#f3f4f6", color: "#6b7280", fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: 99, border: "1px solid #e5e7eb", whiteSpace: "nowrap" }}>No POs ▾</span>
+        <span style={{ background: "#f3f4f6", color: "#6b7280", fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: 99, border: "1px solid #e5e7eb", whiteSpace: "nowrap" }}>No Receipts ▾</span>
+        {job.status === "Invoiced"
+          ? <span style={{ background: "#dcfce7", color: "#166534", fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: 99, whiteSpace: "nowrap" }}>Invoiced</span>
+          : <span style={{ background: "#fef3c7", color: "#92400e", fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: 99, whiteSpace: "nowrap" }}>Not Invoiced</span>
+        }
+
+        {/* Right buttons */}
+        <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+          <button style={{ background: "none", border: "1px solid #d1d5db", borderRadius: 6, padding: "6px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", color: "#374151" }}>EDIT</button>
+          <button style={{ background: "#0d2e5e", color: "#fff", border: "none", borderRadius: 6, padding: "6px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>OPEN JOB REPORT</button>
+        </div>
+      </div>
+
+      {/* ── Two-column body ── */}
+      <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
+
+        {/* ── Left sidebar ── */}
+        <div style={{ width: 210, flexShrink: 0, borderRight: "1px solid #e5e7eb", background: "#fff", padding: "12px 16px 32px", overflowY: "auto" }}>
+          <SLabel>Customer</SLabel>
+          <SValue>
+            {job.customerId
+              ? <Link to={`/customers/${job.customerId}`} style={{ color: "#1565c0", fontWeight: 600, textDecoration: "none" }}>{job.customerName || "—"}</Link>
+              : (job.customerName || "—")
+            }
+          </SValue>
+
+          <SLabel>Billing Customer</SLabel>
+          <SValue>{job.billingCustomer || job.customerName || "—"}</SValue>
+
+          <SLabel>Property</SLabel>
+          <SValue>
+            {job.propertyId
+              ? <Link to={`/properties/${job.propertyId}`} style={{ color: "#1565c0", fontWeight: 600, textDecoration: "none" }}>{job.propertyName || "—"}</Link>
+              : (job.propertyName || "—")
+            }
+          </SValue>
+
+          <SLabel>Property Type</SLabel>
+          <SValue>{propInfo?.propertyType || "—"}</SValue>
+
+          <SLabel>Address</SLabel>
+          <SValue>{propInfo?.propertyAddress || "—"}</SValue>
+
+          <SLabel>Authorized By</SLabel>
+          <SValue>{job.authorizedBy || "—"}</SValue>
+
+          <SLabel>Property Representative</SLabel>
+          <SValue>{job.propertyRep || "—"}</SValue>
+
+          <SLabel>Purchase Order (Customer)</SLabel>
+          <SValue>{job.customerPO || "—"}</SValue>
+
+          <SLabel>Work Order (Customer)</SLabel>
+          <SValue>{job.customerWO || "—"}</SValue>
+
+          <SLabel>Quote Subtotal</SLabel>
+          <SValue>{job.quoteSubtotal ? fmt$(job.quoteSubtotal) : "—"}</SValue>
+
+          <SLabel>Quote Tax</SLabel>
+          <SValue>{job.quoteTax ? fmt$(job.quoteTax) : "—"}</SValue>
+
+          <SLabel>Quote Total</SLabel>
+          <SValue>{fmt$(quoteTotal)}</SValue>
+
+          <SLabel>Amount Not to Exceed</SLabel>
+          <SValue>{job.nte ? fmt$(job.nte) : "—"}</SValue>
+
+          <SLabel>Cost Amount</SLabel>
+          <SValue>{job.costAmount ? fmt$(job.costAmount) : "—"}</SValue>
+        </div>
+
+        {/* ── Main content ── */}
+        <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+
+          {/* ── Fields section ── */}
+          <div style={{ background: "#fff", padding: "18px 24px", borderBottom: "1px solid #e5e7eb", flexShrink: 0 }}>
+
+            {/* Row 1: key fields */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: "0 14px", marginBottom: 18 }}>
+              <FieldBlock label="Job Type"            value={job.jobType} />
+              <FieldBlock label="Project Manager"     value={job.projectManager} />
+              <FieldBlock label="Account Manager"     value={job.accountManager} />
+              <FieldBlock label="Sold By"             value={job.soldBy} />
+              <FieldBlock label="Preferred Technician" value={job.preferredTechnician} />
+              <FieldBlock label="Labor Rate"          value="—" />
+              <FieldBlock label="Modifiers"           value="—" />
+            </div>
+
+            {/* Departments */}
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 5 }}>Departments</div>
+              {job.departmentsNeeded
+                ? <span style={{ background: "#f3f4f6", color: "#374151", fontSize: 12, fontWeight: 600, padding: "3px 12px", borderRadius: 99, border: "1px solid #e5e7eb" }}>{job.departmentsNeeded}</span>
+                : <span style={{ color: "#9ca3af", fontSize: 13 }}>—</span>
+              }
+            </div>
+
+            {/* Issue / Priority / Office Notes */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 140px 1fr", gap: "0 20px", marginBottom: 14 }}>
+              <FieldBlock label="Issue Description" value={job.issueDescription} />
+              <FieldBlock label="Priority"          value={job.priority} />
+              <div>
+                <div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 }}>Office Notes</div>
+                <div style={{ fontSize: 12, color: "#1565c0", cursor: "pointer" }}>Add / View / Edit all office notes for job</div>
+              </div>
+            </div>
+
+            {/* Work Type / Pricebook */}
+            <div style={{ display: "grid", gridTemplateColumns: "180px 200px", gap: "0 20px" }}>
+              <FieldBlock label="Work Type" value={job.workType} />
+              <div>
+                <div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 }}>Pricebook</div>
+                <div style={{ fontSize: 13, color: "#1565c0", fontWeight: 600 }}>{job.pricebook || "—"}</div>
+              </div>
+            </div>
+          </div>
+
+          {/* ── Tabs ── */}
+          <div style={{ background: "#fff", borderBottom: "1px solid #e5e7eb", display: "flex", overflowX: "auto", flexShrink: 0 }}>
+            {TABS.map(tab => (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                style={{
+                  padding: "11px 16px", fontWeight: 600, fontSize: 13, cursor: "pointer",
+                  background: "none", border: "none",
+                  borderBottom: activeTab === tab ? "2px solid #0d2e5e" : "2px solid transparent",
+                  color: activeTab === tab ? "#0d2e5e" : "#6b7280",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {tab}
+              </button>
+            ))}
+          </div>
+
+          {/* ── Tab body ── */}
+          <div style={{ flex: 1, overflowY: "auto", padding: "20px 24px" }}>
+
+            {activeTab === "Scheduling" && (
+              <div>
+                {visits.length === 0 ? (
+                  <div style={{ color: "#9ca3af", fontSize: 14, textAlign: "center", paddingTop: 40 }}>No visits</div>
+                ) : (
+                  visits.map(visit => {
+                    const vsc = VISIT_STATUS_COLORS[visit.status] || VISIT_STATUS_COLORS.Scheduled;
+                    return (
+                      <div key={visit.id} style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, marginBottom: 16 }}>
+                        {/* Visit header */}
+                        <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 18px", borderBottom: "1px solid #f3f4f6" }}>
+                          <span style={{ fontSize: 14, fontWeight: 700, color: "#111827" }}>Visit #{visit.visitNumber}</span>
+                          <select
+                            value={visit.status}
+                            onChange={e => changeVisitStatus(visit.id, visit.visitNumber, e.target.value)}
+                            style={{
+                              background: vsc.bg, color: vsc.color,
+                              border: `1px solid ${vsc.border}`,
+                              borderRadius: 6, padding: "3px 8px",
+                              fontSize: 11, fontWeight: 700, cursor: "pointer",
+                              appearance: "auto" as React.CSSProperties["appearance"],
+                            }}
+                          >
+                            {VISIT_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                          </select>
+                        </div>
+
+                        {/* Visit fields */}
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "0 16px", padding: "14px 18px" }}>
+                          <div>
+                            <div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3, display: "flex", alignItems: "center", gap: 4 }}>
+                              <span>📅</span> Scheduled for
+                            </div>
+                            <div style={{ fontSize: 13, color: "#111827" }}>{visit.scheduledFor ? fmtDate(visit.scheduledFor) : "—"}</div>
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 }}>Department name</div>
+                            <div style={{ fontSize: 13, color: "#111827" }}>{visit.department || "—"}</div>
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3, display: "flex", alignItems: "center", gap: 4 }}>
+                              <span>👤</span> Primary technician
+                            </div>
+                            <div style={{ fontSize: 13, color: "#111827" }}>{visit.primaryTechnician || "—"}</div>
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 }}>Additional technicians</div>
+                            <div style={{ fontSize: 13, color: "#111827" }}>{visit.additionalTechnicians || "—"}</div>
+                          </div>
+                        </div>
+
+                        {visit.description && (
+                          <div style={{ padding: "0 18px 14px" }}>
+                            <div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 }}>Visit Description</div>
+                            <div style={{ fontSize: 13, fontWeight: 600, color: "#111827" }}>{visit.description}</div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+
+                {/* Created date footer */}
+                <div style={{ marginTop: 24, fontSize: 12, color: "#9ca3af" }}>
+                  Job created {fmtDate(job.createdAt)} by {job.createdBy || "Unknown"}
+                </div>
+              </div>
+            )}
+
+            {activeTab !== "Scheduling" && (
+              <div style={{ textAlign: "center", color: "#9ca3af", paddingTop: 60, fontSize: 14 }}>
+                {activeTab} — coming soon
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* ── Show History button (fixed bottom-right) ── */}
+      <div style={{ position: "fixed", bottom: 24, right: 24, zIndex: 300 }}>
+        <button
+          onClick={() => setShowHistory(h => !h)}
+          style={{
+            background: "#fff", border: "1px solid #d1d5db",
+            borderRadius: 8, padding: "8px 18px",
+            fontSize: 12, fontWeight: 700, cursor: "pointer", color: "#374151",
+            boxShadow: "0 2px 10px rgba(0,0,0,0.10)",
+          }}
+        >
+          {showHistory ? "HIDE HISTORY" : "SHOW HISTORY"}
+        </button>
+      </div>
+
+      {/* ── History panel ── */}
+      {showHistory && (
+        <div style={{
+          position: "fixed", bottom: 0, right: 0, zIndex: 200,
+          width: 380, height: "55vh",
+          background: "#fff",
+          borderTop: "1px solid #e5e7eb", borderLeft: "1px solid #e5e7eb",
+          borderTopLeftRadius: 12,
+          boxShadow: "-4px -4px 24px rgba(0,0,0,0.10)",
+          display: "flex", flexDirection: "column",
+        }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "13px 18px", borderBottom: "1px solid #e5e7eb", flexShrink: 0 }}>
+            <span style={{ fontWeight: 700, fontSize: 14, color: "#111827" }}>Job History</span>
+            <button onClick={() => setShowHistory(false)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 16, color: "#6b7280", lineHeight: 1 }}>✕</button>
+          </div>
+
+          <div style={{ overflowY: "auto", flex: 1, padding: "14px 18px" }}>
+            {displayHistory.length === 0 ? (
+              <div style={{ color: "#9ca3af", fontSize: 13, textAlign: "center", paddingTop: 24 }}>No history</div>
+            ) : (
+              [...displayHistory].reverse().map((entry, idx) => (
+                <div key={entry.id || idx} style={{ display: "flex", gap: 10, marginBottom: 18, paddingBottom: 18, borderBottom: idx < displayHistory.length - 1 ? "1px solid #f3f4f6" : "none" }}>
+                  <div style={{ flexShrink: 0, paddingTop: 4 }}>
+                    <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#0d2e5e" }} />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: "#111827" }}>{entry.action}</div>
+                    <div style={{ fontSize: 11, color: "#6b7280", marginTop: 2 }}>
+                      {entry.performedBy}
+                    </div>
+                    <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 1 }}>
+                      {fmtDateTime(entry.timestamp)}
+                    </div>
+                    {entry.note && <div style={{ fontSize: 12, color: "#374151", marginTop: 4, fontStyle: "italic" }}>{entry.note}</div>}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

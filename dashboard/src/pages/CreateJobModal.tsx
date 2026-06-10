@@ -151,6 +151,8 @@ export default function CreateJobModal({ property, onClose, onCreated }: Props) 
     setSaving(true);
     try {
       const jobNumber = await reserveJobNumber();
+      const now = new Date().toISOString();
+      const performer = auth.currentUser?.displayName || auth.currentUser?.email || "Unknown";
       const ref = await addDoc(collection(db, "jobs"), {
         jobNumber,
         customerId:                  property.customerId || "",
@@ -180,9 +182,37 @@ export default function CreateJobModal({ property, onClose, onCreated }: Props) 
         issueDescription:            form.issueDescription,
         createVisit:                 form.createVisit,
         status:                      "Open",
-        createdAt:                   new Date().toISOString(),
-        createdBy:                   auth.currentUser?.email || "",
+        createdAt:                   now,
+        createdBy:                   performer,
       });
+
+      // Log creation to history sub-collection
+      await addDoc(collection(db, "jobs", ref.id, "history"), {
+        action:      "Job Created",
+        performedBy: performer,
+        timestamp:   now,
+      });
+
+      // Create Visit #1 if requested
+      if (form.createVisit) {
+        const visitRef = await addDoc(collection(db, "jobs", ref.id, "visits"), {
+          visitNumber:            1,
+          status:                 "Scheduled",
+          scheduledFor:           "",
+          department:             form.departmentsNeeded,
+          primaryTechnician:      "",
+          additionalTechnicians:  "",
+          description:            form.issueDescription,
+          createdAt:              now,
+        });
+        await addDoc(collection(db, "jobs", ref.id, "history"), {
+          action:      `Visit #1 Added`,
+          performedBy: performer,
+          timestamp:   now,
+          note:        `Visit ID: ${visitRef.id}`,
+        });
+      }
+
       onCreated?.(ref.id, jobNumber);
       onClose();
     } catch (e) {
