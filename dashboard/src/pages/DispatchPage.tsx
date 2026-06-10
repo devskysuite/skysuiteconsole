@@ -218,13 +218,17 @@ export default function DispatchPage() {
   const byCell = useMemo(() => {
     const m: Record<string, Visit[]> = {};
     for (const v of visits) {
-      if (v.status === "canceled") continue;
+      if (v.status === "canceled" && activeStatus !== "canceled") continue;
       if (flaggedOnly && !v.flagged) continue;
       if (activeStatus !== "all" && v.status !== activeStatus) continue;
       const k = `${v.techUid}|${v.date}`;
       (m[k] ||= []).push(v);
     }
-    for (const k in m) m[k].sort((a, b) => (a.start || "").localeCompare(b.start || ""));
+    for (const k in m) m[k].sort((a, b) => {
+      const ta = a.start || "99:99", tb = b.start || "99:99";
+      if (ta !== tb) return ta.localeCompare(tb);
+      return (a.visitNumber || 0) - (b.visitNumber || 0);
+    });
     return m;
   }, [visits, flaggedOnly, activeStatus]);
 

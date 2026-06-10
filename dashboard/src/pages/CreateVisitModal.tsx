@@ -109,6 +109,20 @@ export default function CreateVisitModal({ jobId, jobNumber, customerName, prope
     if (!form.department) errs.department = true;
     if (Object.keys(errs).length) { setErrors(errs); return; }
 
+    // Block duplicate job number on same day unless all existing visits are complete
+    if (form.date && jobNumber) {
+      const snap = await getDocs(query(
+        collection(db, "dispatchVisits"),
+        where("jobNumber", "==", jobNumber),
+        where("date", "==", form.date),
+      ));
+      const blocking = snap.docs.filter(d => d.data().status !== "complete");
+      if (blocking.length > 0) {
+        alert(`${jobNumber} already has a visit scheduled on this date. Mark the existing visit complete before adding another.`);
+        return;
+      }
+    }
+
     setSaving(true);
     try {
       const now = new Date().toISOString();
