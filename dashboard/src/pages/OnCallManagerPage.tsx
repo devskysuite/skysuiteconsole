@@ -595,7 +595,7 @@ export default function OnCallManagerPage({ adminMode = false }: { adminMode?: b
 
       {/* Tabs */}
       <div style={{display:"flex",gap:4,marginBottom:20,borderBottom:"2px solid #e5e7eb"}}>
-        {!adminMode&&<TabBtn label="Calendar" active={tab==="calendar"} onClick={()=>switchTab("calendar")}/>}
+        <TabBtn label="Calendar" active={tab==="calendar"} onClick={()=>switchTab("calendar")}/>
         {adminMode&&<TabBtn label={`Swaps${pendingCount>0?` (${pendingCount})`:""}`} active={tab==="swaps"} onClick={()=>switchTab("swaps")}/>}
         {adminMode&&roleAtLeast(role||"user",statVisMinRole)&&<TabBtn label="Stat Holidays" active={tab==="stats"} onClick={()=>switchTab("stats")}/>}
         {adminMode&&isAdmin&&<TabBtn label="Setup" active={tab==="setup"} onClick={()=>switchTab("setup")}/>}

@@ -8,6 +8,27 @@ import { db } from "./utils/firestore.js";
 const cap = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
 const TZ = "America/Toronto";
 
+// Compute who should be on call today based on the rotation formula stored in Firestore.
+// Returns the first name (lowercase) or null if no roster is configured.
+async function getRotationOnCallName(today) {
+  const cfgSnap = await db.collection("settings").doc("onCallConfig").get();
+  const roster = cfgSnap.data()?.employees || [];
+  if (!roster.length) return null;
+
+  const ordSnap = await db.collection("settings").doc("rotationOrders").get();
+  const savedOrders = ordSnap.data() || {};
+
+  const year = parseInt(today.slice(0, 4));
+  const ord = (savedOrders[String(year)] || []).length ? savedOrders[String(year)] : roster;
+
+  const jan1 = Date.UTC(year, 0, 1);
+  const [y2, m2, d2] = today.split("-").map(Number);
+  const todayUTC = Date.UTC(y2, m2 - 1, d2);
+  const since = Math.floor((todayUTC - jan1) / 86400000);
+
+  return (ord[((since % ord.length) + ord.length) % ord.length] || "").toLowerCase();
+}
+
 // Manual trigger for the daily on-call reminder. Does exactly what the
 // scheduled oncallReminderSms does, but is callable from the admin UI
 // so an admin can resend it any time the scheduler misses a run.
@@ -31,6 +52,7 @@ export const oncallReminderNow = onCall({ cors: true }, async (request) => {
       url = json["@odata.nextLink"] || null;
     }
 
+    // Outlook is still used for vacation detection
     const vacationNames = new Set();
     const outlookOnCall = new Set();
     for (const e of evs) {
@@ -41,13 +63,24 @@ export const oncallReminderNow = onCall({ cors: true }, async (request) => {
       else if (s.includes("on call") || s.includes("oncall")) outlookOnCall.add(name);
     }
 
-    // onCallAssignments (swaps) override Outlook for on-call names
+    // Priority for on-call name:
+    // 1. onCallAssignments (manual swap/override for today)
+    // 2. Rotation formula from Firestore (avoids stale Outlook events)
+    // 3. Outlook fallback (only if no roster configured)
     const assignSnap = await db.collection("onCallAssignments").where("date", "==", today).get();
-    const onCallNames = new Set(
-      !assignSnap.empty
-        ? assignSnap.docs.map(d => (d.data().employeeName || "").split(/\s+/)[0].toLowerCase()).filter(Boolean)
-        : [...outlookOnCall]
-    );
+    let onCallNames;
+    if (!assignSnap.empty) {
+      onCallNames = new Set(
+        assignSnap.docs.map(d => (d.data().employeeName || "").split(/\s+/)[0].toLowerCase()).filter(Boolean)
+      );
+    } else {
+      const rotPerson = await getRotationOnCallName(today);
+      if (rotPerson) {
+        onCallNames = new Set([rotPerson]);
+      } else {
+        onCallNames = new Set([...outlookOnCall]);
+      }
+    }
 
     const usersSnap = await db.collection("users").get();
     const users     = usersSnap.docs.map(d => d.data());
