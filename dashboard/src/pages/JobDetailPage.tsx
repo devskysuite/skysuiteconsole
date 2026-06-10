@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { addDoc, collection, doc, getDoc, getDocs, onSnapshot, orderBy, query, updateDoc, where } from "firebase/firestore";
+import { addDoc, collection, deleteDoc, doc, getDoc, getDocs, onSnapshot, orderBy, query, updateDoc, where } from "firebase/firestore";
 import { auth, db } from "../firebase";
 import CreateVisitModal from "./CreateVisitModal";
 
@@ -276,6 +276,28 @@ export default function JobDetailPage() {
     } catch (e) { console.error(e); }
   }
 
+  async function deleteVisit(visitId: string, visitNumber: number) {
+    if (!jobId) return;
+    if (!window.confirm(`Delete Visit #${visitNumber}? This cannot be undone.`)) return;
+    try {
+      await deleteDoc(doc(db, "dispatchVisits", visitId));
+      await addDoc(collection(db, "jobs", jobId, "history"), {
+        action: `Visit #${visitNumber} deleted`,
+        performedBy: auth.currentUser?.displayName || auth.currentUser?.email || "Unknown",
+        timestamp: new Date().toISOString(),
+      });
+    } catch (e) { console.error(e); }
+  }
+
+  async function deleteJob() {
+    if (!jobId || !job) return;
+    if (!window.confirm(`Delete job ${job.jobNumber}? This cannot be undone.`)) return;
+    try {
+      await deleteDoc(doc(db, "jobs", jobId));
+      navigate(-1);
+    } catch (e) { console.error(e); }
+  }
+
   function startEdit() {
     if (!job) return;
     setDraft({
@@ -410,21 +432,39 @@ export default function JobDetailPage() {
           <span style={{ fontSize: 15, fontWeight: 800, color: "#111827", whiteSpace: "nowrap" }}>Job: {job.jobNumber}</span>
         </div>
 
-        {/* Status dropdown */}
-        <select
-          value={job.status}
-          onChange={e => changeJobStatus(e.target.value)}
-          disabled={statusBusy}
-          style={{
-            background: jsc.bg, color: jsc.color,
-            border: `1px solid ${jsc.border}`,
-            borderRadius: 6, padding: "4px 10px",
-            fontSize: 12, fontWeight: 700, cursor: "pointer",
-            appearance: "auto" as React.CSSProperties["appearance"],
-          }}
-        >
-          {JOB_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
+        {/* Status badge + action buttons */}
+        <span style={{ background: jsc.bg, color: jsc.color, border: `1px solid ${jsc.border}`, borderRadius: 6, padding: "4px 10px", fontSize: 12, fontWeight: 700, whiteSpace: "nowrap" }}>
+          {job.status}
+        </span>
+        {job.status === "Cancelled" ? (
+          <>
+            <span style={{ fontSize: 11, color: "#991b1b", fontWeight: 600 }}>⛔ Cannot be reopened</span>
+            <button
+              onClick={deleteJob}
+              style={{ background: "#dc2626", color: "#fff", border: "none", borderRadius: 6, padding: "4px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
+            >🗑 Delete Job</button>
+          </>
+        ) : (
+          <div style={{ display: "flex", gap: 6 }}>
+            {job.status !== "Completed" && job.status !== "Invoiced" && (
+              <button
+                onClick={() => changeJobStatus("In Progress")}
+                disabled={statusBusy || job.status === "In Progress"}
+                style={{ background: job.status === "In Progress" ? "#e5e7eb" : "#fef3c7", color: "#92400e", border: "1px solid #fcd34d", borderRadius: 6, padding: "4px 10px", fontSize: 12, fontWeight: 700, cursor: job.status === "In Progress" ? "default" : "pointer", opacity: job.status === "In Progress" ? 0.5 : 1 }}
+              >In Progress</button>
+            )}
+            <button
+              onClick={() => changeJobStatus("Completed")}
+              disabled={statusBusy}
+              style={{ background: "#16a34a", color: "#fff", border: "none", borderRadius: 6, padding: "4px 10px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
+            >✓ Complete</button>
+            <button
+              onClick={() => { if (window.confirm("Cancel this job? It cannot be reopened.")) changeJobStatus("Cancelled"); }}
+              disabled={statusBusy}
+              style={{ background: "transparent", color: "#dc2626", border: "1px solid #fca5a5", borderRadius: 6, padding: "4px 10px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
+            >✕ Cancel</button>
+          </div>
+        )}
 
         {/* Status pills */}
         <span style={{ background: "#f3f4f6", color: "#6b7280", fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: 99, border: "1px solid #e5e7eb", whiteSpace: "nowrap" }}>No Quotes ▾</span>
@@ -718,7 +758,13 @@ export default function JobDetailPage() {
                             {VISIT_STATUS_LABELS[visit.status] || visit.status}
                           </span>
                           {visit.status === "canceled" ? (
-                            <span style={{ fontSize: 11, color: "#991b1b", fontWeight: 600 }}>⛔ Cannot be reopened</span>
+                            <div style={{ display: "flex", gap: 8, alignItems: "center" }} onClick={e => e.stopPropagation()}>
+                              <span style={{ fontSize: 11, color: "#991b1b", fontWeight: 600 }}>⛔ Cannot be reopened</span>
+                              <button
+                                onClick={() => deleteVisit(visit.id, visit.visitNumber)}
+                                style={{ background: "#dc2626", color: "#fff", border: "none", borderRadius: 6, padding: "3px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}
+                              >🗑 Delete</button>
+                            </div>
                           ) : (
                             <div style={{ display: "flex", gap: 6 }} onClick={e => e.stopPropagation()}>
                               <button
