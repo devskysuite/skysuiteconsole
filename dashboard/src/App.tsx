@@ -67,7 +67,7 @@ function AppLayout({ children }: { children: React.ReactNode }) {
     return (
       <>
         <Nav />
-        <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 96px)" }}>
+        <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 96px)", overflow: "hidden" }}>
           {children}
         </div>
       </>

@@ -22,18 +22,26 @@ function genVerifier() { const a=new Uint8Array(64); crypto.getRandomValues(a); 
 async function genChallenge(v: string) { const b=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(v)); return btoa(String.fromCharCode(...new Uint8Array(b))).replace(/\+/g,"-").replace(/\//g,"_").replace(/=/g,""); }
 
 // ── Token ────────────────────────────────────────────────────────────────────
-async function refreshToken(rt: string) {
-  const r = await fetch(`https://login.microsoftonline.com/${TENANT_ID}/oauth2/v2.0/token`, {
-    method:"POST", body: new URLSearchParams({ client_id:CLIENT_ID, refresh_token:rt, grant_type:"refresh_token", scope:"Calendars.ReadWrite offline_access" })
-  });
-  const d = await r.json();
-  // expires_in is seconds (typically 3600); store with a 5-min buffer so we
-  // never hand out a token that's about to expire mid-session
-  return d.access_token ? {
-    access:    d.access_token,
-    refresh:   d.refresh_token || rt,
-    expiresAt: Date.now() + ((d.expires_in || 3600) - 300) * 1000,
-  } : null;
+async function refreshToken(rt: string): Promise<{access:string;refresh:string;expiresAt:number}|null|"invalid_grant"> {
+  try {
+    const r = await fetch(`https://login.microsoftonline.com/${TENANT_ID}/oauth2/v2.0/token`, {
+      method:"POST", body: new URLSearchParams({ client_id:CLIENT_ID, refresh_token:rt, grant_type:"refresh_token", scope:"Calendars.ReadWrite offline_access" })
+    });
+    let d: any;
+    try { d = await r.json(); } catch { return null; }
+    if (d.access_token) {
+      return {
+        access:    d.access_token,
+        refresh:   d.refresh_token || rt,
+        // expires_in is seconds; store with 5-min buffer
+        expiresAt: Date.now() + ((d.expires_in || 3600) - 300) * 1000,
+      };
+    }
+    // invalid_grant = token permanently revoked/expired; anything else may be transient
+    return d.error === "invalid_grant" ? "invalid_grant" : null;
+  } catch {
+    return null;
+  }
 }
 
 async function graphFetch(token:string, path:string, method="GET", body?:any) {
@@ -219,7 +227,7 @@ export default function OnCallManagerPage() {
           } else {
             // Access token missing or expired — refresh it (rare: once per hour max)
             const t=await refreshToken(data.refreshToken);
-            if(t){
+            if(t && t !== "invalid_grant"){
               setAccessToken(t.access);
               setConnected(true);
               // Persist new access token + expiry + rotated refresh token so the
@@ -231,7 +239,18 @@ export default function OnCallManagerPage() {
                   tokenExpiresAt: t.expiresAt,
                 },{merge:true});
               }catch{}
+            } else if(t === "invalid_grant"){
+              // Token permanently revoked — clear stale credentials from Firestore
+              // so the next admin knows to reconnect rather than seeing a silent failure
+              try{
+                await setDoc(doc(db,"settings","outlookOnCall"),{
+                  refreshToken: null, accessToken: null, tokenExpiresAt: null,
+                },{merge:true});
+              }catch{}
+              setError("Outlook connection expired. An admin needs to click \"Connect Outlook\" to reconnect.");
             }
+            // t === null means transient network/parse error — leave connected false,
+            // user can reload to retry (no destructive Firestore writes)
           }
         }
       } catch {}
