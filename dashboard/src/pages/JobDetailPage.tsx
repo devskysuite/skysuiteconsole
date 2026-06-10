@@ -203,6 +203,11 @@ export default function JobDetailPage() {
   const [editingTechsId, setEditingTechsId] = useState<string | null>(null);
   const [editTechs, setEditTechs] = useState<string[]>([]);
 
+  // Job Costing
+  const [costEntries, setCostEntries]   = useState<any[]>([]);
+  const [userRates, setUserRates]       = useState<Record<string, { rt: number; ot: number; dt: number; pto: number; laborType: string }>>({});
+  const [costLoaded, setCostLoaded]     = useState(false);
+
   // Edit mode
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<JobDraft | null>(null);
@@ -266,6 +271,31 @@ export default function JobDetailPage() {
     } catch (e) { console.error(e); }
     setStatusBusy(false);
   }
+
+  useEffect(() => {
+    if (activeTab !== "Job Costing" || costLoaded || !jobId) return;
+    setCostLoaded(true);
+    Promise.all([
+      getDocs(query(collection(db, "payrollEntries"), where("jobId", "==", jobId))),
+      getDocs(query(collection(db, "users"), where("showInDispatch", "==", true))),
+    ]).then(([paySnap, userSnap]) => {
+      setCostEntries(paySnap.docs.map(d => ({ id: d.id, ...d.data() })));
+      const rates: typeof userRates = {};
+      for (const d of userSnap.docs) {
+        const data = d.data() as any;
+        if (data.displayName) {
+          rates[data.displayName] = {
+            rt: data.laborRates?.rt || 0,
+            ot: data.laborRates?.ot || 0,
+            dt: data.laborRates?.dt || 0,
+            pto: data.laborRates?.pto || 0,
+            laborType: data.laborType || "",
+          };
+        }
+      }
+      setUserRates(rates);
+    }).catch(() => {});
+  }, [activeTab, costLoaded, jobId]);
 
   async function removeVisitPayroll(visitId: string) {
     const snap = await getDocs(query(collection(db, "payrollEntries"), where("visitId", "==", visitId)));
@@ -926,7 +956,101 @@ export default function JobDetailPage() {
               </div>
             )}
 
-            {activeTab !== "Scheduling" && (
+            {activeTab === "Job Costing" && (() => {
+              // Build: employeeName → { rt, ot, dt, pto }
+              const empHours: Record<string, { rt: number; ot: number; dt: number; pto: number }> = {};
+              for (const e of costEntries) {
+                const n = e.employeeName || "Unknown";
+                if (!empHours[n]) empHours[n] = { rt: 0, ot: 0, dt: 0, pto: 0 };
+                empHours[n].rt  += e.rt  || 0;
+                empHours[n].ot  += e.ot  || 0;
+                empHours[n].dt  += e.dt  || 0;
+                empHours[n].pto += e.pto || 0;
+              }
+              // Group employees by laborType
+              const groups: Record<string, string[]> = {};
+              for (const name of Object.keys(empHours)) {
+                const lt = userRates[name]?.laborType || "Other";
+                if (!groups[lt]) groups[lt] = [];
+                groups[lt].push(name);
+              }
+              const fmtH = (n: number) => n > 0 ? n.toFixed(1) : "—";
+              const fmtC = (n: number) => n > 0 ? `$${n.toLocaleString("en-CA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "—";
+              let grandHours = 0, grandCost = 0;
+              const colW = "80px";
+              const cell: React.CSSProperties = { padding: "8px 14px", textAlign: "right", fontSize: 13, color: "#374151" };
+              const hdr: React.CSSProperties  = { padding: "8px 14px", textAlign: "right", fontSize: 11, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase" as const, letterSpacing: 0.4 };
+              return (
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: "#6b7280", letterSpacing: 0.5, textTransform: "uppercase", marginBottom: 16 }}>Labor — Time Tracking Report</div>
+                  {!costLoaded && <div style={{ color: "#9ca3af" }}>Loading…</div>}
+                  {costLoaded && costEntries.length === 0 && (
+                    <div style={{ color: "#9ca3af", textAlign: "center", paddingTop: 40 }}>No payroll entries linked to this job yet.</div>
+                  )}
+                  {costLoaded && costEntries.length > 0 && (
+                    <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden" }}>
+                      <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                        <thead>
+                          <tr style={{ background: "#f9fafb", borderBottom: "1px solid #e5e7eb" }}>
+                            <th style={{ ...hdr, textAlign: "left", paddingLeft: 18 }}>Name</th>
+                            <th style={{ ...hdr, width: colW }}>RT</th>
+                            <th style={{ ...hdr, width: colW }}>OT</th>
+                            <th style={{ ...hdr, width: colW }}>DT</th>
+                            <th style={{ ...hdr, width: colW }}>PTO</th>
+                            <th style={{ ...hdr, width: colW }}>Total Hrs</th>
+                            <th style={{ ...hdr, width: "100px" }}>Labor Cost</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {Object.entries(groups).map(([lt, names]) => {
+                            let groupHours = 0;
+                            const rows = names.map(name => {
+                              const h = empHours[name];
+                              const r = userRates[name] || { rt: 0, ot: 0, dt: 0, pto: 0 };
+                              const total = h.rt + h.ot + h.dt + h.pto;
+                              const cost  = h.rt * r.rt + h.ot * r.ot + h.dt * r.dt + h.pto * r.pto;
+                              groupHours  += total;
+                              grandHours  += total;
+                              grandCost   += cost;
+                              return { name, h, total, cost };
+                            });
+                            return [
+                              <tr key={lt + "_grp"} style={{ background: "#f0f4ff", borderTop: "1px solid #e5e7eb" }}>
+                                <td colSpan={5} style={{ padding: "6px 18px", fontWeight: 700, fontSize: 13, color: "#1565c0" }}>{lt}</td>
+                                <td style={{ ...cell, fontWeight: 700 }}>{groupHours.toFixed(1)}</td>
+                                <td style={cell}></td>
+                              </tr>,
+                              ...rows.map(({ name, h, total, cost }) => (
+                                <tr key={name} style={{ borderBottom: "1px solid #f3f4f6" }}>
+                                  <td style={{ padding: "8px 18px 8px 28px", fontSize: 13, color: "#374151" }}>{name}</td>
+                                  <td style={cell}>{fmtH(h.rt)}</td>
+                                  <td style={cell}>{fmtH(h.ot)}</td>
+                                  <td style={cell}>{fmtH(h.dt)}</td>
+                                  <td style={cell}>{fmtH(h.pto)}</td>
+                                  <td style={{ ...cell, fontWeight: 600 }}>{total.toFixed(1)}</td>
+                                  <td style={{ ...cell, fontWeight: 600 }}>{fmtC(cost)}</td>
+                                </tr>
+                              )),
+                            ];
+                          })}
+                          <tr style={{ borderTop: "2px solid #e5e7eb", background: "#f9fafb" }}>
+                            <td style={{ padding: "10px 18px", fontWeight: 800, fontSize: 13 }}>Total Submitted</td>
+                            <td colSpan={4}></td>
+                            <td style={{ ...cell, fontWeight: 800, fontSize: 14 }}>{grandHours.toFixed(1)}</td>
+                            <td style={{ ...cell, fontWeight: 800, fontSize: 14, color: "#1565c0" }}>{fmtC(grandCost)}</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                  <div style={{ marginTop: 10, fontSize: 11, color: "#9ca3af" }}>
+                    Rates set in Accounting → Labor Rate Settings. Only entries with a jobId linked to this job are included.
+                  </div>
+                </div>
+              );
+            })()}
+
+            {activeTab !== "Scheduling" && activeTab !== "Job Costing" && (
               <div style={{ textAlign: "center", color: "#9ca3af", paddingTop: 60, fontSize: 14 }}>
                 {activeTab} — coming soon
               </div>

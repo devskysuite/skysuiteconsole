@@ -33,6 +33,7 @@ import PricebookPage from "./pages/PricebookPage";
 import JobDetailPage from "./pages/JobDetailPage";
 import VisitDetailPage from "./pages/VisitDetailPage";
 import PayrollPage from "./pages/PayrollPage";
+import LaborRatesPage from "./pages/LaborRatesPage";
 import Nav from "./components/Nav";
 import { ToastProvider } from "./components/Toast";
 import Spinner from "./components/Spinner";
@@ -128,6 +129,7 @@ export default function App() {
                       <Route path="/jobs/:jobId" element={<JobDetailPage />} />
                       <Route path="/jobs/:jobId/visits/:visitId" element={<VisitDetailPage />} />
                       <Route path="/accounting/payroll" element={<PayrollPage />} />
+                      <Route path="/accounting/labor-rates" element={<LaborRatesPage />} />
                     </Routes>
                 </AppLayout>
               </RequireAuth>

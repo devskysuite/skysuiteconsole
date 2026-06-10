@@ -123,7 +123,8 @@ const RESOURCE_ITEMS: { to: string; label: string; icon: React.ReactNode }[] = [
 ];
 
 const ACCOUNTING_ITEMS: { to: string; label: string; icon: React.ReactNode }[] = [
-  { to: "/accounting/payroll", label: "Payroll", icon: <IconPayroll /> },
+  { to: "/accounting/payroll",      label: "Payroll",            icon: <IconPayroll /> },
+  { to: "/accounting/labor-rates",  label: "Labor Rate Settings", icon: <IconSliders /> },
 ];
 
 const ADMIN_ITEMS: { to: string; label: string; icon: React.ReactNode }[] = [
