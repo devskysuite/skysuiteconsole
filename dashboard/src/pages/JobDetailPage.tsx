@@ -1206,8 +1206,8 @@ export default function JobDetailPage() {
         </div>
       </div>
 
-      {/* ── Show History button (fixed bottom-right) ── */}
-      <div style={{ position: "fixed", bottom: 24, right: 24, zIndex: 300 }}>
+      {/* ── Show History button (fixed bottom-right, Scheduling tab only) ── */}
+      {activeTab === "Scheduling" && <div style={{ position: "fixed", bottom: 24, right: 24, zIndex: 300 }}>
         <button
           onClick={() => setShowHistory(h => !h)}
           style={{
@@ -1219,7 +1219,7 @@ export default function JobDetailPage() {
         >
           {showHistory ? "HIDE HISTORY" : "SHOW HISTORY"}
         </button>
-      </div>
+      </div>}
 
       {/* ── History panel ── */}
       {showHistory && (
