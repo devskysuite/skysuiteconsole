@@ -149,9 +149,19 @@ export default function DispatchPage() {
           else if (sl.includes("on call") || sl.includes("oncall")) type = "oncall";
           if (!type) continue;
 
-          // Extract first name: "John - On Call" → "john"
-          const firstName = subj.split(/[\s-–]+/)[0].trim().toLowerCase();
-          if (!firstName) continue;
+          // Extract person name from subject:
+          // Vacation format: "Vacation - John Smith"  → extract after "Vacation - "
+          // On-call format:  "John Smith On Call"     → extract before " On Call"
+          let personName = "";
+          if (type === "vacation") {
+            const m = subj.match(/vacation\s*[-–]\s*(.+)/i);
+            personName = m ? m[1].trim() : "";
+          } else {
+            const m = subj.match(/^(.+?)\s+(?:on\s+call|oncall)/i);
+            personName = m ? m[1].trim() : "";
+          }
+          const firstName = personName.split(/\s+/)[0].toLowerCase();
+          if (!firstName || firstName === "vacation") continue;
 
           // Expand multi-day events across each day in range
           const evStart = new Date(ev.start?.dateTime ? ev.start.dateTime + "Z" : ev.start?.date + "T00:00:00");
