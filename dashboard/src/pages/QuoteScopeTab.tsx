@@ -5,12 +5,20 @@ import { migratePricing, PricingData } from "./QuotePricingTab";
 
 export default function QuoteScopeTab({ quoteId, pricing: raw }: { quoteId: string; pricing: PricingData }) {
   const [p, setP] = useState<PricingData>(() => migratePricing(raw));
-  const [saving, setSaving] = useState(false);
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle");
   const timers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const savedTimer = useRef<ReturnType<typeof setTimeout>>();
 
   const save = useCallback(async (data: PricingData) => {
-    setSaving(true);
-    try { await updateDoc(doc(db, "quotes", quoteId), { pricing: data }); } finally { setSaving(false); }
+    setSaveState("saving");
+    try {
+      await updateDoc(doc(db, "quotes", quoteId), { pricing: data });
+      setSaveState("saved");
+      clearTimeout(savedTimer.current);
+      savedTimer.current = setTimeout(() => setSaveState("idle"), 3000);
+    } catch {
+      setSaveState("idle");
+    }
   }, [quoteId]);
 
   function handleChange(sectionId: string, text: string) {
@@ -24,11 +32,18 @@ export default function QuoteScopeTab({ quoteId, pricing: raw }: { quoteId: stri
   }
 
   return (
-    <div style={{ padding: "24px 32px", display: "flex", flexDirection: "column", gap: 20, maxWidth: 900 }}>
+    <div style={{ padding: "16px 24px", display: "flex", flexDirection: "column", gap: 20 }}>
 
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
         <div style={{ fontSize: 18, fontWeight: 800, color: "#0d2e5e" }}>Scope of Work</div>
-        {saving && <span style={{ fontSize: 12, color: "#9ca3af" }}>Saving…</span>}
+        <div style={{
+          fontSize: 12, fontWeight: 700, padding: "3px 12px", borderRadius: 99,
+          background: saveState === "saved" ? "#dcfce7" : saveState === "saving" ? "#fef9c3" : "#f3f4f6",
+          color: saveState === "saved" ? "#166534" : saveState === "saving" ? "#854d0e" : "#9ca3af",
+          transition: "all 0.2s",
+        }}>
+          {saveState === "saved" ? "✓ Saved" : saveState === "saving" ? "Saving…" : "All changes saved"}
+        </div>
       </div>
 
       {p.sections.map((sec, i) => (
