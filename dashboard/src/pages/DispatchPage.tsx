@@ -855,7 +855,13 @@ export default function DispatchPage() {
               {techs.map(t => (
                 <Row key={t.uid} tech={t} days={days} byCell={byCell} calMap={calMap}
                   onAdd={(date) => setModal({ techUid: t.uid, techName: t.name, date })}
-                  onOpen={(v) => setModal({ techUid: t.uid, techName: t.name, date: v.date, visit: v })}
+                  onOpen={(v) => {
+                    if ((v.status === "canceled" || v.status === "complete") && v.jobId) {
+                      navigate(`/jobs/${v.jobId}`);
+                    } else {
+                      setModal({ techUid: t.uid, techName: t.name, date: v.date, visit: v });
+                    }
+                  }}
                   onSwap={openSwap}
                   canEdit={!!isAdmin} />
               ))}
