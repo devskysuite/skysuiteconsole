@@ -56,6 +56,8 @@ export default function CreateJobModal({ property, onClose, onCreated }: Props) 
   const [contacts, setContacts]     = useState<{ id: string; name: string; role: string }[]>([]);
   const [pricebooks, setPricebooks] = useState<{ id: string; name: string; isDefault: boolean }[]>([]);
   const [dispatchTechs, setDispatchTechs] = useState<{ uid: string; name: string }[]>([]);
+  const [customerProperties, setCustomerProperties] = useState<{ id: string; name: string }[]>([]);
+  const [selectedPropertyId, setSelectedPropertyId] = useState(property.id || "");
   const [saving, setSaving]         = useState(false);
   const [errors, setErrors]         = useState<Record<string, boolean>>({});
   const [visitOpen, setVisitOpen]   = useState(false);
@@ -101,6 +103,17 @@ export default function CreateJobModal({ property, onClose, onCreated }: Props) 
         .sort((a, b) => a.localeCompare(b));
       setUsers(names);
     }).catch(() => {});
+
+    // When opened from customer level (no property pre-selected), load that customer's properties
+    if (property.customerId && !property.id) {
+      getDocs(query(collection(db, "properties"), where("customerId", "==", property.customerId))).then(snap => {
+        const list = snap.docs
+          .map(d => ({ id: d.id, name: (d.data().name as string) || "" }))
+          .filter(p => p.name)
+          .sort((a, b) => a.name.localeCompare(b.name));
+        setCustomerProperties(list);
+      }).catch(() => {});
+    }
 
     if (property.customerId) {
       getDocs(collection(db, "customers", property.customerId, "contacts")).then(snap => {
@@ -171,7 +184,7 @@ export default function CreateJobModal({ property, onClose, onCreated }: Props) 
         jobNumber,
         customerId:                  property.customerId || "",
         customerName:                form.customer,
-        propertyId:                  property.id || "",
+        propertyId:                  selectedPropertyId || property.id || "",
         propertyName:                form.propertyName,
         propertyRep:                 form.propertyRep,
         billingCustomer:             form.billingCustomer,
@@ -368,7 +381,23 @@ export default function CreateJobModal({ property, onClose, onCreated }: Props) 
               <span>Property Name</span>
               <span style={req}>REQUIRED</span>
             </label>
-            <input style={inp} {...bind("propertyName")} />
+            {!property.id && customerProperties.length > 0 ? (
+              <select
+                style={sel()}
+                value={selectedPropertyId}
+                onChange={e => {
+                  const pid = e.target.value;
+                  const pname = customerProperties.find(p => p.id === pid)?.name || "";
+                  setSelectedPropertyId(pid);
+                  setForm(f => ({ ...f, propertyName: pname }));
+                }}
+              >
+                <option value="">Select...</option>
+                {customerProperties.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            ) : (
+              <input style={inp} {...bind("propertyName")} />
+            )}
           </div>
           <ContactSelect k="propertyRep" label="Property Rep" />
         </div>

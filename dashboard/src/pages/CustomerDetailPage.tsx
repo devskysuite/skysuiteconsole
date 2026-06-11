@@ -6,6 +6,7 @@ import {
 } from "firebase/firestore";
 import { db, auth } from "../firebase";
 import { useIsAdmin } from "../hooks/useIsAdmin";
+import CreateJobModal from "./CreateJobModal";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface Customer {
@@ -164,6 +165,7 @@ export default function CustomerDetailPage() {
   const [editModal,    setEditModal]    = useState(false);
   const [propModal,    setPropModal]    = useState<Property | null | "new">(null);
   const [contactModal, setContactModal] = useState<Contact | null | "new">(null);
+  const [createJobOpen, setCreateJobOpen] = useState(false);
 
   // Load customer
   useEffect(() => {
@@ -749,7 +751,15 @@ export default function CustomerDetailPage() {
 
                   {/* Jobs */}
                   <div>
-                    <div style={{ fontSize:14, fontWeight:700, color:"#111827", marginBottom:10 }}>Jobs</div>
+                    <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:10 }}>
+                      <div style={{ fontSize:14, fontWeight:700, color:"#111827" }}>Jobs</div>
+                      {isAdmin && (
+                        <button
+                          onClick={() => setCreateJobOpen(true)}
+                          style={{ background:"#16a34a", color:"#fff", border:"none", borderRadius:6, padding:"7px 16px", fontSize:13, fontWeight:700, cursor:"pointer" }}
+                        >+ New Job</button>
+                      )}
+                    </div>
                     <div style={{ display:"flex", gap:6, marginBottom:14 }}>
                       {filterBtn("All","All")}
                       {filterBtn("Scheduled for today","Today")}
@@ -927,6 +937,13 @@ export default function CustomerDetailPage() {
           initial={contactModal === "new" ? undefined : contactModal}
           onSave={saveContact}
           onClose={() => setContactModal(null)}
+        />
+      )}
+      {createJobOpen && customer && (
+        <CreateJobModal
+          property={{ id: "", name: "", customerName: customer.name, customerId: customerId || "", billingCustomer: customer.name }}
+          onClose={() => setCreateJobOpen(false)}
+          onCreated={() => { setCreateJobOpen(false); }}
         />
       )}
     </div>
