@@ -29,6 +29,7 @@ type Visit = {
   flagged?: boolean;
   notes?: string;
   department?: string;
+  description?: string;
 };
 
 type Tech = { uid: string; name: string; section?: string };
@@ -1179,6 +1180,8 @@ function VisitModal({ init, onClose }: { init: { techUid: string; techName: stri
   const [flagged, setFlagged] = useState(!!v?.flagged);
   const [notes, setNotes] = useState(v?.notes || "");
   const [jobId, setJobId] = useState(v?.jobId || "");
+  const [description, setDescription] = useState(v?.description || "");
+  const [descError, setDescError] = useState(false);
   const [busy, setBusy] = useState(false);
   const [rescheduleMode, setRescheduleMode] = useState(false);
   const [rescheduleDate, setRescheduleDate] = useState(v?.date || init.date);
@@ -1235,6 +1238,8 @@ function VisitModal({ init, onClose }: { init: { techUid: string; techName: stri
 
   async function save() {
     if (!title.trim()) return;
+    if (!description.trim()) { setDescError(true); return; }
+    setDescError(false);
     if (!v && jobNumber.trim()) {
       const snap = await getDocs(query(collection(db, "dispatchVisits"), where("jobNumber", "==", jobNumber.trim())));
       const active = snap.docs.filter(d => !["complete", "canceled", "closed"].includes(d.data().status));
@@ -1244,18 +1249,30 @@ function VisitModal({ init, onClose }: { init: { techUid: string; techName: stri
         return;
       }
     }
+    // Auto-assign visit number for new visits linked to a job
+    let nextVisitNumber: number | undefined;
+    if (!v && (jobId || jobNumber.trim())) {
+      const q = jobId
+        ? query(collection(db, "dispatchVisits"), where("jobId", "==", jobId))
+        : query(collection(db, "dispatchVisits"), where("jobNumber", "==", jobNumber.trim()));
+      const snap = await getDocs(q);
+      const maxNum = snap.docs.reduce((m, d) => Math.max(m, d.data().visitNumber || 0), 0);
+      nextVisitNumber = maxNum + 1;
+    }
     setBusy(true);
     const base = {
       techUid: init.techUid, techName: init.techName,
       title: title.trim(), jobNumber: jobNumber.trim(), jobId: jobId || undefined,
+      description: description.trim(),
       start, end, priority, flagged, notes: notes.trim(),
     };
     try {
       if (v) {
         await updateDoc(doc(db, "dispatchVisits", v.id), { ...base, date });
       } else {
-        for (const d of visitDates) {
-          await addDoc(collection(db, "dispatchVisits"), { ...base, date: d, status: "scheduled", createdAt: serverTimestamp(), createdBy: auth.currentUser?.uid || "" });
+        for (let i = 0; i < visitDates.length; i++) {
+          const vn = nextVisitNumber !== undefined ? nextVisitNumber + i : undefined;
+          await addDoc(collection(db, "dispatchVisits"), { ...base, date: visitDates[i], visitNumber: vn, status: "scheduled", createdAt: serverTimestamp(), createdBy: auth.currentUser?.uid || "" });
         }
       }
       onClose();
@@ -1341,6 +1358,15 @@ function VisitModal({ init, onClose }: { init: { techUid: string; techName: stri
 
         <label style={s.lbl}>Visit Title</label>
         <input style={s.inp} value={title} onChange={e => setTitle(e.target.value)} placeholder="Office Renovation" autoFocus={!!v} />
+
+        <label style={s.lbl}>Description <span style={{ color: "#ef4444" }}>*</span></label>
+        <textarea
+          style={{ ...s.inp, minHeight: 56, resize: "vertical", borderColor: descError ? "#ef4444" : undefined }}
+          value={description}
+          onChange={e => { setDescription(e.target.value); if (e.target.value.trim()) setDescError(false); }}
+          placeholder="Describe the work to be done…"
+        />
+        {descError && <div style={{ color: "#ef4444", fontSize: 11, marginTop: -6, marginBottom: 6 }}>Description is required</div>}
 
         <div style={{ display: "flex", gap: 12 }}>
           <div style={{ flex: 1 }}><label style={s.lbl}>Job #</label><input style={s.inp} value={jobNumber} onChange={e => setJobNumber(e.target.value)} placeholder="#P25-0093" /></div>
