@@ -39,6 +39,11 @@ export const oncallReminderNow = onCall({ cors: true }, async (request) => {
       const s    = (e.subject || "").toLowerCase();
       const name = firstNameFromSubject(e.subject);
       if (!name) continue;
+      // Only count the event if today falls within [eventStart, eventEnd)
+      // Graph calendarView can return carry-over events that started yesterday
+      const evStart = e.start?.date || e.start?.dateTime?.slice(0, 10) || "";
+      const evEnd   = e.end?.date   || e.end?.dateTime?.slice(0, 10)   || "";
+      if (!evStart || evStart > today || (evEnd && evEnd <= today)) continue;
       if (s.includes("vacation")) vacationNames.add(name);
       else if (s.includes("on call") || s.includes("oncall")) outlookOnCall.add(name);
     }
