@@ -60,17 +60,12 @@ export default function QuoteSummaryTab({ pricing }: { pricing: PricingData }) {
             </tr>
           </thead>
           <tbody>
-            {pricing.otherCosts.map((o, i) => {
-              const sell = (o.cost || 0) * (1 + (o.markup ?? pricing.settings.otherCostsMarkup));
-              return (
-                <tr key={i}>
-                  <td style={tdS}>{o.description || "—"}</td>
-                  <td style={tdR}>{o.cost ? fmt$(o.cost) : "—"}</td>
-                  <td style={{ ...tdR, color:"#6b7280" }}>{fmtPct(o.markup ?? pricing.settings.otherCostsMarkup)}</td>
-                  <td style={{ ...tdR, color: sell > 0 ? "#16a34a" : "#9ca3af" }}>{sell > 0 ? fmt$(sell) : "—"}</td>
-                </tr>
-              );
-            })}
+            <tr>
+              <td style={tdS}>Other Costs (all sections)</td>
+              <td style={tdR}>{s.otherCost > 0 ? fmt$(s.otherCost) : "—"}</td>
+              <td style={{ ...tdR, color:"#6b7280" }}>{fmtPct(pricing.settings.otherCostsMarkup)}</td>
+              <td style={{ ...tdR, color: s.otherSell > 0 ? "#16a34a" : "#9ca3af" }}>{s.otherSell > 0 ? fmt$(s.otherSell) : "—"}</td>
+            </tr>
             <tr style={{ background:"#f9fafb" }}>
               <td style={{ ...tdS, fontWeight:700 }}>Other Costs Sub-Total</td>
               <td style={{ ...tdR, fontWeight:700 }}>{fmt$(s.otherCost)}</td>

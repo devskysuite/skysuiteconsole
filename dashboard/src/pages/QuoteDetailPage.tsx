@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { collection, doc, getDocs, onSnapshot, updateDoc } from "firebase/firestore";
 import { db, auth } from "../firebase";
 import { useIsAdmin } from "../hooks/useIsAdmin";
-import QuotePricingTab, { DEFAULT_PRICING, PricingData } from "./QuotePricingTab";
+import QuotePricingTab, { migratePricing, PricingData } from "./QuotePricingTab";
 import QuoteSummaryTab from "./QuoteSummaryTab";
 import QuoteOverviewTab from "./QuoteOverviewTab";
 
@@ -426,18 +426,14 @@ export default function QuoteDetailPage() {
       {tab === "Overview" && (
         <QuoteOverviewTab
           quoteId={quoteId!}
-          pricing={(quote as any).pricing
-            ? { ...DEFAULT_PRICING, ...(quote as any).pricing, settings: { ...DEFAULT_PRICING.settings, ...((quote as any).pricing?.settings || {}) } }
-            : DEFAULT_PRICING}
+          pricing={migratePricing((quote as any).pricing)}
         />
       )}
 
       {tab === "Summary" && (
         <div style={{ padding:24 }}>
           <QuoteSummaryTab
-            pricing={(quote as any).pricing
-              ? { ...DEFAULT_PRICING, ...(quote as any).pricing }
-              : DEFAULT_PRICING}
+            pricing={migratePricing((quote as any).pricing)}
           />
         </div>
       )}
