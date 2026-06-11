@@ -10,6 +10,7 @@ import { getOutlookToken } from "../utils/outlookToken";
 
 type OnCallAssignment = { id: string; date: string; uid: string; employeeName: string };
 type DispatchUser    = { uid: string; displayName: string };
+type ApprovedVacation = { id: string; employeeName: string; startDate: string; endDate: string; uid?: string };
 
 type Visit = {
   id: string;
@@ -108,6 +109,24 @@ export default function DispatchPage() {
     return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}`;
   });
   const [monthCalMap, setMonthCalMap] = useState<CalMap>({});
+
+  // Approved vacation from Firestore (for vacation monthly view)
+  const [approvedVacation, setApprovedVacation] = useState<ApprovedVacation[]>([]);
+  const [vacStarted, setVacStarted] = useState(false);
+
+  // On-call monthly CRUD modals
+  const [addOnCallModal, setAddOnCallModal] = useState<string | null>(null); // date string
+  const [addOnCallUid, setAddOnCallUid]     = useState("");
+  const [addOnCallBusy, setAddOnCallBusy]   = useState(false);
+  const [deleteOnCallId, setDeleteOnCallId] = useState<string | null>(null);
+
+  // Vacation monthly CRUD modals
+  const [addVacModal, setAddVacModal] = useState<string | null>(null); // start date
+  const [addVacEnd, setAddVacEnd]     = useState("");
+  const [addVacName, setAddVacName]   = useState("");
+  const [addVacUid, setAddVacUid]     = useState("");
+  const [addVacBusy, setAddVacBusy]   = useState(false);
+  const [deleteVacId, setDeleteVacId] = useState<string | null>(null);
 
   // Technicians flagged to show on the dispatch board
   useEffect(() => {
@@ -219,6 +238,18 @@ export default function DispatchPage() {
       setAllUsers(list);
     }).catch(() => {});
   }, []);
+
+  // Approved vacation listener — lazy, starts on first visit to vacation view
+  useEffect(() => {
+    if (boardView !== "vacation" || vacStarted) return;
+    setVacStarted(true);
+    const unsub = onSnapshot(
+      query(collection(db, "timeOffRequests"), where("status", "==", "APPROVED")),
+      snap => setApprovedVacation(snap.docs.map(d => ({ id: d.id, ...d.data() } as ApprovedVacation))),
+      () => {}
+    );
+    return unsub;
+  }, [boardView, vacStarted]);
 
   const days = useMemo(() => (view === "week" ? weekDays(anchor) : [anchor]), [view, anchor]);
 
@@ -379,6 +410,84 @@ export default function DispatchPage() {
     return { vacations, oncall };
   }, [monthCalMap]);
 
+  // Firestore assignment keyed by date (for on-call monthly view)
+  const assignmentByDate = useMemo(() => {
+    const m: Record<string, OnCallAssignment> = {};
+    for (const a of assignments) m[a.date] = a;
+    return m;
+  }, [assignments]);
+
+  // Approved vacation from Firestore keyed by date (for vacation monthly view)
+  const vacByDate = useMemo(() => {
+    const m: Record<string, { id: string; name: string }[]> = {};
+    for (const v of approvedVacation) {
+      if (!v.startDate || !v.endDate) continue;
+      let cur = new Date(v.startDate + "T12:00:00");
+      const stopD = new Date(v.endDate + "T12:00:00");
+      stopD.setDate(stopD.getDate() + 1); // include end date
+      while (cur < stopD) {
+        const d = fmtYMD(cur);
+        (m[d] ||= []).push({ id: v.id, name: v.employeeName });
+        cur.setDate(cur.getDate() + 1);
+      }
+    }
+    return m;
+  }, [approvedVacation]);
+
+  // On-call monthly CRUD handlers
+  async function handleAddOnCall() {
+    if (!addOnCallModal || !addOnCallUid) return;
+    const person = allUsers.find(u => u.uid === addOnCallUid);
+    if (!person) return;
+    setAddOnCallBusy(true);
+    try {
+      await addDoc(collection(db, "onCallAssignments"), {
+        date: addOnCallModal,
+        uid: addOnCallUid,
+        employeeName: person.displayName,
+        assignedByUid: auth.currentUser?.uid || "",
+        createdAt: serverTimestamp(),
+      });
+      setAddOnCallModal(null); setAddOnCallUid("");
+    } catch {}
+    setAddOnCallBusy(false);
+  }
+
+  async function handleDeleteOnCall() {
+    if (!deleteOnCallId) return;
+    try { await deleteDoc(doc(db, "onCallAssignments", deleteOnCallId)); }
+    catch {}
+    setDeleteOnCallId(null);
+  }
+
+  // Vacation monthly CRUD handlers
+  async function handleAddVacation() {
+    if (!addVacModal || !addVacName.trim()) return;
+    setAddVacBusy(true);
+    try {
+      await addDoc(collection(db, "timeOffRequests"), {
+        employeeName: addVacName.trim(),
+        employeeEmail: "",
+        uid: addVacUid || "",
+        startDate: addVacModal,
+        endDate: addVacEnd || addVacModal,
+        reason: "Added from Job Board",
+        status: "APPROVED",
+        approvedByUid: auth.currentUser?.uid || "",
+        createdAt: serverTimestamp(),
+      });
+      setAddVacModal(null); setAddVacName(""); setAddVacEnd(""); setAddVacUid("");
+    } catch {}
+    setAddVacBusy(false);
+  }
+
+  async function handleDeleteVacation() {
+    if (!deleteVacId) return;
+    try { await deleteDoc(doc(db, "timeOffRequests", deleteVacId)); }
+    catch {}
+    setDeleteVacId(null);
+  }
+
   // On-call swap handlers
   const requesterOnCallDays = assignments
     .filter(a => a.uid === swapToUid && a.date >= todayStr())
@@ -523,53 +632,72 @@ export default function DispatchPage() {
       {/* ── Monthly On-Call / Vacation calendar ── */}
       {boardView !== "board" && (() => {
         const [yr, mo] = monthAnchor.split("-").map(Number);
-        const mDays = calMonthDays(monthAnchor);
-        const firstDow = new Date(mDays[0] + "T00:00:00").getDay(); // 0=Sun
+        const mDays  = calMonthDays(monthAnchor);
+        const firstDow = new Date(mDays[0] + "T00:00:00").getDay();
         const lastDow  = new Date(mDays[mDays.length-1] + "T00:00:00").getDay();
         const todayYMD = todayStr();
         const isOncall = boardView === "oncall";
-        const accentBg  = isOncall ? "#f5f3ff" : "#fff7ed";
-        const accentFg  = isOncall ? "#6d28d9" : "#c2410c";
-        const accentBdr = isOncall ? "#ddd6fe" : "#fed7aa";
-        const emptyMsg  = isOncall ? "No one on call this month" : "No approved vacation this month";
 
-        // Prev month overflow days (trailing into grid row 1)
         const prevDays: string[] = [];
-        for (let i = firstDow; i > 0; i--) {
-          prevDays.push(fmtYMD(new Date(yr, mo-1, 1 - i)));
-        }
-        // Next month overflow days (leading into last grid row)
+        for (let i = firstDow; i > 0; i--) prevDays.push(fmtYMD(new Date(yr, mo-1, 1 - i)));
         const trailingCount = lastDow === 6 ? 0 : 6 - lastDow;
         const nextDays: string[] = [];
-        for (let i = 1; i <= trailingCount; i++) {
-          nextDays.push(fmtYMD(new Date(yr, mo, i)));
-        }
+        for (let i = 1; i <= trailingCount; i++) nextDays.push(fmtYMD(new Date(yr, mo, i)));
 
-        function DayCell({ d, overflow }: { d: string; overflow?: boolean }) {
+        const btnX: React.CSSProperties = { background: "none", border: "none", cursor: "pointer", padding: "0 2px", fontSize: 13, lineHeight: 1, color: "inherit", opacity: 0.7, flexShrink: 0 };
+        const addBtn: React.CSSProperties = { width: "100%", background: "none", borderRadius: 4, padding: "3px 0", fontSize: 11, cursor: "pointer", marginTop: 2 };
+
+        function OnCallDayCell({ d, overflow }: { d: string; overflow?: boolean }) {
           const isToday = d === todayYMD;
-          const names: string[] = isOncall
-            ? (monthSummary.oncall[d] ? [monthSummary.oncall[d]] : [])
-            : (monthSummary.vacations[d] || []);
+          const assignment = !overflow ? assignmentByDate[d] : undefined;
+          const outlookName = !overflow ? monthSummary.oncall[d] : undefined;
           const dayNum = parseInt(d.slice(8));
           return (
             <div style={{ background: overflow ? "#f9fafb" : "#fff", minHeight: 90, padding: "6px 8px" }}>
-              <div style={{
-                fontSize: 12, fontWeight: 700, marginBottom: 4,
-                color: isToday ? "#fff" : overflow ? "#c0c8d4" : "#374151",
-                background: isToday ? "#1565c0" : "transparent",
-                borderRadius: isToday ? "50%" : 0,
-                width: isToday ? 22 : "auto", height: isToday ? 22 : "auto",
-                display: "flex", alignItems: "center", justifyContent: "center",
-              }}>{dayNum}</div>
-              {names.map((name, i) => (
-                <div key={i} style={{
-                  background: overflow ? "#f3f4f6" : accentBg,
-                  color: overflow ? "#9ca3af" : accentFg,
-                  border: `1px solid ${overflow ? "#e5e7eb" : accentBdr}`,
-                  borderRadius: 4, padding: "2px 6px", fontSize: 11, fontWeight: 700,
-                  marginBottom: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const,
-                }}>{name}</div>
+              <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 4, color: isToday ? "#fff" : overflow ? "#c0c8d4" : "#374151", background: isToday ? "#1565c0" : "transparent", borderRadius: isToday ? "50%" : 0, width: isToday ? 22 : "auto", height: isToday ? 22 : "auto", display: "flex", alignItems: "center", justifyContent: "center" }}>{dayNum}</div>
+              {assignment && (
+                <div style={{ background: "#f5f3ff", color: "#6d28d9", border: "1px solid #ddd6fe", borderRadius: 4, padding: "2px 4px 2px 6px", fontSize: 11, fontWeight: 700, marginBottom: 2, display: "flex", alignItems: "center", gap: 2 }}>
+                  <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>{assignment.employeeName}</span>
+                  {isAdmin && <>
+                    <button style={btnX} title="Swap" onClick={e => { e.stopPropagation(); openSwap(d); }}>↔</button>
+                    <button style={btnX} title="Delete" onClick={e => { e.stopPropagation(); setDeleteOnCallId(assignment.id); }}>✕</button>
+                  </>}
+                </div>
+              )}
+              {!assignment && outlookName && (
+                <div style={{ background: "#f5f3ff", color: "#8b5cf6", border: "1px solid #ddd6fe", borderRadius: 4, padding: "2px 6px", fontSize: 11, fontWeight: 700, marginBottom: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const, opacity: 0.7 }} title="From Outlook — manage via OnCall page">
+                  {outlookName} (Outlook)
+                </div>
+              )}
+              {!assignment && !overflow && isAdmin && (
+                <button style={{ ...addBtn, border: "1px dashed #ddd6fe", color: "#8b5cf6" }} onClick={() => { setAddOnCallModal(d); setAddOnCallUid(""); }}>+ Add</button>
+              )}
+            </div>
+          );
+        }
+
+        function VacDayCell({ d, overflow }: { d: string; overflow?: boolean }) {
+          const isToday = d === todayYMD;
+          const outlookNames = !overflow ? (monthSummary.vacations[d] || []) : [];
+          const fsVacs       = !overflow ? (vacByDate[d] || []) : [];
+          const dayNum = parseInt(d.slice(8));
+          return (
+            <div style={{ background: overflow ? "#f9fafb" : "#fff", minHeight: 90, padding: "6px 8px" }}>
+              <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 4, color: isToday ? "#fff" : overflow ? "#c0c8d4" : "#374151", background: isToday ? "#1565c0" : "transparent", borderRadius: isToday ? "50%" : 0, width: isToday ? 22 : "auto", height: isToday ? 22 : "auto", display: "flex", alignItems: "center", justifyContent: "center" }}>{dayNum}</div>
+              {outlookNames.map((name, i) => (
+                <div key={"o" + i} style={{ background: "#fff7ed", color: "#c2410c", border: "1px solid #fed7aa", borderRadius: 4, padding: "2px 6px", fontSize: 11, fontWeight: 700, marginBottom: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const, opacity: 0.75 }} title="From Outlook">
+                  {name}
+                </div>
               ))}
+              {fsVacs.map((v, i) => (
+                <div key={"f" + i} style={{ background: "#fff7ed", color: "#c2410c", border: "1px solid #fed7aa", borderRadius: 4, padding: "2px 4px 2px 6px", fontSize: 11, fontWeight: 700, marginBottom: 2, display: "flex", alignItems: "center", gap: 2 }}>
+                  <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>{v.name}</span>
+                  {isAdmin && <button style={{ ...btnX, color: "#c2410c" }} title="Delete vacation" onClick={e => { e.stopPropagation(); setDeleteVacId(v.id); }}>✕</button>}
+                </div>
+              ))}
+              {!overflow && isAdmin && (
+                <button style={{ ...addBtn, border: "1px dashed #fed7aa", color: "#ea580c" }} onClick={() => { setAddVacModal(d); setAddVacEnd(d); setAddVacName(""); setAddVacUid(""); }}>+ Add</button>
+              )}
             </div>
           );
         }
@@ -577,24 +705,21 @@ export default function DispatchPage() {
         return (
           <div style={{ padding: "16px 18px" }}>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 1, background: "#e5e7eb", border: "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden" }}>
-              {["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(d => (
-                <div key={d} style={{ background: "#f8fafc", padding: "8px 4px", textAlign: "center", fontSize: 11, fontWeight: 800, color: "#6b7280", textTransform: "uppercase" }}>{d}</div>
+              {["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(h => (
+                <div key={h} style={{ background: "#f8fafc", padding: "8px 4px", textAlign: "center", fontSize: 11, fontWeight: 800, color: "#6b7280", textTransform: "uppercase" as const }}>{h}</div>
               ))}
-              {prevDays.map(d => <DayCell key={d} d={d} overflow />)}
-              {mDays.map(d => <DayCell key={d} d={d} />)}
-              {nextDays.map(d => <DayCell key={d} d={d} overflow />)}
+              {prevDays.map(d => isOncall ? <OnCallDayCell key={d} d={d} overflow /> : <VacDayCell key={d} d={d} overflow />)}
+              {mDays.map(d    => isOncall ? <OnCallDayCell key={d} d={d} />         : <VacDayCell key={d} d={d} />)}
+              {nextDays.map(d => isOncall ? <OnCallDayCell key={d} d={d} overflow /> : <VacDayCell key={d} d={d} overflow />)}
             </div>
-            {Object.keys(monthCalMap).length > 0 && mDays.every(d => isOncall ? !monthSummary.oncall[d] : !monthSummary.vacations[d]?.length) && (
-              <div style={{ textAlign: "center", color: "#9ca3af", padding: "32px 0", fontSize: 14 }}>{emptyMsg}</div>
-            )}
-            {Object.keys(monthCalMap).length === 0 && (
-              <div style={{ textAlign: "center", color: "#9ca3af", padding: "32px 0", fontSize: 14 }}>Loading from Outlook…</div>
-            )}
-            <div style={{ display: "flex", gap: 12, marginTop: 14, alignItems: "center", fontSize: 12, color: "#6b7280" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                <div style={{ width: 12, height: 12, borderRadius: 2, background: accentBg, border: `1px solid ${accentBdr}` }} />
-                {isOncall ? "On call (from Outlook)" : "Vacation (from Outlook)"}
-              </div>
+            <div style={{ display: "flex", gap: 16, marginTop: 12, alignItems: "center", fontSize: 12, color: "#6b7280", flexWrap: "wrap" }}>
+              {isOncall ? (<>
+                <div style={{ display: "flex", alignItems: "center", gap: 5 }}><div style={{ width: 12, height: 12, borderRadius: 2, background: "#f5f3ff", border: "1px solid #ddd6fe" }} /> On call (Firestore)</div>
+                <div style={{ display: "flex", alignItems: "center", gap: 5 }}><div style={{ width: 12, height: 12, borderRadius: 2, background: "#f5f3ff", border: "1px solid #ddd6fe", opacity: 0.5 }} /> Outlook only (read-only)</div>
+              </>) : (<>
+                <div style={{ display: "flex", alignItems: "center", gap: 5 }}><div style={{ width: 12, height: 12, borderRadius: 2, background: "#fff7ed", border: "1px solid #fed7aa" }} /> Vacation (Firestore — editable)</div>
+                <div style={{ display: "flex", alignItems: "center", gap: 5 }}><div style={{ width: 12, height: 12, borderRadius: 2, background: "#fff7ed", border: "1px solid #fed7aa", opacity: 0.5 }} /> Outlook (read-only)</div>
+              </>)}
             </div>
           </div>
         );
@@ -657,6 +782,99 @@ export default function DispatchPage() {
           onClose={() => setModal(null)}
         />
       )}
+
+      {/* ── Add On-Call Modal ── */}
+      {addOnCallModal && (
+        <div style={s.backdrop} onClick={() => setAddOnCallModal(null)}>
+          <div style={s.modal} onClick={e => e.stopPropagation()}>
+            <h2 style={{ fontSize: 17, fontWeight: 800, color: "#0d2e5e", marginBottom: 4 }}>Add On-Call Assignment</h2>
+            <p style={{ fontSize: 13, color: "#6b7280", marginBottom: 18 }}>
+              {new Date(addOnCallModal + "T00:00:00").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" })}
+            </p>
+            <label style={s.lbl}>Who is on call?</label>
+            <select style={s.inp} value={addOnCallUid} onChange={e => setAddOnCallUid(e.target.value)}>
+              <option value="">Select employee…</option>
+              {allUsers.map(u => <option key={u.uid} value={u.uid}>{u.displayName}</option>)}
+            </select>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
+              <button onClick={() => setAddOnCallModal(null)} style={s.cancelBtn}>Cancel</button>
+              <button onClick={handleAddOnCall} disabled={addOnCallBusy || !addOnCallUid} style={{ ...s.saveBtn, opacity: (addOnCallBusy || !addOnCallUid) ? 0.5 : 1 }}>
+                {addOnCallBusy ? "Saving…" : "Assign"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Delete On-Call Confirm ── */}
+      {deleteOnCallId && (() => {
+        const a = assignments.find(x => x.id === deleteOnCallId);
+        return (
+          <div style={s.backdrop} onClick={() => setDeleteOnCallId(null)}>
+            <div style={{ ...s.modal, maxWidth: 380 }} onClick={e => e.stopPropagation()}>
+              <h2 style={{ fontSize: 16, fontWeight: 800, color: "#0d2e5e", marginBottom: 8 }}>Remove On-Call Assignment?</h2>
+              <p style={{ fontSize: 13, color: "#374151", marginBottom: 18 }}>
+                Remove <strong>{a?.employeeName}</strong> from on call on{" "}
+                {a ? new Date(a.date + "T00:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }) : ""}?
+              </p>
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+                <button onClick={() => setDeleteOnCallId(null)} style={s.cancelBtn}>Cancel</button>
+                <button onClick={handleDeleteOnCall} style={s.delBtn}>Remove</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ── Add Vacation Modal ── */}
+      {addVacModal && (
+        <div style={s.backdrop} onClick={() => setAddVacModal(null)}>
+          <div style={s.modal} onClick={e => e.stopPropagation()}>
+            <h2 style={{ fontSize: 17, fontWeight: 800, color: "#0d2e5e", marginBottom: 4 }}>Add Vacation</h2>
+            <label style={s.lbl}>Employee</label>
+            <select style={s.inp} value={addVacUid} onChange={e => { setAddVacUid(e.target.value); const u = allUsers.find(x => x.uid === e.target.value); if (u) setAddVacName(u.displayName); }}>
+              <option value="">Select employee…</option>
+              {allUsers.map(u => <option key={u.uid} value={u.uid}>{u.displayName}</option>)}
+            </select>
+            <div style={{ display: "flex", gap: 12 }}>
+              <div style={{ flex: 1 }}>
+                <label style={s.lbl}>Start date</label>
+                <input type="date" style={s.inp} value={addVacModal} onChange={e => setAddVacModal(e.target.value || addVacModal)} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={s.lbl}>End date</label>
+                <input type="date" style={s.inp} value={addVacEnd} onChange={e => setAddVacEnd(e.target.value)} min={addVacModal} />
+              </div>
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
+              <button onClick={() => setAddVacModal(null)} style={s.cancelBtn}>Cancel</button>
+              <button onClick={handleAddVacation} disabled={addVacBusy || !addVacUid} style={{ ...s.saveBtn, opacity: (addVacBusy || !addVacUid) ? 0.5 : 1 }}>
+                {addVacBusy ? "Saving…" : "Add Vacation"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Delete Vacation Confirm ── */}
+      {deleteVacId && (() => {
+        const vac = approvedVacation.find(x => x.id === deleteVacId);
+        return (
+          <div style={s.backdrop} onClick={() => setDeleteVacId(null)}>
+            <div style={{ ...s.modal, maxWidth: 380 }} onClick={e => e.stopPropagation()}>
+              <h2 style={{ fontSize: 16, fontWeight: 800, color: "#0d2e5e", marginBottom: 8 }}>Remove Vacation?</h2>
+              <p style={{ fontSize: 13, color: "#374151", marginBottom: 18 }}>
+                Remove vacation for <strong>{vac?.employeeName}</strong>
+                {vac?.startDate ? ` (${new Date(vac.startDate + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}${vac.endDate && vac.endDate !== vac.startDate ? ` – ${new Date(vac.endDate + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}` : ""})` : ""}?
+              </p>
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+                <button onClick={() => setDeleteVacId(null)} style={s.cancelBtn}>Cancel</button>
+                <button onClick={handleDeleteVacation} style={s.delBtn}>Remove</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ── On-Call Swap Modal ── */}
       {swapModal && (
