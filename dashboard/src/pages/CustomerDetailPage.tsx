@@ -38,7 +38,10 @@ interface Property {
   customerRole?: string; jobsCompleted?: number;
 }
 interface Contact {
-  id?: string; name: string; role: string; email: string; phone: string;
+  id?: string; name: string; role: string; email: string;
+  landline?: string; mobilePhone?: string; phone?: string; // phone kept for legacy
+  preferSMS?: boolean; bestContact?: string; notes?: string;
+  authorized?: boolean; // can approve work + receive quotes
 }
 interface JobRow {
   id: string; jobNumber: string; status?: string; jobType?: string;
@@ -210,6 +213,7 @@ export default function CustomerDetailPage() {
   const [editModal,    setEditModal]    = useState(false);
   const [propModal,    setPropModal]    = useState<Property | null | "new">(null);
   const [contactModal, setContactModal] = useState<Contact | null | "new">(null);
+  const [contactMenu,  setContactMenu]  = useState<string | null>(null); // open contact id for ⋮ menu
   const [createJobOpen, setCreateJobOpen] = useState(false);
 
   // Load customer
@@ -698,53 +702,78 @@ export default function CustomerDetailPage() {
 
             {/* ── Contacts tab ── */}
             {tab === "Contacts" && (
-              <>
-                {isAdmin && (
-                  <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 14 }}>
-                    <button onClick={() => setContactModal("new")} style={{ ...btnS("#1565c0"), fontSize: 13 }}>+ Add Contact</button>
-                  </div>
-                )}
+              <div onClick={() => setContactMenu(null)}>
+                <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:16 }}>
+                  <div style={{ fontSize:15, fontWeight:700, color:"#111827" }}>Representatives</div>
+                  {isAdmin && (
+                    <button onClick={() => setContactModal("new")} style={{ background:"#111827", color:"#fff", border:"none", borderRadius:6, padding:"8px 18px", fontSize:13, fontWeight:700, cursor:"pointer" }}>+ ADD</button>
+                  )}
+                </div>
                 {contacts.length === 0 ? (
-                  <div style={{ textAlign: "center", padding: "40px 0", color: "#9ca3af" }}>
-                    <div style={{ fontSize: 32, marginBottom: 10 }}>👤</div>
-                    <p style={{ fontSize: 14 }}>No contacts yet.</p>
-                    {isAdmin && <button onClick={() => setContactModal("new")} style={{ ...btnS("#1565c0"), fontSize: 13, marginTop: 8 }}>Add First Contact</button>}
+                  <div style={{ textAlign:"center", padding:"40px 0", color:"#9ca3af" }}>
+                    <p style={{ fontSize:14 }}>No representatives yet.</p>
+                    {isAdmin && <button onClick={() => setContactModal("new")} style={{ ...btnS("#1565c0"), fontSize:13, marginTop:8 }}>Add First Contact</button>}
                   </div>
                 ) : (
-                  <div style={{ background: "#fff", borderRadius: 8, border: "1px solid #e5e7eb", overflow: "hidden" }}>
-                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-                      <thead>
-                        <tr style={{ borderBottom: "2px solid #e5e7eb", background: "#f9fafb" }}>
-                          <th style={th}>Name</th>
-                          <th style={th}>Role</th>
-                          <th style={th}>Email</th>
-                          <th style={th}>Phone</th>
-                          {isAdmin && <th style={{ ...th, width: 60 }}></th>}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {contacts.map(c => (
-                          <tr key={c.id} style={{ borderBottom: "1px solid #f3f4f6" }}
-                              onMouseEnter={e => (e.currentTarget.style.background = "#f9fafb")}
-                              onMouseLeave={e => (e.currentTarget.style.background = "")}>
-                            <td style={{ ...td, fontWeight: 600, cursor: "pointer", color: "#1565c0" }} onClick={() => setContactModal(c)}>{c.name}</td>
-                            <td style={td}>{c.role || "—"}</td>
-                            <td style={td}>
-                              {c.email ? <a href={`mailto:${c.email}`} style={{ color: "#1565c0", textDecoration: "none" }}>{c.email}</a> : "—"}
-                            </td>
-                            <td style={td}>{c.phone || "—"}</td>
-                            {isAdmin && (
-                              <td style={td}>
-                                <button onClick={() => deleteContact(c.id!)} style={{ background: "none", border: "none", cursor: "pointer", color: "#dc2626", fontSize: 13 }}>✕</button>
-                              </td>
-                            )}
+                  <>
+                    <div style={{ border:"1px solid #e5e7eb", borderRadius:8, overflow:"auto" }}>
+                      <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
+                        <thead>
+                          <tr style={{ background:"#f9fafb", borderBottom:"2px solid #e5e7eb" }}>
+                            <th style={th}>Name</th>
+                            <th style={th}>Role</th>
+                            <th style={th}>Email</th>
+                            <th style={th}>Landline</th>
+                            <th style={th}>Mobile phone</th>
+                            <th style={th}>Prefer SMS</th>
+                            <th style={th}>Best contact</th>
+                            <th style={th}>Notes</th>
+                            <th style={{ ...th, width:40 }}></th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                        </thead>
+                        <tbody style={{ background:"#fff" }}>
+                          {contacts.map(c => (
+                            <tr key={c.id} style={{ borderBottom:"1px solid #f3f4f6" }}
+                                onMouseEnter={e => (e.currentTarget.style.background="#f9fafb")}
+                                onMouseLeave={e => (e.currentTarget.style.background="")}>
+                              <td style={{ ...td, fontWeight:600 }}>{c.name}</td>
+                              <td style={td}>{c.role || "—"}</td>
+                              <td style={td}>{c.email ? <a href={`mailto:${c.email}`} style={{ color:"#1565c0", textDecoration:"none" }}>{c.email}</a> : "—"}</td>
+                              <td style={td}>{c.landline || "—"}</td>
+                              <td style={td}>{c.mobilePhone || c.phone || "—"}</td>
+                              <td style={td}>{c.preferSMS ? "Yes" : "No"}</td>
+                              <td style={td}>{c.bestContact || "—"}</td>
+                              <td style={td}>
+                                {c.notes
+                                  ? <span style={{ color:"#1565c0", fontSize:12, cursor:"pointer" }} onClick={e=>{e.stopPropagation();setContactModal(c);}}>{c.notes.length > 30 ? c.notes.slice(0,30)+"…" : c.notes}</span>
+                                  : isAdmin
+                                    ? <span style={{ color:"#1565c0", fontSize:12, cursor:"pointer" }} onClick={e=>{e.stopPropagation();setContactModal(c);}}>Add note</span>
+                                    : "—"
+                                }
+                              </td>
+                              <td style={{ ...td, position:"relative" as const }}>
+                                <button
+                                  onClick={e=>{e.stopPropagation();setContactMenu(contactMenu===c.id?null:c.id!);}}
+                                  style={{ background:"none", border:"none", cursor:"pointer", fontSize:18, color:"#6b7280", padding:"2px 6px", borderRadius:4, lineHeight:1 }}
+                                >⋮</button>
+                                {contactMenu===c.id && (
+                                  <div style={{ position:"absolute" as const, right:8, top:36, background:"#fff", border:"1px solid #e5e7eb", borderRadius:8, boxShadow:"0 4px 16px rgba(0,0,0,0.12)", zIndex:50, minWidth:120 }}>
+                                    <button onClick={e=>{e.stopPropagation();setContactModal(c);setContactMenu(null);}} style={{ display:"block", width:"100%", textAlign:"left" as const, padding:"9px 14px", background:"none", border:"none", fontSize:13, cursor:"pointer", color:"#374151" }}>Edit</button>
+                                    {isAdmin && <button onClick={e=>{e.stopPropagation();deleteContact(c.id!);setContactMenu(null);}} style={{ display:"block", width:"100%", textAlign:"left" as const, padding:"9px 14px", background:"none", border:"none", fontSize:13, cursor:"pointer", color:"#dc2626" }}>Delete</button>}
+                                  </div>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div style={{ display:"flex", justifyContent:"flex-end", marginTop:8, fontSize:12, color:"#6b7280" }}>
+                      1–{contacts.length} of {contacts.length} rows
+                    </div>
+                  </>
                 )}
-              </>
+              </div>
             )}
 
             {/* ── Jobs & Visits tab ── */}
@@ -1558,22 +1587,41 @@ function PropertyModal({ initial, onSave, onClose }:
 // ── Contact modal ─────────────────────────────────────────────────────────────
 function ContactModal({ initial, onSave, onClose }:
   { initial?: Contact; onSave: (d: Contact) => Promise<void>; onClose: () => void }) {
-  const blank: Contact = { name: "", role: "", email: "", phone: "" };
+  const blank: Contact = { name: "", role: "", email: "", landline: "", mobilePhone: "", preferSMS: false, bestContact: "", notes: "", authorized: false };
   const [form, setForm] = useState<Contact>({ ...blank, ...initial });
   const [saving, setSaving] = useState(false);
-  const set = (k: keyof Contact) => (v: string) => setForm(f => ({ ...f, [k]: v }));
+  const set = (k: keyof Contact) => (v: string | boolean) => setForm(f => ({ ...f, [k]: v }));
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} style={{ background: "#fff", borderRadius: 16, padding: 28, width: "100%", maxWidth: 440, boxShadow: "0 8px 40px rgba(0,0,0,0.2)" }}>
-        <h2 style={{ fontSize: 17, fontWeight: 700, color: "#0d2e5e", marginBottom: 18 }}>{initial ? "Edit Contact" : "Add Contact"}</h2>
-        <div style={{ display: "grid", gap: 12 }}>
-          <div><label style={lbl}>Name *</label><input style={inp} value={form.name} onChange={e => set("name")(e.target.value)} placeholder="Jane Smith" /></div>
-          <div><label style={lbl}>Role / Title</label><input style={inp} value={form.role} onChange={e => set("role")(e.target.value)} placeholder="Plant Manager" /></div>
-          <div><label style={lbl}>Email</label><input style={inp} type="email" value={form.email} onChange={e => set("email")(e.target.value)} placeholder="jane@company.com" /></div>
-          <div><label style={lbl}>Phone</label><input style={inp} type="tel" value={form.phone} onChange={e => set("phone")(e.target.value)} placeholder="519-555-0100" /></div>
+    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.45)", zIndex:1000, display:"flex", alignItems:"center", justifyContent:"center" }} onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} style={{ background:"#fff", borderRadius:12, padding:28, width:"100%", maxWidth:520, maxHeight:"90vh", overflow:"auto", boxShadow:"0 8px 40px rgba(0,0,0,0.2)" }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:20 }}>
+          <h2 style={{ fontSize:16, fontWeight:800, color:"#111827", margin:0 }}>{initial ? "Edit Representative" : "Add Representative"}</h2>
+          <button onClick={onClose} style={{ background:"none", border:"none", fontSize:22, cursor:"pointer", color:"#6b7280", lineHeight:1 }}>×</button>
         </div>
-        <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
-          <button disabled={!form.name || saving} onClick={async () => { setSaving(true); await onSave(form); setSaving(false); }} style={{ ...btnS("#1565c0"), opacity: !form.name || saving ? 0.5 : 1 }}>
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"14px 20px" }}>
+          <div style={{ gridColumn:"1/-1" }}><label style={lbl}>Name *</label><input style={inp} value={form.name} onChange={e=>set("name")(e.target.value)} placeholder="Jane Smith" /></div>
+          <div><label style={lbl}>Role / Title</label><input style={inp} value={form.role||""} onChange={e=>set("role")(e.target.value)} placeholder="Plant Manager" /></div>
+          <div><label style={lbl}>Email</label><input style={inp} type="email" value={form.email||""} onChange={e=>set("email")(e.target.value)} placeholder="jane@company.com" /></div>
+          <div><label style={lbl}>Landline</label><input style={inp} type="tel" value={form.landline||""} onChange={e=>set("landline")(e.target.value)} placeholder="519-555-0100" /></div>
+          <div><label style={lbl}>Mobile Phone</label><input style={inp} type="tel" value={form.mobilePhone||""} onChange={e=>set("mobilePhone")(e.target.value)} placeholder="519-555-0200" /></div>
+          <div><label style={lbl}>Best Contact</label>
+            <select style={inp} value={form.bestContact||""} onChange={e=>set("bestContact")(e.target.value)}>
+              <option value="">— Select —</option>
+              {["Email","Cell phone","Landline","SMS"].map(o=><option key={o} value={o}>{o}</option>)}
+            </select>
+          </div>
+          <div style={{ display:"flex", alignItems:"center", gap:10, paddingTop:20 }}>
+            <input type="checkbox" id="preferSMS" checked={!!form.preferSMS} onChange={e=>set("preferSMS")(e.target.checked)} style={{ width:16, height:16, cursor:"pointer" }}/>
+            <label htmlFor="preferSMS" style={{ fontSize:13, fontWeight:600, color:"#374151", cursor:"pointer" }}>Prefer SMS</label>
+          </div>
+          <div style={{ display:"flex", alignItems:"center", gap:10, paddingTop:20 }}>
+            <input type="checkbox" id="authorized" checked={!!form.authorized} onChange={e=>set("authorized")(e.target.checked)} style={{ width:16, height:16, cursor:"pointer" }}/>
+            <label htmlFor="authorized" style={{ fontSize:13, fontWeight:600, color:"#374151", cursor:"pointer" }}>Authorized (can approve &amp; receive quotes)</label>
+          </div>
+          <div style={{ gridColumn:"1/-1" }}><label style={lbl}>Notes</label><textarea rows={3} style={{ ...inp, resize:"vertical", fontFamily:"inherit" }} value={form.notes||""} onChange={e=>set("notes")(e.target.value)} placeholder="Any notes about this contact…" /></div>
+        </div>
+        <div style={{ display:"flex", gap:10, marginTop:22 }}>
+          <button disabled={!form.name||saving} onClick={async()=>{setSaving(true);await onSave(form);setSaving(false);}} style={{ ...btnS("#111827"), opacity:!form.name||saving?0.5:1 }}>
             {saving ? "Saving…" : "Save Contact"}
           </button>
           <button onClick={onClose} style={btnS("#6b7280")}>Cancel</button>
