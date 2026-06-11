@@ -701,7 +701,7 @@ export default function DispatchPage() {
             <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
               <span style={{ fontWeight: 800, color: "#6d28d9", flexShrink: 0 }}>📞 On Call:</span>
               {days.map(d => weekSummary.oncall[d] ? (
-                <span key={d} style={{ background: "#ede9fe", color: "#5b21b6", borderRadius: 99, padding: "2px 9px", fontWeight: 600 }}>
+                <span key={d} style={d === todayStr() ? { background: "#7c3aed", color: "#fff", borderRadius: 99, padding: "2px 9px", fontWeight: 700, boxShadow: "0 0 0 2px #c4b5fd" } : { background: "#ede9fe", color: "#5b21b6", borderRadius: 99, padding: "2px 9px", fontWeight: 600 }}>
                   {DAY_NAMES[(new Date(d + "T00:00:00").getDay() + 6) % 7]}: {weekSummary.oncall[d]}
                 </span>
               ) : null)}
