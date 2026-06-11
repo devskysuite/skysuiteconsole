@@ -168,6 +168,18 @@ export default function OnCallManagerPage({ adminMode = false }: { adminMode?: b
   const [addSubmitting,setAddSubmitting]=useState(false);
   const [backupRefresh,setBackupRefresh]=useState(0);
 
+  // Firestore on-call assignments (for chip actions in calendar)
+  type FsAssignment = { id: string; date: string; uid: string; employeeName: string };
+  const [fsAssignments, setFsAssignments] = useState<FsAssignment[]>([]);
+  const [ocActionModal, setOcActionModal] = useState<{date:string;assignment:FsAssignment}|null>(null);
+  const [ocGiveModal, setOcGiveModal] = useState<{assignment:FsAssignment}|null>(null);
+  const [ocGiveToUid, setOcGiveToUid] = useState("");
+  const [ocGiveBusy, setOcGiveBusy] = useState(false);
+  const [ocDeleteId, setOcDeleteId] = useState<string|null>(null);
+  const [ocSwapModal, setOcSwapModal] = useState<{assignment:FsAssignment}|null>(null);
+  const [ocSwapToUid, setOcSwapToUid] = useState("");
+  const [ocSwapBusy, setOcSwapBusy] = useState(false);
+
   // ── Manual trigger state (emergency buttons) ───────────────────────────────
   const [triggerRunning,setTriggerRunning]=useState<"conflict"|"reminder"|"admincheck"|null>(null);
   const [triggerResult,setTriggerResult]=useState<{type:string;msg:string;ok:boolean}|null>(null);
@@ -225,6 +237,46 @@ export default function OnCallManagerPage({ adminMode = false }: { adminMode?: b
     });
     return unsub;
   },[]);
+
+  // Subscribe to Firestore on-call assignments
+  useEffect(()=>{
+    return onSnapshot(collection(db,"onCallAssignments"),snap=>{
+      setFsAssignments(snap.docs.map(d=>({id:d.id,...d.data()} as FsAssignment)));
+    });
+  },[]);
+
+  async function handleOcGiveAway(){
+    if(!ocGiveModal||!ocGiveToUid) return;
+    const {assignment}=ocGiveModal;
+    const newPerson=allUsers.find(u=>u.uid===ocGiveToUid);
+    if(!newPerson) return;
+    setOcGiveBusy(true);
+    try{
+      await updateDoc(doc(db,"onCallAssignments",assignment.id),{uid:ocGiveToUid,employeeName:newPerson.displayName});
+      await addDoc(collection(db,"onCallGiveaways"),{fromUid:assignment.uid,fromName:assignment.employeeName,toUid:ocGiveToUid,toName:newPerson.displayName,date:assignment.date,gaveAwayAt:serverTimestamp()});
+      setOcGiveModal(null); setOcGiveToUid("");
+    }catch{}
+    setOcGiveBusy(false);
+  }
+
+  async function handleOcSwap(){
+    if(!ocSwapModal||!ocSwapToUid) return;
+    const {assignment}=ocSwapModal;
+    const newPerson=allUsers.find(u=>u.uid===ocSwapToUid);
+    if(!newPerson) return;
+    setOcSwapBusy(true);
+    try{
+      await updateDoc(doc(db,"onCallAssignments",assignment.id),{uid:ocSwapToUid,employeeName:newPerson.displayName});
+      setOcSwapModal(null); setOcSwapToUid("");
+    }catch{}
+    setOcSwapBusy(false);
+  }
+
+  async function handleOcDelete(){
+    if(!ocDeleteId) return;
+    try{ await deleteDoc(doc(db,"onCallAssignments",ocDeleteId)); }catch{}
+    setOcDeleteId(null);
+  }
 
   // Load shared Outlook token — shared utility handles caching, lock, and rotation
   useEffect(()=>{
@@ -680,6 +732,14 @@ export default function OnCallManagerPage({ adminMode = false }: { adminMode?: b
                         <div key={ev.id} style={{fontSize:11,fontWeight:600,background:c.bg,color:c.color,borderRadius:4,padding:"2px 5px",marginBottom:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
                           {n}
                         </div>);})}
+                      {date&&fsAssignments.filter(a=>a.date===date).map(a=>(
+                        <div key={a.id}
+                          onClick={e=>{e.stopPropagation();if(isAdmin)setOcActionModal({date:a.date,assignment:a});}}
+                          title={isAdmin?"Click for options":undefined}
+                          style={{fontSize:11,fontWeight:700,background:"#f5f3ff",color:"#6d28d9",border:"1px solid #ddd6fe",borderRadius:4,padding:"2px 5px",marginBottom:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",cursor:isAdmin?"pointer":"default"}}>
+                          {a.employeeName.split(" ")[0]} ✦
+                        </div>
+                      ))}
                       {clickableOncall&&<div style={{fontSize:9,color:"#1565c0",marginTop:2}}>tap to swap</div>}
                     </>}
                   </div>);
@@ -889,6 +949,101 @@ export default function OnCallManagerPage({ adminMode = false }: { adminMode?: b
         </div>
       )}
 
+      {/* ── FIRESTORE CHIP ACTION PICKER ── */}
+      {ocActionModal&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.45)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={()=>setOcActionModal(null)}>
+          <div style={{background:"white",borderRadius:16,padding:24,width:"100%",maxWidth:320,boxShadow:"0 8px 40px rgba(0,0,0,0.2)"}} onClick={e=>e.stopPropagation()}>
+            <h2 style={{fontSize:16,fontWeight:800,color:"#0d2e5e",marginBottom:4}}>On-Call Options</h2>
+            <p style={{fontSize:13,color:"#6b7280",marginBottom:20}}>
+              {new Date(ocActionModal.date+"T00:00:00").toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"})}
+              {" — "}<strong style={{color:"#111827"}}>{ocActionModal.assignment.employeeName}</strong>
+            </p>
+            <div style={{display:"flex",flexDirection:"column",gap:10}}>
+              <button style={{background:"#1565c0",color:"#fff",border:"none",borderRadius:8,padding:"11px 0",fontSize:14,fontWeight:700,cursor:"pointer"}}
+                onClick={()=>{setOcSwapModal({assignment:ocActionModal.assignment});setOcSwapToUid("");setOcActionModal(null);}}>
+                ↔ Swap
+              </button>
+              <button style={{background:"#7c3aed",color:"#fff",border:"none",borderRadius:8,padding:"11px 0",fontSize:14,fontWeight:700,cursor:"pointer"}}
+                onClick={()=>{setOcGiveModal({assignment:ocActionModal.assignment});setOcGiveToUid("");setOcActionModal(null);}}>
+                🎁 Give Away
+              </button>
+              <button style={{background:"transparent",color:"#dc2626",border:"1px solid #fca5a5",borderRadius:8,padding:"11px 0",fontSize:14,fontWeight:700,cursor:"pointer"}}
+                onClick={()=>{setOcDeleteId(ocActionModal.assignment.id);setOcActionModal(null);}}>
+                ✕ Delete
+              </button>
+            </div>
+            <div style={{marginTop:14,textAlign:"right"}}>
+              <button onClick={()=>setOcActionModal(null)} style={{...btnS("#6b7280"),fontSize:13}}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── FIRESTORE SWAP MODAL ── */}
+      {ocSwapModal&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.45)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={()=>{setOcSwapModal(null);setOcSwapToUid("");}}>
+          <div style={{background:"white",borderRadius:16,padding:24,width:"100%",maxWidth:380,boxShadow:"0 8px 40px rgba(0,0,0,0.2)"}} onClick={e=>e.stopPropagation()}>
+            <h2 style={{fontSize:17,fontWeight:800,color:"#0d2e5e",marginBottom:4}}>Swap On-Call Day</h2>
+            <p style={{fontSize:13,color:"#6b7280",marginBottom:16}}>
+              {new Date(ocSwapModal.assignment.date+"T00:00:00").toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"})}
+              {" — reassign to someone else"}
+            </p>
+            <label style={lbl}>Reassign to</label>
+            <select value={ocSwapToUid} onChange={e=>setOcSwapToUid(e.target.value)} style={inp}>
+              <option value="">Select employee…</option>
+              {allUsers.filter(u=>u.uid!==ocSwapModal.assignment.uid).map(u=><option key={u.uid} value={u.uid}>{u.displayName}</option>)}
+            </select>
+            <div style={{display:"flex",gap:10,marginTop:18}}>
+              <button onClick={()=>{setOcSwapModal(null);setOcSwapToUid("");}} style={btnS("#6b7280")}>Cancel</button>
+              <button onClick={handleOcSwap} disabled={ocSwapBusy||!ocSwapToUid} style={{...btnS("#1565c0"),opacity:(ocSwapBusy||!ocSwapToUid)?0.5:1}}>
+                {ocSwapBusy?"Saving…":"Swap"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── FIRESTORE GIVE AWAY MODAL ── */}
+      {ocGiveModal&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.45)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={()=>{setOcGiveModal(null);setOcGiveToUid("");}}>
+          <div style={{background:"white",borderRadius:16,padding:24,width:"100%",maxWidth:380,boxShadow:"0 8px 40px rgba(0,0,0,0.2)"}} onClick={e=>e.stopPropagation()}>
+            <h2 style={{fontSize:17,fontWeight:800,color:"#0d2e5e",marginBottom:4}}>Give Away On-Call Day</h2>
+            <p style={{fontSize:13,color:"#6b7280",marginBottom:16}}>
+              {new Date(ocGiveModal.assignment.date+"T00:00:00").toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"})}
+              {" — "}<strong style={{color:"#111827"}}>{ocGiveModal.assignment.employeeName}</strong> gives this day away
+            </p>
+            <label style={lbl}>Give to</label>
+            <select value={ocGiveToUid} onChange={e=>setOcGiveToUid(e.target.value)} style={inp}>
+              <option value="">Select employee…</option>
+              {allUsers.filter(u=>u.uid!==ocGiveModal.assignment.uid).map(u=><option key={u.uid} value={u.uid}>{u.displayName}</option>)}
+            </select>
+            <div style={{display:"flex",gap:10,marginTop:18}}>
+              <button onClick={()=>{setOcGiveModal(null);setOcGiveToUid("");}} style={btnS("#6b7280")}>Cancel</button>
+              <button onClick={handleOcGiveAway} disabled={ocGiveBusy||!ocGiveToUid} style={{...btnS("#7c3aed"),opacity:(ocGiveBusy||!ocGiveToUid)?0.5:1}}>
+                {ocGiveBusy?"Saving…":"Give Away"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── FIRESTORE DELETE CONFIRM ── */}
+      {ocDeleteId&&(()=>{
+        const a=fsAssignments.find(x=>x.id===ocDeleteId);
+        return(
+          <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.45)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={()=>setOcDeleteId(null)}>
+            <div style={{background:"white",borderRadius:16,padding:24,width:"100%",maxWidth:340,boxShadow:"0 8px 40px rgba(0,0,0,0.2)"}} onClick={e=>e.stopPropagation()}>
+              <h2 style={{fontSize:17,fontWeight:800,color:"#dc2626",marginBottom:8}}>Delete On-Call Assignment?</h2>
+              {a&&<p style={{fontSize:13,color:"#374151",marginBottom:20}}>{a.employeeName} — {new Date(a.date+"T00:00:00").toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"})}</p>}
+              <div style={{display:"flex",gap:10}}>
+                <button onClick={()=>setOcDeleteId(null)} style={btnS("#6b7280")}>Cancel</button>
+                <button onClick={handleOcDelete} style={btnS("#dc2626")}>Delete</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* ── SWAP MODAL ── */}
       {swapModal&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.45)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center"}}>
@@ -1008,8 +1163,6 @@ function OnCallAlertsPanel({ db }: { db:any }) {
   const [loaded,setLoaded]=useState(false);
   const [running,setRunning]=useState(false);
   const [runResult,setRunResult]=useState("");
-  const [sendingReminder,setSendingReminder]=useState(false);
-  const [reminderResult,setReminderResult]=useState("");
   useEffect(()=>{
     getDoc(doc(db,"settings","onCallConfig")).then(s=>{ setPhone(s.data()?.alertPhone||""); setLoaded(true); }).catch(()=>setLoaded(true));
   },[]);
@@ -1028,16 +1181,6 @@ function OnCallAlertsPanel({ db }: { db:any }) {
     }catch(e:any){ setRunResult(`Error: ${e?.message||"failed"}`); }
     setRunning(false);
   }
-  async function sendReminderNow(){
-    setSendingReminder(true); setReminderResult("");
-    try{
-      const res:any=await callOncallReminderNow({});
-      const d=res?.data||{};
-      if(d.ok===false){ setReminderResult(`⚠️ ${d.reason||"Could not send."}`); }
-      else{ setReminderResult(`✅ ${d.message||"On-call reminder sent."}`); }
-    }catch(e:any){ setReminderResult(`Error: ${e?.message||"failed"}`); }
-    setSendingReminder(false);
-  }
   if(!loaded) return null;
   return(
     <div style={{background:"white",borderRadius:12,padding:20,boxShadow:"0 1px 4px rgba(0,0,0,0.07)",marginBottom:16}}>
@@ -1046,12 +1189,10 @@ function OnCallAlertsPanel({ db }: { db:any }) {
       <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
         <input type="tel" value={phone} onChange={e=>setPhone(e.target.value)} placeholder="905-555-1234" style={{...inp,maxWidth:200}}/>
         <button onClick={save} style={btnS("#1565c0")}>Save</button>
-        <button onClick={runNow} disabled={running||sendingReminder} style={btnS("#6b7280")}>{running?"Checking…":"Run Conflict Check"}</button>
-        <button onClick={sendReminderNow} disabled={running||sendingReminder} style={btnS("#7c3aed")}>{sendingReminder?"Sending…":"Send On-Call Reminder"}</button>
+        <button onClick={runNow} disabled={running} style={btnS("#6b7280")}>{running?"Checking…":"Run Conflict Check"}</button>
         {saved&&<span style={{fontSize:12,color:"#059669",fontWeight:600}}>Saved</span>}
       </div>
       {runResult&&<p style={{fontSize:12,color:"#374151",marginTop:10}}>{runResult}</p>}
-      {reminderResult&&<p style={{fontSize:12,color:"#374151",marginTop:10}}>{reminderResult}</p>}
     </div>
   );
 }
