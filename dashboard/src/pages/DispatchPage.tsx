@@ -1121,6 +1121,7 @@ function Row({ tech, days, byCell, calMap, onAdd, onOpen, onSwap, canEdit }: {
       {days.map(d => {
         const cellVisits = byCell[`${tech.uid}|${d}`] || [];
         const chips = calMap[`${firstName}|${d}`] || [];
+        const isToday = d === todayStr();
         return (
           <div key={d} style={s.cell} onClick={() => canEdit && onAdd(d)} title={canEdit ? "Click to add a visit" : ""}>
             {chips.map((chip, i) => (
@@ -1129,12 +1130,13 @@ function Row({ tech, days, byCell, calMap, onAdd, onOpen, onSwap, canEdit }: {
                 title={chip.type === "oncall" ? "Click to swap on-call" : undefined}
                 style={{
                   borderRadius: 5, padding: "4px 8px", marginBottom: 5, fontSize: 11, fontWeight: 700,
-                  background: chip.type === "vacation" ? "#fff7ed" : "#f5f3ff",
-                  color:      chip.type === "vacation" ? "#c2410c"  : "#6d28d9",
-                  border:     `1px solid ${chip.type === "vacation" ? "#fed7aa" : "#ddd6fe"}`,
+                  background: chip.type === "vacation" ? "#fff7ed" : isToday ? "#7c3aed" : "#f5f3ff",
+                  color:      chip.type === "vacation" ? "#c2410c"  : isToday ? "#fff"    : "#6d28d9",
+                  border:     chip.type === "vacation" ? "1px solid #fed7aa" : isToday ? "2px solid #6d28d9" : "1px solid #ddd6fe",
                   cursor:     chip.type === "oncall" ? "pointer" : "default",
+                  boxShadow:  chip.type === "oncall" && isToday ? "0 0 0 3px #c4b5fd" : undefined,
                 }}>
-                {chip.type === "vacation" ? "☀ Vacation" : "📞 On Call"}
+                {chip.type === "vacation" ? "☀ Vacation" : isToday ? "📞 On Call TODAY" : "📞 On Call"}
               </div>
             ))}
             {cellVisits.map(v => {
