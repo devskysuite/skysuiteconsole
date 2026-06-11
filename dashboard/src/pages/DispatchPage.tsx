@@ -419,10 +419,10 @@ export default function DispatchPage() {
     return { vacations, oncall };
   }, [monthCalMap]);
 
-  // Firestore assignment keyed by date (for on-call monthly view)
+  // Firestore assignments keyed by date — all entries so duplicates are visible
   const assignmentByDate = useMemo(() => {
-    const m: Record<string, OnCallAssignment> = {};
-    for (const a of assignments) m[a.date] = a;
+    const m: Record<string, OnCallAssignment[]> = {};
+    for (const a of assignments) (m[a.date] ||= []).push(a);
     return m;
   }, [assignments]);
 
@@ -732,10 +732,10 @@ export default function DispatchPage() {
 
         function OnCallDayCell({ d, overflow }: { d: string; overflow?: boolean }) {
           const isToday = d === todayYMD;
-          const assignment = !overflow ? assignmentByDate[d] : undefined;
-          const outlookName = !overflow && !assignment ? monthSummary.oncall[d] : undefined;
+          const dayAssignments = !overflow ? (assignmentByDate[d] || []) : [];
+          const outlookName = !overflow && dayAssignments.length === 0 ? monthSummary.oncall[d] : undefined;
           const dayNum = parseInt(d.slice(8));
-          const canAdd = !overflow && isAdmin && !assignment;
+          const canAdd = !overflow && isAdmin && dayAssignments.length === 0;
           return (
             <div
               style={{ background: overflow ? "#f9fafb" : "#fff", minHeight: 90, padding: "6px 8px", cursor: canAdd ? "pointer" : "default" }}
@@ -743,15 +743,16 @@ export default function DispatchPage() {
               title={canAdd ? "Click to assign on call" : undefined}
             >
               <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 4, color: isToday ? "#fff" : overflow ? "#c0c8d4" : "#374151", background: isToday ? "#1565c0" : "transparent", borderRadius: isToday ? "50%" : 0, width: isToday ? 22 : "auto", height: isToday ? 22 : "auto", display: "flex", alignItems: "center", justifyContent: "center" }}>{dayNum}</div>
-              {assignment && (
+              {dayAssignments.map(assignment => (
                 <div
+                  key={assignment.id}
                   style={{ ...chipBase, background: "#f5f3ff", color: "#6d28d9", border: "1px solid #ddd6fe", cursor: isAdmin ? "pointer" : "default" }}
                   onClick={e => { e.stopPropagation(); if (isAdmin) setOnCallActionModal({ date: d, assignment }); }}
                   title={isAdmin ? "Click for options" : undefined}
                 >
                   {assignment.employeeName}
                 </div>
-              )}
+              ))}
               {outlookName && (
                 <div style={{ ...chipBase, background: "#f5f3ff", color: "#8b5cf6", border: "1px solid #ddd6fe", opacity: 0.65 }} title="Outlook only">
                   {outlookName}

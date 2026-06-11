@@ -34,6 +34,7 @@ async function getRotationOnCallName(today) {
 // so an admin can resend it any time the scheduler misses a run.
 export const oncallReminderNow = onCall({ cors: true }, async (request) => {
   if (!request.auth) throw new HttpsError("unauthenticated", "Login required.");
+  const adminOnly = !!request.data?.adminOnly;
 
   try {
     const token = await getOutlookAccessToken();
@@ -89,8 +90,9 @@ export const oncallReminderNow = onCall({ cors: true }, async (request) => {
 
     const smsSent = [];
 
-    // 1. Remind each on-call person (skip anyone on vacation — that's a conflict)
+    // 1. Remind each on-call person (skip if adminOnly or on vacation)
     for (const fn of onCallNames) {
+      if (adminOnly) { smsSent.push({ to: fn, msg: "skipped — admin-only mode" }); continue; }
       if (vacationNames.has(fn)) {
         smsSent.push({ to: fn, msg: "skipped — conflict (on vacation)" });
         continue;

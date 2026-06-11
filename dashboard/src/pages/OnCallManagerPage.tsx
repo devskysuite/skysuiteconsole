@@ -169,7 +169,7 @@ export default function OnCallManagerPage({ adminMode = false }: { adminMode?: b
   const [backupRefresh,setBackupRefresh]=useState(0);
 
   // ── Manual trigger state (emergency buttons) ───────────────────────────────
-  const [triggerRunning,setTriggerRunning]=useState<"conflict"|"reminder"|null>(null);
+  const [triggerRunning,setTriggerRunning]=useState<"conflict"|"reminder"|"admincheck"|null>(null);
   const [triggerResult,setTriggerResult]=useState<{type:string;msg:string;ok:boolean}|null>(null);
 
   async function runConflictNow(){
@@ -184,15 +184,17 @@ export default function OnCallManagerPage({ adminMode = false }: { adminMode?: b
     setTriggerRunning(null);
   }
 
-  async function runReminderNow(){
-    setTriggerRunning("reminder"); setTriggerResult(null);
+  async function runReminderNow(adminOnly=false){
+    setTriggerRunning(adminOnly?"admincheck":"reminder"); setTriggerResult(null);
     try{
-      const res:any=await callOncallReminderNow({});
+      const res:any=await callOncallReminderNow({adminOnly});
       const d=res?.data||{};
       const onCall:string[]=d.onCall||[];
       const sent=(d.smsSent||[]).filter((s:any)=>s.msg==="sent").length;
       const msg=onCall.length
-        ? `✅ Reminder sent. On-call today: ${onCall.join(", ")}. ${sent} SMS sent.`
+        ? adminOnly
+          ? `✅ Admin notified. On-call today: ${onCall.join(", ")}.`
+          : `✅ Reminder sent. On-call today: ${onCall.join(", ")}. ${sent} SMS sent.`
         : `✅ No one scheduled on call today — admin notified.`;
       setTriggerResult({type:"reminder",msg,ok:true});
     }catch(e:any){ setTriggerResult({type:"reminder",msg:`Error: ${e?.message||"failed"}`,ok:false}); }
@@ -614,11 +616,18 @@ export default function OnCallManagerPage({ adminMode = false }: { adminMode?: b
             {triggerRunning==="conflict"?"Checking…":"Run Conflict Check"}
           </button>
           <button
-            onClick={runReminderNow}
+            onClick={()=>runReminderNow(false)}
             disabled={triggerRunning!==null}
             style={{background:triggerRunning==="reminder"?"#9ca3af":"#1565c0",color:"#fff",border:"none",borderRadius:6,padding:"5px 14px",fontSize:12,fontWeight:700,cursor:triggerRunning?"not-allowed":"pointer"}}
           >
             {triggerRunning==="reminder"?"Sending…":"Send On-Call Reminder"}
+          </button>
+          <button
+            onClick={()=>runReminderNow(true)}
+            disabled={triggerRunning!==null}
+            style={{background:triggerRunning==="admincheck"?"#9ca3af":"#059669",color:"#fff",border:"none",borderRadius:6,padding:"5px 14px",fontSize:12,fontWeight:700,cursor:triggerRunning?"not-allowed":"pointer"}}
+          >
+            {triggerRunning==="admincheck"?"Checking…":"Admin Check Only"}
           </button>
           {triggerResult&&(
             <span style={{fontSize:12,color:triggerResult.ok?"#059669":"#dc2626",fontWeight:600}}>
