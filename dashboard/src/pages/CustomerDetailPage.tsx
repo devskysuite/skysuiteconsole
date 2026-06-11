@@ -228,29 +228,32 @@ export default function CustomerDetailPage() {
     return unsub;
   }, [customer?.name]);
 
-  // Visits — reload whenever jobsList changes
+  // Visits live listeners — one onSnapshot per batch of 10 job IDs
   useEffect(() => {
     if (!jobsReady) return;
     if (jobsList.length === 0) { setVisitsList([]); setVisitsReady(true); return; }
-    setVisitsReady(false);
     const jobIds = jobsList.map(j => j.id);
     const jobMap = Object.fromEntries(jobsList.map(j => [j.id, j.propertyName]));
     const batches: string[][] = [];
     for (let i = 0; i < jobIds.length; i += 10) batches.push(jobIds.slice(i, i + 10));
-    Promise.all(
-      batches.map(batch => getDocs(query(collection(db, "dispatchVisits"), where("jobId", "in", batch))).catch(() => null))
-    ).then(snaps => {
-      const all: VisitRow[] = (snaps.filter(Boolean) as NonNullable<typeof snaps[0]>[]).flatMap(snap =>
-        snap.docs.map(d => ({
-          id: d.id,
-          propertyName: jobMap[d.data().jobId] || "",
-          ...(d.data() as Omit<VisitRow,"id"|"propertyName">),
-        }))
-      );
-      all.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
-      setVisitsList(all);
-      setVisitsReady(true);
-    });
+    const batchResults = new Map<number, VisitRow[]>();
+    const unsubs = batches.map((batch, idx) =>
+      onSnapshot(
+        query(collection(db, "dispatchVisits"), where("jobId", "in", batch)),
+        snap => {
+          batchResults.set(idx, snap.docs.map(d => ({
+            id: d.id,
+            propertyName: jobMap[d.data().jobId] || "",
+            ...(d.data() as Omit<VisitRow,"id"|"propertyName">),
+          })));
+          const all = Array.from(batchResults.values()).flat();
+          all.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+          setVisitsList(all);
+          setVisitsReady(true);
+        }
+      )
+    );
+    return () => unsubs.forEach(u => u());
   }, [jobsList, jobsReady]);
 
   async function toggleCreditHold() {
