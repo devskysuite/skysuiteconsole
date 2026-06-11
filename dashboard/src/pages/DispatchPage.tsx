@@ -34,7 +34,7 @@ type Visit = {
 type Tech = { uid: string; name: string; section?: string };
 
 // Calendar events pulled from Outlook (vacation / on-call)
-type CalChip = { type: "vacation" | "oncall"; label: string };
+type CalChip = { type: "vacation" | "oncall"; label: string; eventId?: string };
 type CalMap  = Record<string, CalChip[]>; // key: "firstName|YYYY-MM-DD"
 
 // Status → label + colors (modeled on the dispatch board screenshot)
@@ -158,6 +158,9 @@ export default function DispatchPage() {
     return unsub;
   }, []);
 
+  // force re-fetch after writing to Outlook (add / delete vacation)
+  const [monthRefreshKey, setMonthRefreshKey] = useState(0);
+
   // Monthly Outlook fetch — runs when on-call or vacation view is open, re-runs on month change
   useEffect(() => {
     if (boardView === "board") return;
@@ -181,7 +184,7 @@ export default function DispatchPage() {
         const CAL_ID = "AAMkADgyOGUwMDUyLTNiZjMtNGQzNi1hNTgwLTQ2M2IzYzE2YmQ5MgBGAAAAAACGxuDePTlOQawDDU8UfW0gBwBxt6lSDH0kQY0tk4wDjNk8AAAAAAEGAABxt6lSDH0kQY0tk4wDjNk8AAALmQObAAA=";
         const headers = { Authorization: `Bearer ${token}`, Prefer: 'outlook.timezone="America/Toronto"' };
         const evs: any[] = [];
-        let url = `https://graph.microsoft.com/v1.0/me/calendars/${encodeURIComponent(CAL_ID)}/calendarView?startDateTime=${start}T00:00:00&endDateTime=${end}T00:00:00&$top=200&$select=subject,start,end`;
+        let url = `https://graph.microsoft.com/v1.0/me/calendars/${encodeURIComponent(CAL_ID)}/calendarView?startDateTime=${start}T00:00:00&endDateTime=${end}T00:00:00&$top=200&$select=id,subject,start,end`;
         while (url) {
           const res = await fetch(url, { headers });
           const json = await res.json();
@@ -217,7 +220,7 @@ export default function DispatchPage() {
             const d = fmtYMD(cur);
             if (d >= start && d < end) {
               const key = `${firstName}|${d}`;
-              (map[key] ||= []).push({ type, label: subj });
+              (map[key] ||= []).push({ type, label: subj, eventId: ev.id });
             }
             cur.setDate(cur.getDate() + 1);
           }
@@ -226,7 +229,7 @@ export default function DispatchPage() {
       } catch {}
     }).catch(() => {});
     return () => { cancelled = true; };
-  }, [boardView, monthAnchor]);
+  }, [boardView, monthAnchor, monthRefreshKey]);
 
   // All users for swap dropdown
   useEffect(() => {
@@ -268,7 +271,7 @@ export default function DispatchPage() {
         const CAL_ID = "AAMkADgyOGUwMDUyLTNiZjMtNGQzNi1hNTgwLTQ2M2IzYzE2YmQ5MgBGAAAAAACGxuDePTlOQawDDU8UfW0gBwBxt6lSDH0kQY0tk4wDjNk8AAAAAAEGAABxt6lSDH0kQY0tk4wDjNk8AAALmQObAAA=";
         const headers = { Authorization: `Bearer ${token}`, Prefer: 'outlook.timezone="America/Toronto"' };
         const evs: any[] = [];
-        let url = `https://graph.microsoft.com/v1.0/me/calendars/${encodeURIComponent(CAL_ID)}/calendarView?startDateTime=${start}T00:00:00&endDateTime=${endStr}T00:00:00&$top=200&$select=subject,start,end`;
+        let url = `https://graph.microsoft.com/v1.0/me/calendars/${encodeURIComponent(CAL_ID)}/calendarView?startDateTime=${start}T00:00:00&endDateTime=${endStr}T00:00:00&$top=200&$select=id,subject,start,end`;
         while (url) {
           const res  = await fetch(url, { headers });
           const json = await res.json();
@@ -314,7 +317,7 @@ export default function DispatchPage() {
             const d = fmtYMD(cur);
             if (d >= start && d <= end) {
               const key = `${firstName}|${d}`;
-              (map[key] ||= []).push({ type, label: subj });
+              (map[key] ||= []).push({ type, label: subj, eventId: ev.id });
             }
             cur.setDate(cur.getDate() + 1);
           }
@@ -460,31 +463,83 @@ export default function DispatchPage() {
     setDeleteOnCallId(null);
   }
 
-  // Vacation monthly CRUD handlers
+  // Vacation entries from Outlook calMap — keyed by date with eventId for deletion
+  const monthVacItems = useMemo(() => {
+    const m: Record<string, { name: string; eventId: string }[]> = {};
+    for (const [key, chips] of Object.entries(monthCalMap)) {
+      const [, date] = key.split("|");
+      for (const chip of chips) {
+        if (chip.type === "vacation" && chip.eventId) {
+          const mx = chip.label.match(/vacation\s*[-–]\s*(.+)/i);
+          const name = mx ? mx[1].trim() : key.split("|")[0];
+          const existing = (m[date] ||= []);
+          if (!existing.some(x => x.eventId === chip.eventId))
+            existing.push({ name, eventId: chip.eventId });
+        }
+      }
+    }
+    return m;
+  }, [monthCalMap]);
+
+  const CAL_ID = "AAMkADgyOGUwMDUyLTNiZjMtNGQzNi1hNTgwLTQ2M2IzYzE2YmQ5MgBGAAAAAACGxuDePTlOQawDDU8UfW0gBwBxt6lSDH0kQY0tk4wDjNk8AAAAAAEGAABxt6lSDH0kQY0tk4wDjNk8AAALmQObAAA=";
+
+  // Vacation monthly CRUD handlers — write directly to Outlook via Graph API
   async function handleAddVacation() {
     if (!addVacModal || !addVacName.trim()) return;
     setAddVacBusy(true);
     try {
-      await addDoc(collection(db, "timeOffRequests"), {
-        employeeName: addVacName.trim(),
-        employeeEmail: "",
-        uid: addVacUid || "",
-        startDate: addVacModal,
-        endDate: addVacEnd || addVacModal,
-        reason: "Added from Job Board",
-        status: "APPROVED",
-        approvedByUid: auth.currentUser?.uid || "",
-        createdAt: serverTimestamp(),
-      });
+      const token = await getOutlookToken();
+      if (!token || token === "disconnected") throw new Error("no token");
+      const endDate = addVacEnd || addVacModal;
+      // Graph API "end" for all-day events is exclusive (next day)
+      const endExclusive = fmtYMD(new Date(new Date(endDate + "T12:00:00").getTime() + 86_400_000));
+      const res = await fetch(
+        `https://graph.microsoft.com/v1.0/me/calendars/${encodeURIComponent(CAL_ID)}/events`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+            Prefer: 'outlook.timezone="America/Toronto"',
+          },
+          body: JSON.stringify({
+            subject: `Vacation - ${addVacName.trim()}`,
+            isAllDay: true,
+            start: { dateTime: `${addVacModal}T00:00:00`, timeZone: "America/Toronto" },
+            end:   { dateTime: `${endExclusive}T00:00:00`, timeZone: "America/Toronto" },
+          }),
+        }
+      );
+      if (!res.ok) throw new Error(await res.text());
+      setMonthRefreshKey(k => k + 1);
       setAddVacModal(null); setAddVacName(""); setAddVacEnd(""); setAddVacUid("");
-    } catch {}
+    } catch {
+      alert("Could not create Outlook event. Check your calendar connection.");
+    }
     setAddVacBusy(false);
   }
 
   async function handleDeleteVacation() {
     if (!deleteVacId) return;
-    try { await deleteDoc(doc(db, "timeOffRequests", deleteVacId)); }
-    catch {}
+    // deleteVacId is either a Firestore doc ID (legacy) or an Outlook event ID
+    // Firestore legacy entries start with a predictable short ID; Outlook IDs are long AAMk... strings
+    const isOutlook = deleteVacId.length > 80;
+    try {
+      if (isOutlook) {
+        const token = await getOutlookToken();
+        if (!token || token === "disconnected") throw new Error("no token");
+        const res = await fetch(
+          `https://graph.microsoft.com/v1.0/me/calendars/${encodeURIComponent(CAL_ID)}/events/${encodeURIComponent(deleteVacId)}`,
+          { method: "DELETE", headers: { Authorization: `Bearer ${token}` } }
+        );
+        if (!res.ok && res.status !== 404) throw new Error(await res.text());
+        setMonthRefreshKey(k => k + 1);
+      } else {
+        await deleteDoc(doc(db, "timeOffRequests", deleteVacId));
+      }
+    } catch {
+      alert("Could not delete the vacation entry.");
+    }
     setDeleteVacId(null);
   }
 
@@ -678,21 +733,24 @@ export default function DispatchPage() {
 
         function VacDayCell({ d, overflow }: { d: string; overflow?: boolean }) {
           const isToday = d === todayYMD;
-          const outlookNames = !overflow ? (monthSummary.vacations[d] || []) : [];
-          const fsVacs       = !overflow ? (vacByDate[d] || []) : [];
+          // Outlook vacation with eventIds — fully editable
+          const outlookVacs = !overflow ? (monthVacItems[d] || []) : [];
+          // Legacy Firestore-only entries (added before Outlook write support)
+          const fsVacs = !overflow ? (vacByDate[d] || []).filter(v => !outlookVacs.some(() => false)) : [];
           const dayNum = parseInt(d.slice(8));
           return (
             <div style={{ background: overflow ? "#f9fafb" : "#fff", minHeight: 90, padding: "6px 8px" }}>
               <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 4, color: isToday ? "#fff" : overflow ? "#c0c8d4" : "#374151", background: isToday ? "#1565c0" : "transparent", borderRadius: isToday ? "50%" : 0, width: isToday ? 22 : "auto", height: isToday ? 22 : "auto", display: "flex", alignItems: "center", justifyContent: "center" }}>{dayNum}</div>
-              {outlookNames.map((name, i) => (
-                <div key={"o" + i} style={{ background: "#fff7ed", color: "#c2410c", border: "1px solid #fed7aa", borderRadius: 4, padding: "2px 6px", fontSize: 11, fontWeight: 700, marginBottom: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const, opacity: 0.75 }} title="From Outlook">
-                  {name}
+              {outlookVacs.map((v, i) => (
+                <div key={"o" + i} style={{ background: "#fff7ed", color: "#c2410c", border: "1px solid #fed7aa", borderRadius: 4, padding: "2px 4px 2px 6px", fontSize: 11, fontWeight: 700, marginBottom: 2, display: "flex", alignItems: "center", gap: 2 }}>
+                  <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>{v.name}</span>
+                  {isAdmin && <button style={{ ...btnX, color: "#c2410c" }} title="Delete from Outlook" onClick={e => { e.stopPropagation(); setDeleteVacId(v.eventId); }}>✕</button>}
                 </div>
               ))}
               {fsVacs.map((v, i) => (
                 <div key={"f" + i} style={{ background: "#fff7ed", color: "#c2410c", border: "1px solid #fed7aa", borderRadius: 4, padding: "2px 4px 2px 6px", fontSize: 11, fontWeight: 700, marginBottom: 2, display: "flex", alignItems: "center", gap: 2 }}>
                   <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>{v.name}</span>
-                  {isAdmin && <button style={{ ...btnX, color: "#c2410c" }} title="Delete vacation" onClick={e => { e.stopPropagation(); setDeleteVacId(v.id); }}>✕</button>}
+                  {isAdmin && <button style={{ ...btnX, color: "#c2410c" }} title="Delete" onClick={e => { e.stopPropagation(); setDeleteVacId(v.id); }}>✕</button>}
                 </div>
               ))}
               {!overflow && isAdmin && (
@@ -717,8 +775,7 @@ export default function DispatchPage() {
                 <div style={{ display: "flex", alignItems: "center", gap: 5 }}><div style={{ width: 12, height: 12, borderRadius: 2, background: "#f5f3ff", border: "1px solid #ddd6fe" }} /> On call (Firestore)</div>
                 <div style={{ display: "flex", alignItems: "center", gap: 5 }}><div style={{ width: 12, height: 12, borderRadius: 2, background: "#f5f3ff", border: "1px solid #ddd6fe", opacity: 0.5 }} /> Outlook only (read-only)</div>
               </>) : (<>
-                <div style={{ display: "flex", alignItems: "center", gap: 5 }}><div style={{ width: 12, height: 12, borderRadius: 2, background: "#fff7ed", border: "1px solid #fed7aa" }} /> Vacation (Firestore — editable)</div>
-                <div style={{ display: "flex", alignItems: "center", gap: 5 }}><div style={{ width: 12, height: 12, borderRadius: 2, background: "#fff7ed", border: "1px solid #fed7aa", opacity: 0.5 }} /> Outlook (read-only)</div>
+                <div style={{ display: "flex", alignItems: "center", gap: 5 }}><div style={{ width: 12, height: 12, borderRadius: 2, background: "#fff7ed", border: "1px solid #fed7aa" }} /> Vacation (Outlook — add / delete)</div>
               </>)}
             </div>
           </div>
