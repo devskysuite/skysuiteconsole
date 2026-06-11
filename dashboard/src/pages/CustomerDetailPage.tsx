@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   addDoc, collection, deleteDoc, doc,
   getDocs, getDoc, limit, onSnapshot, query, updateDoc, setDoc, where,
@@ -73,6 +73,12 @@ const TYPE_COLORS: Record<string, { background: string; color: string }> = {
 
 const ALL_TABS = ["Properties","Contacts","Jobs & Visits","Service Agreements","Projects","Quotes","Accounting","Attachments","History"] as const;
 type Tab = typeof ALL_TABS[number];
+const TAB_SLUG: Record<Tab, string> = {
+  "Properties": "properties", "Contacts": "contacts", "Jobs & Visits": "jobs",
+  "Service Agreements": "service", "Projects": "projects", "Quotes": "quotes",
+  "Accounting": "accounting", "Attachments": "attachments", "History": "history",
+};
+const SLUG_TAB = Object.fromEntries(Object.entries(TAB_SLUG).map(([k, v]) => [v, k])) as Record<string, Tab>;
 
 // ── Building blocks ───────────────────────────────────────────────────────────
 function SideLabel({ children }: { children: React.ReactNode }) {
@@ -126,10 +132,12 @@ export default function CustomerDetailPage() {
   const { customerId } = useParams<{ customerId: string }>();
   const navigate      = useNavigate();
   const isAdmin       = useIsAdmin();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tab = (SLUG_TAB[searchParams.get("tab") ?? ""] ?? "Properties") as Tab;
+  function setTab(t: Tab) { setSearchParams({ tab: TAB_SLUG[t] }, { replace: true }); }
 
   const [customer,       setCustomer]       = useState<Customer | null>(null);
   const [loading,        setLoading]        = useState(true);
-  const [tab,            setTab]            = useState<Tab>("Properties");
   const [properties,     setProperties]     = useState<Property[]>([]);
   const [contacts,       setContacts]       = useState<Contact[]>([]);
   const [notes,          setNotes]          = useState("");
