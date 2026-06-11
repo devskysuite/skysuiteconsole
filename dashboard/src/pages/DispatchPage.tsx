@@ -1083,15 +1083,14 @@ export default function DispatchPage() {
 
             {swapToUid && (
               <>
-                <label style={s.lbl}>Offer a day in exchange (optional)</label>
-                <select style={s.inp} value={swapOfferDate} onChange={e => setSwapOfferDate(e.target.value)}>
-                  <option value="">None — just take over the day</option>
-                  {requesterOnCallDays.map(d => (
-                    <option key={d.id} value={d.date}>
-                      {new Date(d.date + "T00:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
-                    </option>
-                  ))}
-                </select>
+                <label style={s.lbl}>Give them a day in exchange <span style={{ fontWeight: 400, color: "#9ca3af" }}>(optional)</span></label>
+                <input
+                  type="date"
+                  style={s.inp}
+                  value={swapOfferDate}
+                  onChange={e => setSwapOfferDate(e.target.value)}
+                />
+                <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 3, marginBottom: 6 }}>Leave blank to hand off the day without a trade back</div>
               </>
             )}
 
