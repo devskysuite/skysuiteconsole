@@ -1204,6 +1204,7 @@ function VisitModal({ init, onClose }: { init: { techUid: string; techName: stri
   const [jobId, setJobId] = useState(v?.jobId || "");
   const [description, setDescription] = useState(v?.description || "");
   const [descError, setDescError] = useState(false);
+  const [department, setDepartment] = useState(v?.department || "");
   const [busy, setBusy] = useState(false);
   const [rescheduleMode, setRescheduleMode] = useState(false);
   const [rescheduleDate, setRescheduleDate] = useState(v?.date || init.date);
@@ -1286,7 +1287,7 @@ function VisitModal({ init, onClose }: { init: { techUid: string; techName: stri
     const base = {
       techUid: init.techUid, techName: init.techName,
       title: title.trim(), jobNumber: jobNumber.trim(), jobId: jobId || undefined,
-      description: description.trim(),
+      description: description.trim(), department: department.trim(),
       start, end, priority, flagged, notes: notes.trim(),
     };
     try {
@@ -1408,6 +1409,14 @@ function VisitModal({ init, onClose }: { init: { techUid: string; techName: stri
           <div style={{ flex: 1 }}><label style={s.lbl}>Job #</label><input style={s.inp} value={jobNumber} onChange={e => setJobNumber(e.target.value)} placeholder="#P25-0093" /></div>
           <div style={{ flex: 1 }}><label style={s.lbl}>{v ? "Date" : "Start Date"}</label><input type="date" style={s.inp} value={date} onChange={e => setDate(e.target.value)} /></div>
         </div>
+
+        <label style={s.lbl}>Department</label>
+        <select style={s.inp} value={department} onChange={e => setDepartment(e.target.value)}>
+          <option value="">— Select department —</option>
+          {["Electrical","Automation","Industrial","Commercial","HVAC","Plumbing","Maintenance","General","Other"].map(d => (
+            <option key={d} value={d}>{d}</option>
+          ))}
+        </select>
 
         {!v && (
           <>
