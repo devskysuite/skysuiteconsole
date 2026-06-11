@@ -68,9 +68,11 @@ export const oncallReminderSms = onSchedule(
     const assignSnap = await db.collection("onCallAssignments").where("date", "==", today).get();
     let onCallNames;
     if (!assignSnap.empty) {
-      onCallNames = new Set(
-        assignSnap.docs.map(d => (d.data().employeeName || "").split(/\s+/)[0].toLowerCase()).filter(Boolean)
-      );
+      // If duplicates exist (old data bug), only use the most-recently created doc
+      const docs = assignSnap.docs.sort((a, b) => (b.data().createdAt?.toMillis?.() ?? 0) - (a.data().createdAt?.toMillis?.() ?? 0));
+      if (docs.length > 1) console.warn(`[oncallReminder] ${docs.length} assignments found for ${today} — using most recent.`);
+      const name = (docs[0].data().employeeName || "").split(/\s+/)[0].toLowerCase();
+      onCallNames = name ? new Set([name]) : new Set();
     } else {
       const rotPerson = await getRotationOnCallName(today);
       if (rotPerson) {

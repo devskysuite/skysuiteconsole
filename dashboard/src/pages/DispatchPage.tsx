@@ -450,6 +450,9 @@ export default function DispatchPage() {
     if (!person) return;
     setAddOnCallBusy(true);
     try {
+      // Delete any existing assignments for this date before adding the new one
+      const existing = await getDocs(query(collection(db, "onCallAssignments"), where("date", "==", addOnCallModal)));
+      await Promise.all(existing.docs.map(d => deleteDoc(doc(db, "onCallAssignments", d.id))));
       await addDoc(collection(db, "onCallAssignments"), {
         date: addOnCallModal,
         uid: addOnCallUid,
