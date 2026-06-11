@@ -54,6 +54,7 @@ export interface TravelData {
 export interface QuoteSection {
   id: string;
   name: string;
+  scopeOfWork?: string;
   materials: MaterialLine[];
   electricianLines: LabourLine[];
   programmerLines: LabourLine[];

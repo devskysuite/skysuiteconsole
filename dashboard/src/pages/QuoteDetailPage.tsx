@@ -6,6 +6,7 @@ import { useIsAdmin } from "../hooks/useIsAdmin";
 import QuotePricingTab, { migratePricing, PricingData } from "./QuotePricingTab";
 import QuoteSummaryTab from "./QuoteSummaryTab";
 import QuoteOverviewTab from "./QuoteOverviewTab";
+import QuoteScopeTab from "./QuoteScopeTab";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 const DEPARTMENTS = ["Automation and Controls","Electrical","Panel Build","Programming","Bucket Truck","Service"];
@@ -438,7 +439,14 @@ export default function QuoteDetailPage() {
         </div>
       )}
 
-      {tab !== "Info" && tab !== "Overview" && tab !== "Summary" && (
+      {tab === "Scope of Work" && (
+        <QuoteScopeTab
+          quoteId={quoteId!}
+          pricing={migratePricing((quote as any).pricing)}
+        />
+      )}
+
+      {tab !== "Info" && tab !== "Overview" && tab !== "Summary" && tab !== "Scope of Work" && (
         <div style={{ margin:24, background:"#fff", borderRadius:12, border:"1px solid #e5e7eb", padding:"60px 24px", textAlign:"center", color:"#9ca3af", fontSize:14 }}>
           {tab} — coming soon
         </div>
