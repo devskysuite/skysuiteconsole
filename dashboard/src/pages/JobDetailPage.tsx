@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { addDoc, collection, deleteDoc, doc, getDoc, getDocs, onSnapshot, orderBy, query, updateDoc, where } from "firebase/firestore";
 import { auth, db } from "../firebase";
@@ -236,20 +236,35 @@ export default function JobDetailPage() {
       .catch(() => {});
   }, [job?.propertyId]);
 
-  // Visits — stored in dispatchVisits with jobId field
-  // Note: no orderBy here to avoid requiring a composite Firestore index; sort client-side
+  // Visits — query by jobId (new) and jobNumber (legacy), merge both
+  const visitsByJobId  = useRef<Map<string, Visit>>(new Map());
+  const visitsByJobNum = useRef<Map<string, Visit>>(new Map());
+  function flushVisits() {
+    const merged = new Map([...visitsByJobNum.current, ...visitsByJobId.current]);
+    setVisits(Array.from(merged.values()).sort((a, b) => (a.visitNumber || 0) - (b.visitNumber || 0)));
+  }
   useEffect(() => {
     if (!jobId) return;
     return onSnapshot(
       query(collection(db, "dispatchVisits"), where("jobId", "==", jobId)),
-      snap => setVisits(
-        snap.docs
-          .map(d => ({ id: d.id, ...d.data() } as Visit))
-          .sort((a, b) => (a.visitNumber || 0) - (b.visitNumber || 0))
-      ),
+      snap => {
+        visitsByJobId.current = new Map(snap.docs.map(d => [d.id, { id: d.id, ...d.data() } as Visit]));
+        flushVisits();
+      },
       () => {}
     );
   }, [jobId]);
+  useEffect(() => {
+    if (!job?.jobNumber) return;
+    return onSnapshot(
+      query(collection(db, "dispatchVisits"), where("jobNumber", "==", job.jobNumber)),
+      snap => {
+        visitsByJobNum.current = new Map(snap.docs.map(d => [d.id, { id: d.id, ...d.data() } as Visit]));
+        flushVisits();
+      },
+      () => {}
+    );
+  }, [job?.jobNumber]);
 
   // History (ascending — oldest first, panel will reverse)
   useEffect(() => {

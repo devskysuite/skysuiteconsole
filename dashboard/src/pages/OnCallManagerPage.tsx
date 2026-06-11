@@ -252,7 +252,11 @@ export default function OnCallManagerPage({ adminMode = false }: { adminMode?: b
     if(!newPerson) return;
     setOcGiveBusy(true);
     try{
-      await updateDoc(doc(db,"onCallAssignments",assignment.id),{uid:ocGiveToUid,employeeName:newPerson.displayName});
+      if(assignment.id){
+        await updateDoc(doc(db,"onCallAssignments",assignment.id),{uid:ocGiveToUid,employeeName:newPerson.displayName});
+      } else {
+        await addDoc(collection(db,"onCallAssignments"),{date:assignment.date,uid:ocGiveToUid,employeeName:newPerson.displayName,assignedByUid:auth.currentUser?.uid||"",createdAt:serverTimestamp()});
+      }
       await addDoc(collection(db,"onCallGiveaways"),{fromUid:assignment.uid,fromName:assignment.employeeName,toUid:ocGiveToUid,toName:newPerson.displayName,date:assignment.date,gaveAwayAt:serverTimestamp()});
       setOcGiveModal(null); setOcGiveToUid("");
     }catch{}
@@ -266,7 +270,11 @@ export default function OnCallManagerPage({ adminMode = false }: { adminMode?: b
     if(!newPerson) return;
     setOcSwapBusy(true);
     try{
-      await updateDoc(doc(db,"onCallAssignments",assignment.id),{uid:ocSwapToUid,employeeName:newPerson.displayName});
+      if(assignment.id){
+        await updateDoc(doc(db,"onCallAssignments",assignment.id),{uid:ocSwapToUid,employeeName:newPerson.displayName});
+      } else {
+        await addDoc(collection(db,"onCallAssignments"),{date:assignment.date,uid:ocSwapToUid,employeeName:newPerson.displayName,assignedByUid:auth.currentUser?.uid||"",createdAt:serverTimestamp()});
+      }
       setOcSwapModal(null); setOcSwapToUid("");
     }catch{}
     setOcSwapBusy(false);
@@ -729,7 +737,9 @@ export default function OnCallManagerPage({ adminMode = false }: { adminMode?: b
                         {isAdmin&&connected&&<button title="Add event" onClick={(e)=>{e.stopPropagation();setAddModal({date});setAddName(getRotationPerson(date));setAddType("oncall");setAddMultiDay(false);setAddEndDate(date);}} style={{background:"none",border:"none",color:"#1565c0",fontSize:14,fontWeight:700,cursor:"pointer",lineHeight:1,padding:0}}>＋</button>}
                       </div>
                       {dayEvs.map(ev=>{const c=pillStyle(ev.subject);const n=getName(ev.subject);return(
-                        <div key={ev.id} style={{fontSize:11,fontWeight:600,background:c.bg,color:c.color,borderRadius:4,padding:"2px 5px",marginBottom:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                        <div key={ev.id}
+                          style={{fontSize:11,fontWeight:600,background:c.bg,color:c.color,borderRadius:4,padding:"2px 5px",marginBottom:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",cursor:isAdmin?"pointer":"default"}}
+                          onClick={isAdmin?(e)=>{e.stopPropagation();setOcActionModal({date,assignment:{id:"",date,uid:"",employeeName:n}});}:undefined}>
                           {n}
                         </div>);})}
                       {date&&fsAssignments.filter(a=>a.date===date).map(a=>(
@@ -740,7 +750,7 @@ export default function OnCallManagerPage({ adminMode = false }: { adminMode?: b
                           {a.employeeName.split(" ")[0]} ✦
                         </div>
                       ))}
-                      {clickableOncall&&<div style={{fontSize:9,color:"#1565c0",marginTop:2}}>tap to swap</div>}
+                      {!isAdmin&&clickableOncall&&<div style={{fontSize:9,color:"#1565c0",marginTop:2}}>tap to swap</div>}
                     </>}
                   </div>);
               })}
@@ -967,10 +977,10 @@ export default function OnCallManagerPage({ adminMode = false }: { adminMode?: b
                 onClick={()=>{setOcGiveModal({assignment:ocActionModal.assignment});setOcGiveToUid("");setOcActionModal(null);}}>
                 🎁 Give Away
               </button>
-              <button style={{background:"transparent",color:"#dc2626",border:"1px solid #fca5a5",borderRadius:8,padding:"11px 0",fontSize:14,fontWeight:700,cursor:"pointer"}}
+              {ocActionModal.assignment.id&&<button style={{background:"transparent",color:"#dc2626",border:"1px solid #fca5a5",borderRadius:8,padding:"11px 0",fontSize:14,fontWeight:700,cursor:"pointer"}}
                 onClick={()=>{setOcDeleteId(ocActionModal.assignment.id);setOcActionModal(null);}}>
-                ✕ Delete
-              </button>
+                ✕ Delete Override
+              </button>}
             </div>
             <div style={{marginTop:14,textAlign:"right"}}>
               <button onClick={()=>setOcActionModal(null)} style={{...btnS("#6b7280"),fontSize:13}}>Cancel</button>
