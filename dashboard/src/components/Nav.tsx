@@ -141,6 +141,24 @@ function IconReceipt() {
     </svg>
   );
 }
+function IconCalendar() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="4" width="18" height="18" rx="2"/>
+      <line x1="16" y1="2" x2="16" y2="6"/>
+      <line x1="8" y1="2" x2="8" y2="6"/>
+      <line x1="3" y1="10" x2="21" y2="10"/>
+    </svg>
+  );
+}
+function IconCheckCircle() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+      <polyline points="22 4 12 14.01 9 11.01"/>
+    </svg>
+  );
+}
 
 // ── Nav data ──────────────────────────────────────────────────────────────────
 const BASE_LINKS = [
@@ -188,13 +206,32 @@ const OPERATIONS_GROUPS = [
   },
 ];
 
-const ADMIN_ITEMS: { to: string; label: string; icon: React.ReactNode }[] = [
-  { to: "/on-call/admin",   label: "On-Call Manager",  icon: <IconPhone /> },
-  { to: "/categories",      label: "Categories",       icon: <IconTag /> },
-  { to: "/repair-contacts", label: "Manage Contacts",  icon: <IconContacts /> },
-  { to: "/users",           label: "Users",            icon: <IconUsers /> },
-  { to: "/twilio",          label: "Twilio SMS",       icon: <IconPhone /> },
+const ADMIN_GROUPS: { heading: string; items: { to: string; label: string; icon: React.ReactNode }[] }[] = [
+  {
+    heading: "Vacation",
+    items: [
+      { to: "/on-call/admin",      label: "Vacation Setup",   icon: <IconSliders /> },
+      { to: "/time-off/request",   label: "Vacation Request", icon: <IconCalendar /> },
+      { to: "/time-off/approvals", label: "Approvals",        icon: <IconCheckCircle /> },
+    ],
+  },
+  {
+    heading: "On-Call",
+    items: [
+      { to: "/on-call/admin", label: "On-Call Manager", icon: <IconPhone /> },
+      { to: "/twilio",        label: "Twilio SMS",       icon: <IconPhone /> },
+    ],
+  },
+  {
+    heading: "Settings",
+    items: [
+      { to: "/categories",      label: "Categories",      icon: <IconTag /> },
+      { to: "/repair-contacts", label: "Manage Contacts", icon: <IconContacts /> },
+      { to: "/users",           label: "Users",           icon: <IconUsers /> },
+    ],
+  },
 ];
+const ADMIN_ITEMS_FLAT = ADMIN_GROUPS.flatMap(g => g.items);
 
 // Caret icon — rotates when open
 function Caret({ open }: { open: boolean }) {
@@ -425,21 +462,27 @@ export default function Nav() {
         {isAdmin && (
           <div ref={dropdownRef} style={{ position: "relative" }}>
             <button
-              style={{ ...styles.dropBtn, ...(ADMIN_ITEMS.some(i => pathname === i.to) ? styles.linkActive : {}) }}
+              style={{ ...styles.dropBtn, ...(ADMIN_ITEMS_FLAT.some(i => pathname === i.to || pathname.startsWith(i.to + "/")) ? styles.linkActive : {}) }}
               onClick={() => setMenuOpen(v => !v)}
             >
               Admin <Caret open={menuOpen} />
             </button>
             {menuOpen && (
               <div style={styles.dropdown}>
-                <div style={styles.dropdownInner}>
-                  {ADMIN_ITEMS.map(item => (
-                    <Link key={item.to} to={item.to} style={{ ...styles.dropdownItem, ...(pathname === item.to ? styles.dropdownItemActive : {}) }}>
-                      <span style={{ ...styles.itemIcon, color: pathname === item.to ? "#1565c0" : "#6b7280" }}>{item.icon}</span>
-                      {item.label}
-                    </Link>
-                  ))}
-                </div>
+                {ADMIN_GROUPS.map((group, gi) => (
+                  <div key={gi}>
+                    <div style={{ padding: "8px 18px 4px", fontSize: 10, fontWeight: 800, color: "#9ca3af", textTransform: "uppercase" as const, letterSpacing: 0.8 }}>
+                      {group.heading}
+                    </div>
+                    {gi > 0 && <div style={{ height: 1, background: "#f3f4f6", margin: "0 0 4px" }} />}
+                    {group.items.map(item => (
+                      <Link key={item.label} to={item.to} style={{ ...styles.dropdownItem, ...(pathname === item.to || pathname.startsWith(item.to + "/") ? styles.dropdownItemActive : {}) }}>
+                        <span style={{ ...styles.itemIcon, color: (pathname === item.to || pathname.startsWith(item.to + "/")) ? "#1565c0" : "#6b7280" }}>{item.icon}</span>
+                        {item.label}
+                      </Link>
+                    ))}
+                  </div>
+                ))}
               </div>
             )}
           </div>
@@ -457,7 +500,7 @@ export default function Nav() {
       {DIRECTORY_ITEMS.map(item => <Link key={item.to} to={item.to} className="mobile-nav-link">{item.label}</Link>)}
       {RESOURCE_ITEMS.map(item => <Link key={item.to} to={item.to} className="mobile-nav-link">{item.label}</Link>)}
       {ACCOUNTING_ITEMS.map(item => <Link key={item.to} to={item.to} className="mobile-nav-link">{item.label}</Link>)}
-      {isAdmin && ADMIN_ITEMS.map(item => <Link key={item.to} to={item.to} className="mobile-nav-link">{item.label}</Link>)}
+      {isAdmin && ADMIN_ITEMS_FLAT.map(item => <Link key={item.label} to={item.to} className="mobile-nav-link">{item.label}</Link>)}
       <button
         className="mobile-nav-link"
         style={{ background: "none", border: "none", textAlign: "left", cursor: "pointer", fontFamily: "inherit", width: "100%" }}
