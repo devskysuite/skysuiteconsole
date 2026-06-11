@@ -6,6 +6,7 @@ import {
 import { db, auth } from "../firebase";
 import { useIsAdmin } from "../hooks/useIsAdmin";
 import Spinner from "../components/Spinner";
+import { getOutlookToken } from "../utils/outlookToken";
 import { getFunctions, httpsCallable } from "firebase/functions";
 
 type OnCallAssignment = { id: string; date: string; uid: string; employeeName: string };
