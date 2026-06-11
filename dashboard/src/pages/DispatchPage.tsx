@@ -1272,7 +1272,20 @@ function VisitModal({ init, onClose }: { init: { techUid: string; techName: stri
       } else {
         for (let i = 0; i < visitDates.length; i++) {
           const vn = nextVisitNumber !== undefined ? nextVisitNumber + i : undefined;
-          await addDoc(collection(db, "dispatchVisits"), { ...base, date: visitDates[i], visitNumber: vn, status: "scheduled", createdAt: serverTimestamp(), createdBy: auth.currentUser?.uid || "" });
+          const visitRef = await addDoc(collection(db, "dispatchVisits"), { ...base, date: visitDates[i], visitNumber: vn, status: "scheduled", createdAt: serverTimestamp(), createdBy: auth.currentUser?.uid || "" });
+          await addDoc(collection(db, "payrollEntries"), {
+            employeeName: init.techName, employeeCode: "",
+            date: visitDates[i], department: "",
+            event: "Visit", jobNumber: jobNumber.trim(),
+            phase: "", costCode: "",
+            visitRef: vn != null ? String(vn) : "",
+            visitId: visitRef.id, jobId: jobId || "",
+            eventStatus: "Scheduled", reviewStatus: "UNSUBMITTED",
+            customer: title.trim(), property: "", location: "", notes: "",
+            rt: 0, ot: 0, dt: 0, pto: 0,
+            laborRate: "", laborType: "",
+            source: "visit", createdAt: serverTimestamp(),
+          });
         }
       }
       onClose();
