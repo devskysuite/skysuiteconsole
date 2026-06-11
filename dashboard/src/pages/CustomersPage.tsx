@@ -378,8 +378,8 @@ export default function CustomersPage() {
   const filtered = useMemo(() => {
     let list = [...customers];
     if (filter === "warning") list = list.filter(c => c.outstandingBalance > 0 && c.overdueBalance === 0);
-    if (filter === "risk")    list = list.filter(c => c.overdueBalance > 0 && c.overdueBalance < 50000);
-    if (filter === "hold")    list = list.filter(c => c.overdueBalance >= 50000);
+    if (filter === "risk")    list = list.filter(c => c.creditLimit > 0 && c.overdueBalance > 0 && c.overdueBalance < 50000);
+    if (filter === "hold")    list = list.filter(c => c.creditLimit > 0 && c.overdueBalance >= 50000);
     if (search) {
       const q = search.toLowerCase();
       list = list.filter(c =>
@@ -405,8 +405,8 @@ export default function CustomersPage() {
   const rangeEnd    = pageSize === "all" ? filtered.length : Math.min(safePage * pageSize + pageSize, filtered.length);
 
   const cntWarning = useMemo(() => customers.filter(c => c.outstandingBalance > 0 && c.overdueBalance === 0).length, [customers]);
-  const cntRisk    = useMemo(() => customers.filter(c => c.overdueBalance > 0 && c.overdueBalance < 50000).length, [customers]);
-  const cntHold    = useMemo(() => customers.filter(c => c.overdueBalance >= 50000).length, [customers]);
+  const cntRisk    = useMemo(() => customers.filter(c => c.creditLimit > 0 && c.overdueBalance > 0 && c.overdueBalance < 50000).length, [customers]);
+  const cntHold    = useMemo(() => customers.filter(c => c.creditLimit > 0 && c.overdueBalance >= 50000).length, [customers]);
 
   // ── CSV import ────────────────────────────────────────────────────────────
   async function handleImport(e: React.ChangeEvent<HTMLInputElement>) {
