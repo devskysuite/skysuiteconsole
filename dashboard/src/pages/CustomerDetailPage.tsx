@@ -52,6 +52,31 @@ interface VisitRow {
   techName?: string; additionalTechnicians?: string[];
   propertyName?: string;
 }
+interface CustomerInvoice {
+  id: string; invoiceNumber: number; serviceAgreementNumber?: string;
+  jobId?: string; jobNumber?: string; billingCustomer: string;
+  propertyName?: string; department?: string;
+  status: "Draft" | "Sent" | "Exported" | "Paid" | "Void";
+  tags?: string; generatedFrom?: string; dueDate?: string; issuedDate?: string;
+  amount: number; customerId: string; customerName: string; createdAt?: string;
+}
+interface CustomerPayment {
+  id: string; paymentName: string; billingCustomer: string;
+  status: "Applied" | "Unapplied" | "Void";
+  accountingStatus: "Exported" | "Synced" | "Draft" | "Pending";
+  invoiceIds: string[];        // array of invoice doc IDs (supports multi-invoice)
+  invoiceNumbers: number[];    // display only
+  paymentType: string; bankAccountName?: string; paymentDate: string;
+  amount: number; paymentApplied?: number;
+  customerId: string; customerName: string;
+}
+interface CustomerAdjustment {
+  id: string; adjustmentName: string; billingCustomer: string;
+  status: string; accountingStatus: string; linkedIds: string[];
+  adjustmentType?: string; transactionType?: string; adjustmentDate?: string;
+  amount: number; appliedAmount?: number; createdBy?: string;
+  createdDate?: string; syncStatus?: string; customerId: string;
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function fmt$(n: number): string {
@@ -168,6 +193,19 @@ export default function CustomerDetailPage() {
   const propRangeStart = propSafePage * propPageSize + 1;
   const propRangeEnd   = Math.min(propSafePage * propPageSize + propPageSize, properties.length);
 
+  // Accounting tab
+  const [invoiceList,   setInvoiceList]   = useState<CustomerInvoice[]>([]);
+  const [paymentList,   setPaymentList]   = useState<CustomerPayment[]>([]);
+  const [adjList,       setAdjList]       = useState<CustomerAdjustment[]>([]);
+  const [invPage,       setInvPage]       = useState(0);
+  const [invPageSize,   setInvPageSize]   = useState(10);
+  const [payPage,       setPayPage]       = useState(0);
+  const [payPageSize,   setPayPageSize]   = useState(25);
+  const [adjPage,       setAdjPage]       = useState(0);
+  const [newInvOpen,    setNewInvOpen]    = useState(false);
+  const [newPayOpen,    setNewPayOpen]    = useState(false);
+  const [newAdjOpen,    setNewAdjOpen]    = useState(false);
+
   // Modals
   const [editModal,    setEditModal]    = useState(false);
   const [propModal,    setPropModal]    = useState<Property | null | "new">(null);
@@ -255,6 +293,29 @@ export default function CustomerDetailPage() {
     );
     return () => unsubs.forEach(u => u());
   }, [jobsList, jobsReady]);
+
+  // Accounting data — live listeners
+  useEffect(() => {
+    if (!customerId) return;
+    const unsubs = [
+      onSnapshot(query(collection(db, "invoices"), where("customerId", "==", customerId)), snap => {
+        const list = snap.docs.map(d => ({ id: d.id, ...d.data() } as CustomerInvoice));
+        list.sort((a, b) => b.invoiceNumber - a.invoiceNumber);
+        setInvoiceList(list);
+      }),
+      onSnapshot(query(collection(db, "customerPayments"), where("customerId", "==", customerId)), snap => {
+        const list = snap.docs.map(d => ({ id: d.id, ...d.data() } as CustomerPayment));
+        list.sort((a, b) => (b.paymentDate || "").localeCompare(a.paymentDate || ""));
+        setPaymentList(list);
+      }),
+      onSnapshot(query(collection(db, "customerAdjustments"), where("customerId", "==", customerId)), snap => {
+        const list = snap.docs.map(d => ({ id: d.id, ...d.data() } as CustomerAdjustment));
+        list.sort((a, b) => (b.adjustmentDate || "").localeCompare(a.adjustmentDate || ""));
+        setAdjList(list);
+      }),
+    ];
+    return () => unsubs.forEach(u => u());
+  }, [customerId]);
 
   async function toggleCreditHold() {
     if (!customerId || !customer) return;
@@ -916,11 +977,238 @@ export default function CustomerDetailPage() {
               );
             })()}
 
+            {/* ── Accounting tab ── */}
+            {tab === "Accounting" && (() => {
+              const INV_STATUS: Record<string,{bg:string;color:string}> = {
+                "Draft":    {bg:"#f3f4f6",color:"#6b7280"}, "Sent":    {bg:"#dbeafe",color:"#1e40af"},
+                "Exported": {bg:"#dcfce7",color:"#166534"}, "Paid":    {bg:"#d1fae5",color:"#065f46"},
+                "Void":     {bg:"#fee2e2",color:"#991b1b"},
+              };
+              const PAY_STATUS: Record<string,{bg:string;color:string}> = {
+                "Applied":   {bg:"#dcfce7",color:"#166534"},
+                "Unapplied": {bg:"#fef3c7",color:"#92400e"},
+                "Void":      {bg:"#fee2e2",color:"#991b1b"},
+              };
+              const ACC_STATUS: Record<string,{bg:string;color:string}> = {
+                "Exported": {bg:"#dcfce7",color:"#166534"}, "Synced":  {bg:"#dbeafe",color:"#1e40af"},
+                "Draft":    {bg:"#f3f4f6",color:"#6b7280"}, "Pending": {bg:"#fef3c7",color:"#92400e"},
+              };
+              function ABadge({ s, map }: { s?: string; map: Record<string,{bg:string;color:string}> }) {
+                if (!s) return <span style={{color:"#9ca3af"}}>—</span>;
+                const c = map[s] || {bg:"#f3f4f6",color:"#6b7280"};
+                return <span style={{background:c.bg,color:c.color,borderRadius:4,padding:"2px 7px",fontSize:11,fontWeight:700}}>{s}</span>;
+              }
+              function aFmtD(s?: string) {
+                if (!s) return "—";
+                return new Date(s+(s.includes("T")?"":"T12:00:00")).toLocaleDateString("en-CA",{year:"numeric",month:"short",day:"numeric"});
+              }
+              function AccPager({ page, total, setPage, count, pageSize, setPageSize }: {
+                page:number; total:number; setPage:(n:number)=>void; count:number; pageSize:number; setPageSize:(n:number)=>void;
+              }) {
+                const start = count===0 ? 0 : page*pageSize+1;
+                const end   = Math.min((page+1)*pageSize, count);
+                return (
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"flex-end",gap:14,marginTop:8,fontSize:12,color:"#6b7280"}}>
+                    <span>Rows per page:
+                      <select value={pageSize} onChange={e=>{setPageSize(+e.target.value);setPage(0);}} style={{margin:"0 6px",fontSize:12,border:"1px solid #d1d5db",borderRadius:4,padding:"2px 4px",background:"#fff"}}>
+                        {[5,10,25,50].map(n=><option key={n} value={n}>{n}</option>)}
+                      </select>
+                    </span>
+                    <span>{start}–{end} of {count} rows</span>
+                    <div style={{display:"flex",gap:2}}>
+                      <button onClick={()=>setPage(0)} disabled={page===0} style={{...pgBtn,opacity:page===0?0.35:1}}>«</button>
+                      <button onClick={()=>setPage(Math.max(0,page-1))} disabled={page===0} style={{...pgBtn,opacity:page===0?0.35:1}}>‹</button>
+                      <button onClick={()=>setPage(Math.min(total-1,page+1))} disabled={page>=total-1} style={{...pgBtn,opacity:page>=total-1?0.35:1}}>›</button>
+                      <button onClick={()=>setPage(total-1)} disabled={page>=total-1} style={{...pgBtn,opacity:page>=total-1?0.35:1}}>»</button>
+                    </div>
+                  </div>
+                );
+              }
+              const newAccBtn = (label: string, onClick: ()=>void) => (
+                <button onClick={onClick} style={{background:"#111827",color:"#fff",border:"none",borderRadius:6,padding:"8px 18px",fontSize:13,fontWeight:700,cursor:"pointer"}}>{label}</button>
+              );
+
+              const invTotal = Math.max(1, Math.ceil(invoiceList.length/invPageSize));
+              const invSafe  = Math.min(invPage, invTotal-1);
+              const invSlice = invoiceList.slice(invSafe*invPageSize, invSafe*invPageSize+invPageSize);
+
+              const payTotal = Math.max(1, Math.ceil(paymentList.length/payPageSize));
+              const paySafe  = Math.min(payPage, payTotal-1);
+              const paySlice = paymentList.slice(paySafe*payPageSize, paySafe*payPageSize+payPageSize);
+
+              const ADJ_PS = 25;
+              const adjTotal = Math.max(1, Math.ceil(adjList.length/ADJ_PS));
+              const adjSafe  = Math.min(adjPage, adjTotal-1);
+              const adjSlice = adjList.slice(adjSafe*ADJ_PS, adjSafe*ADJ_PS+ADJ_PS);
+
+              return (
+                <div style={{display:"flex",flexDirection:"column",gap:32}}>
+
+                  {/* Invoices */}
+                  <div>
+                    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
+                      <div style={{fontSize:15,fontWeight:700,color:"#111827"}}>Invoices</div>
+                      {isAdmin && newAccBtn("NEW INVOICE", ()=>setNewInvOpen(true))}
+                    </div>
+                    <div style={{border:"1px solid #e5e7eb",borderRadius:8,overflow:"auto"}}>
+                      <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+                        <thead>
+                          <tr style={{background:"#f9fafb",borderBottom:"1px solid #e5e7eb"}}>
+                            <th style={th}>Invoice</th>
+                            <th style={th}>Service Agreement</th>
+                            <th style={th}>Job</th>
+                            <th style={th}>Billing Customer</th>
+                            <th style={th}>Property</th>
+                            <th style={th}>Department</th>
+                            <th style={th}>Status</th>
+                            <th style={th}>Tags</th>
+                            <th style={th}>Generated From</th>
+                            <th style={th}>Due</th>
+                            <th style={th}>Issued</th>
+                            <th style={{...th,textAlign:"right" as const}}>Amount</th>
+                          </tr>
+                        </thead>
+                        <tbody style={{background:"#fff"}}>
+                          {invoiceList.length===0 ? (
+                            <tr><td colSpan={12} style={{...td,textAlign:"center",color:"#9ca3af",padding:"32px"}}>No invoices.</td></tr>
+                          ) : invSlice.map(inv=>(
+                            <tr key={inv.id} style={{borderBottom:"1px solid #f3f4f6"}}>
+                              <td style={{...td,fontWeight:700,color:"#1565c0"}}>{inv.invoiceNumber}</td>
+                              <td style={td}>{inv.serviceAgreementNumber||"—"}</td>
+                              <td style={td}>{inv.jobId ? <Link to={`/jobs/${inv.jobId}`} style={{color:"#1565c0",textDecoration:"none",fontWeight:600}}>{inv.jobNumber}</Link> : "—"}</td>
+                              <td style={td}>{inv.billingCustomer}</td>
+                              <td style={td}>{inv.propertyName||"—"}</td>
+                              <td style={td}>{inv.department||"—"}</td>
+                              <td style={td}><ABadge s={inv.status} map={INV_STATUS}/></td>
+                              <td style={{...td,color:"#6b7280"}}>{inv.tags||"—"}</td>
+                              <td style={td}>{inv.generatedFrom||"—"}</td>
+                              <td style={td}>{aFmtD(inv.dueDate)}</td>
+                              <td style={td}>{aFmtD(inv.issuedDate)}</td>
+                              <td style={{...td,textAlign:"right" as const,fontWeight:600}}>{fmt$(inv.amount)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    {invoiceList.length>0 && <AccPager page={invSafe} total={invTotal} setPage={setInvPage} count={invoiceList.length} pageSize={invPageSize} setPageSize={setInvPageSize}/>}
+                  </div>
+
+                  {/* Payments */}
+                  <div>
+                    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
+                      <div style={{fontSize:15,fontWeight:700,color:"#111827"}}>Payments</div>
+                      {isAdmin && newAccBtn("NEW PAYMENT", ()=>setNewPayOpen(true))}
+                    </div>
+                    <div style={{border:"1px solid #e5e7eb",borderRadius:8,overflow:"auto"}}>
+                      <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+                        <thead>
+                          <tr style={{background:"#f9fafb",borderBottom:"1px solid #e5e7eb"}}>
+                            <th style={th}>Payment</th>
+                            <th style={th}>Billing Customer</th>
+                            <th style={th}>Status</th>
+                            <th style={th}>Accounting Status</th>
+                            <th style={th}>Invoices</th>
+                            <th style={th}>Payment Type</th>
+                            <th style={th}>Bank Account Name</th>
+                            <th style={th}>Payment Date</th>
+                            <th style={{...th,textAlign:"right" as const}}>Amount</th>
+                            <th style={{...th,textAlign:"right" as const}}>Payment Applied</th>
+                          </tr>
+                        </thead>
+                        <tbody style={{background:"#fff"}}>
+                          {paymentList.length===0 ? (
+                            <tr><td colSpan={10} style={{...td,textAlign:"center",color:"#9ca3af",padding:"32px"}}>No payments.</td></tr>
+                          ) : paySlice.map(pay=>{
+                            const nums = pay.invoiceNumbers||[];
+                            const shown = nums.slice(0,3);
+                            const more  = nums.length-3;
+                            return (
+                              <tr key={pay.id} style={{borderBottom:"1px solid #f3f4f6"}}>
+                                <td style={{...td,fontWeight:700,color:"#1565c0"}}>{pay.paymentName}</td>
+                                <td style={td}>{pay.billingCustomer}</td>
+                                <td style={td}><ABadge s={pay.status} map={PAY_STATUS}/></td>
+                                <td style={td}><ABadge s={pay.accountingStatus} map={ACC_STATUS}/></td>
+                                <td style={td}>
+                                  <div style={{display:"flex",flexWrap:"wrap",gap:4,alignItems:"center"}}>
+                                    {shown.map(n=><span key={n} style={{color:"#1565c0",fontSize:12,fontWeight:600,whiteSpace:"nowrap"}}>Invoice {n}</span>)}
+                                    {more>0 && <span style={{color:"#6b7280",fontSize:12}}> +{more} more</span>}
+                                    {nums.length===0 && <span style={{color:"#9ca3af"}}>—</span>}
+                                  </div>
+                                </td>
+                                <td style={td}>{pay.paymentType||"—"}</td>
+                                <td style={{...td,color:"#6b7280"}}>{pay.bankAccountName||"—"}</td>
+                                <td style={td}>{aFmtD(pay.paymentDate)}</td>
+                                <td style={{...td,textAlign:"right" as const,fontWeight:600}}>{fmt$(pay.amount)}</td>
+                                <td style={{...td,textAlign:"right" as const}}>{pay.paymentApplied!=null ? fmt$(pay.paymentApplied) : "—"}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                    {paymentList.length>0 && <AccPager page={paySafe} total={payTotal} setPage={setPayPage} count={paymentList.length} pageSize={payPageSize} setPageSize={setPayPageSize}/>}
+                  </div>
+
+                  {/* Adjustments */}
+                  <div>
+                    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
+                      <div style={{fontSize:15,fontWeight:700,color:"#111827"}}>Adjustments</div>
+                      {isAdmin && newAccBtn("NEW ADJUSTMENT", ()=>setNewAdjOpen(true))}
+                    </div>
+                    <div style={{border:"1px solid #e5e7eb",borderRadius:8,overflow:"auto"}}>
+                      <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+                        <thead>
+                          <tr style={{background:"#f9fafb",borderBottom:"1px solid #e5e7eb"}}>
+                            <th style={th}>Adjustment</th>
+                            <th style={th}>Billing Customer</th>
+                            <th style={th}>Status</th>
+                            <th style={th}>Accounting Status</th>
+                            <th style={th}>Payments/Invoices</th>
+                            <th style={th}>Adjustment Type</th>
+                            <th style={th}>Transaction Type</th>
+                            <th style={th}>Adjustment Date</th>
+                            <th style={{...th,textAlign:"right" as const}}>Amount</th>
+                            <th style={{...th,textAlign:"right" as const}}>Applied Amount</th>
+                            <th style={th}>Created By</th>
+                            <th style={th}>Created Date</th>
+                            <th style={th}>Sync Status</th>
+                          </tr>
+                        </thead>
+                        <tbody style={{background:"#fff"}}>
+                          {adjList.length===0 ? (
+                            <tr><td colSpan={13} style={{...td,textAlign:"center",color:"#9ca3af",padding:"32px"}}>No data to display.</td></tr>
+                          ) : adjSlice.map(adj=>(
+                            <tr key={adj.id} style={{borderBottom:"1px solid #f3f4f6"}}>
+                              <td style={{...td,fontWeight:700}}>{adj.adjustmentName}</td>
+                              <td style={td}>{adj.billingCustomer}</td>
+                              <td style={td}><ABadge s={adj.status} map={ACC_STATUS}/></td>
+                              <td style={td}><ABadge s={adj.accountingStatus} map={ACC_STATUS}/></td>
+                              <td style={td}>{adj.linkedIds?.join(", ")||"—"}</td>
+                              <td style={td}>{adj.adjustmentType||"—"}</td>
+                              <td style={td}>{adj.transactionType||"—"}</td>
+                              <td style={td}>{aFmtD(adj.adjustmentDate)}</td>
+                              <td style={{...td,textAlign:"right" as const,fontWeight:600}}>{fmt$(adj.amount)}</td>
+                              <td style={{...td,textAlign:"right" as const}}>{adj.appliedAmount!=null ? fmt$(adj.appliedAmount) : "—"}</td>
+                              <td style={td}>{adj.createdBy||"—"}</td>
+                              <td style={td}>{aFmtD(adj.createdDate)}</td>
+                              <td style={td}>{adj.syncStatus||"—"}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    {adjList.length>0 && <AccPager page={adjSafe} total={adjTotal} setPage={setAdjPage} count={adjList.length} pageSize={ADJ_PS} setPageSize={()=>{}}/>}
+                  </div>
+
+                </div>
+              );
+            })()}
+
             {/* ── Stub tabs ── */}
-            {tab !== "Properties" && tab !== "Contacts" && tab !== "Jobs & Visits" && (
+            {tab !== "Properties" && tab !== "Contacts" && tab !== "Jobs & Visits" && tab !== "Accounting" && (
               <div style={{ textAlign: "center", padding: "48px 0", color: "#9ca3af" }}>
                 <div style={{ fontSize: 28, marginBottom: 8, opacity: 0.4 }}>
-                  {tab === "Attachments" ? "📎" : tab === "History" ? "🕐" : tab === "Accounting" ? "💰" : "📄"}
+                  {tab === "Attachments" ? "📎" : tab === "History" ? "🕐" : "📄"}
                 </div>
                 <p style={{ fontSize: 14, fontWeight: 500 }}>{tab} coming soon</p>
               </div>
@@ -954,6 +1242,215 @@ export default function CustomerDetailPage() {
           onCreated={() => { setCreateJobOpen(false); }}
         />
       )}
+
+      {/* ── New Invoice modal ── */}
+      {newInvOpen && customer && customerId && (
+        <NewInvoiceModal
+          customerId={customerId}
+          customerName={customer.name}
+          billingCustomer={customer.name}
+          jobs={jobsList}
+          onClose={() => setNewInvOpen(false)}
+        />
+      )}
+
+      {/* ── New Payment modal ── */}
+      {newPayOpen && customer && customerId && (
+        <NewPaymentModal
+          customerId={customerId}
+          customerName={customer.name}
+          billingCustomer={customer.name}
+          invoices={invoiceList}
+          onClose={() => setNewPayOpen(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── New Invoice modal ─────────────────────────────────────────────────────────
+const INVOICE_DEPARTMENTS = ["Automation and Controls","Electrical","Panel Build","Programming","Bucket Truck","Service"];
+function NewInvoiceModal({ customerId, customerName, billingCustomer, jobs, onClose }: {
+  customerId: string; customerName: string; billingCustomer: string;
+  jobs: JobRow[]; onClose: () => void;
+}) {
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({
+    invoiceNumber: "", jobId: "", department: "", status: "Draft" as string,
+    dueDate: "", issuedDate: "", amount: "", tags: "", generatedFrom: "",
+  });
+  const bind = (k: keyof typeof form) => ({
+    value: form[k],
+    onChange: (e: React.ChangeEvent<HTMLInputElement|HTMLSelectElement>) => setForm(f => ({...f, [k]: e.target.value})),
+  });
+  async function save() {
+    if (!form.invoiceNumber || !form.amount) return;
+    setSaving(true);
+    const selectedJob = jobs.find(j => j.id === form.jobId);
+    await addDoc(collection(db, "invoices"), {
+      invoiceNumber: parseInt(form.invoiceNumber),
+      jobId: form.jobId || null,
+      jobNumber: selectedJob?.jobNumber || null,
+      billingCustomer,
+      propertyName: selectedJob?.propertyName || null,
+      department: form.department || null,
+      status: form.status,
+      tags: form.tags || null,
+      generatedFrom: form.generatedFrom || null,
+      dueDate: form.dueDate || null,
+      issuedDate: form.issuedDate || null,
+      amount: parseFloat(form.amount),
+      customerId,
+      customerName,
+      createdAt: new Date().toISOString(),
+    });
+    onClose();
+  }
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.45)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000}} onClick={e=>{if(e.target===e.currentTarget)onClose();}}>
+      <div style={{background:"#fff",borderRadius:12,width:560,maxWidth:"95vw",maxHeight:"90vh",overflow:"auto",padding:28,boxShadow:"0 20px 60px rgba(0,0,0,0.2)"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+          <div style={{fontSize:16,fontWeight:800,color:"#111827"}}>New Invoice</div>
+          <button onClick={onClose} style={{background:"none",border:"none",fontSize:22,cursor:"pointer",color:"#6b7280",lineHeight:1}}>×</button>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"14px 20px"}}>
+          <div><label style={lbl}>Invoice Number *</label><input style={inp} placeholder="e.g. 21271" {...bind("invoiceNumber")} /></div>
+          <div><label style={lbl}>Amount *</label><input style={inp} type="number" placeholder="0.00" {...bind("amount")} /></div>
+          <div><label style={lbl}>Job</label>
+            <select style={inp} {...bind("jobId")}>
+              <option value="">— None —</option>
+              {jobs.map(j => <option key={j.id} value={j.id}>{j.jobNumber}{j.issueDescription ? ` – ${j.issueDescription}` : ""}</option>)}
+            </select>
+          </div>
+          <div><label style={lbl}>Department</label>
+            <select style={inp} {...bind("department")}>
+              <option value="">— Select —</option>
+              {INVOICE_DEPARTMENTS.map(d=><option key={d} value={d}>{d}</option>)}
+            </select>
+          </div>
+          <div><label style={lbl}>Status</label>
+            <select style={inp} {...bind("status")}>
+              {["Draft","Sent","Exported","Paid","Void"].map(s=><option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+          <div><label style={lbl}>Generated From</label><input style={inp} placeholder="e.g. Job, Service Agreement" {...bind("generatedFrom")} /></div>
+          <div><label style={lbl}>Issued Date</label><input type="date" style={inp} {...bind("issuedDate")} /></div>
+          <div><label style={lbl}>Due Date</label><input type="date" style={inp} {...bind("dueDate")} /></div>
+          <div style={{gridColumn:"1/-1"}}><label style={lbl}>Tags</label><input style={inp} placeholder="Comma-separated tags" {...bind("tags")} /></div>
+        </div>
+        <div style={{display:"flex",justifyContent:"flex-end",gap:10,marginTop:22}}>
+          <button onClick={onClose} style={{padding:"9px 20px",borderRadius:8,border:"1px solid #d1d5db",background:"#fff",fontSize:14,fontWeight:600,cursor:"pointer",color:"#374151"}}>Cancel</button>
+          <button onClick={save} disabled={saving||!form.invoiceNumber||!form.amount} style={{padding:"9px 20px",borderRadius:8,border:"none",background:"#111827",color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer",opacity:saving?0.6:1}}>
+            {saving ? "Saving…" : "Create Invoice"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── New Payment modal ─────────────────────────────────────────────────────────
+const PAYMENT_TYPES = ["Direct Payment","Wire Transfer","Check","EFT","Credit Card","Other"];
+function NewPaymentModal({ customerId, customerName, billingCustomer, invoices, onClose }: {
+  customerId: string; customerName: string; billingCustomer: string;
+  invoices: CustomerInvoice[]; onClose: () => void;
+}) {
+  const [saving, setSaving] = useState(false);
+  const [selectedInvIds, setSelectedInvIds] = useState<string[]>([]);
+  const [form, setForm] = useState({
+    paymentName: "", paymentType: "Direct Payment", paymentDate: "", amount: "", bankAccountName: "",
+    status: "Applied" as string, accountingStatus: "Draft" as string,
+  });
+  const bind = (k: keyof typeof form) => ({
+    value: form[k],
+    onChange: (e: React.ChangeEvent<HTMLInputElement|HTMLSelectElement>) => setForm(f => ({...f, [k]: e.target.value})),
+  });
+  function toggleInv(id: string) {
+    setSelectedInvIds(prev => prev.includes(id) ? prev.filter(x=>x!==id) : [...prev, id]);
+  }
+  async function save() {
+    if (!form.paymentName || !form.amount || !form.paymentDate) return;
+    setSaving(true);
+    const linked = invoices.filter(i => selectedInvIds.includes(i.id));
+    await addDoc(collection(db, "customerPayments"), {
+      paymentName: form.paymentName,
+      billingCustomer,
+      status: form.status,
+      accountingStatus: form.accountingStatus,
+      invoiceIds: selectedInvIds,
+      invoiceNumbers: linked.map(i => i.invoiceNumber),
+      paymentType: form.paymentType,
+      bankAccountName: form.bankAccountName || null,
+      paymentDate: form.paymentDate,
+      amount: parseFloat(form.amount),
+      paymentApplied: selectedInvIds.length > 0 ? parseFloat(form.amount) : 0,
+      customerId,
+      customerName,
+      createdAt: new Date().toISOString(),
+    });
+    onClose();
+  }
+  const unpaidInvoices = invoices.filter(i => !["Paid","Void"].includes(i.status));
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.45)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000}} onClick={e=>{if(e.target===e.currentTarget)onClose();}}>
+      <div style={{background:"#fff",borderRadius:12,width:600,maxWidth:"95vw",maxHeight:"90vh",overflow:"auto",padding:28,boxShadow:"0 20px 60px rgba(0,0,0,0.2)"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+          <div style={{fontSize:16,fontWeight:800,color:"#111827"}}>New Payment</div>
+          <button onClick={onClose} style={{background:"none",border:"none",fontSize:22,cursor:"pointer",color:"#6b7280",lineHeight:1}}>×</button>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"14px 20px"}}>
+          <div style={{gridColumn:"1/-1"}}><label style={lbl}>Payment Reference *</label><input style={inp} placeholder="e.g. Ingenia Wire 06102026" {...bind("paymentName")} /></div>
+          <div><label style={lbl}>Payment Type</label>
+            <select style={inp} {...bind("paymentType")}>
+              {PAYMENT_TYPES.map(t=><option key={t} value={t}>{t}</option>)}
+            </select>
+          </div>
+          <div><label style={lbl}>Payment Date *</label><input type="date" style={inp} {...bind("paymentDate")} /></div>
+          <div><label style={lbl}>Amount *</label><input type="number" style={inp} placeholder="0.00" {...bind("amount")} /></div>
+          <div><label style={lbl}>Bank Account Name</label><input style={inp} placeholder="Optional" {...bind("bankAccountName")} /></div>
+          <div><label style={lbl}>Status</label>
+            <select style={inp} {...bind("status")}>
+              {["Applied","Unapplied","Void"].map(s=><option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+          <div><label style={lbl}>Accounting Status</label>
+            <select style={inp} {...bind("accountingStatus")}>
+              {["Draft","Exported","Synced","Pending"].map(s=><option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+        </div>
+        {/* Invoice multi-select */}
+        <div style={{marginTop:18}}>
+          <label style={lbl}>Apply to Invoices <span style={{fontWeight:400,color:"#9ca3af"}}>(select one or more)</span></label>
+          {unpaidInvoices.length===0 ? (
+            <div style={{fontSize:13,color:"#9ca3af",padding:"10px 0"}}>No open invoices.</div>
+          ) : (
+            <div style={{border:"1px solid #e5e7eb",borderRadius:8,overflow:"hidden",maxHeight:200,overflowY:"auto"}}>
+              {unpaidInvoices.map(inv=>{
+                const checked = selectedInvIds.includes(inv.id);
+                return (
+                  <div key={inv.id} onClick={()=>toggleInv(inv.id)} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 14px",borderBottom:"1px solid #f3f4f6",cursor:"pointer",background:checked?"#eff6ff":"#fff"}}>
+                    <input type="checkbox" readOnly checked={checked} style={{cursor:"pointer"}}/>
+                    <span style={{fontWeight:600,color:"#1565c0",fontSize:13}}>Invoice {inv.invoiceNumber}</span>
+                    <span style={{fontSize:12,color:"#6b7280"}}>{inv.department}</span>
+                    <span style={{marginLeft:"auto",fontWeight:600,fontSize:13}}>{fmt$(inv.amount)}</span>
+                    <span style={{fontSize:11,color:"#9ca3af"}}>{inv.status}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          {selectedInvIds.length>0 && (
+            <div style={{fontSize:12,color:"#1565c0",marginTop:6}}>{selectedInvIds.length} invoice{selectedInvIds.length>1?"s":""} selected</div>
+          )}
+        </div>
+        <div style={{display:"flex",justifyContent:"flex-end",gap:10,marginTop:22}}>
+          <button onClick={onClose} style={{padding:"9px 20px",borderRadius:8,border:"1px solid #d1d5db",background:"#fff",fontSize:14,fontWeight:600,cursor:"pointer",color:"#374151"}}>Cancel</button>
+          <button onClick={save} disabled={saving||!form.paymentName||!form.amount||!form.paymentDate} style={{padding:"9px 20px",borderRadius:8,border:"none",background:"#111827",color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer",opacity:saving?0.6:1}}>
+            {saving ? "Saving…" : "Create Payment"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
