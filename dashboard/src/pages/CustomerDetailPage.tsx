@@ -731,7 +731,6 @@ export default function CustomerDetailPage() {
                 {contacts.length === 0 && propAuthContacts.length === 0 ? (
                   <div style={{ textAlign:"center", padding:"40px 0", color:"#9ca3af" }}>
                     <p style={{ fontSize:14 }}>No representatives yet.</p>
-                    {isAdmin && <button onClick={() => setContactModal("new")} style={{ ...btnS("#1565c0"), fontSize:13, marginTop:8 }}>Add First Contact</button>}
                   </div>
                 ) : (
                   <>
