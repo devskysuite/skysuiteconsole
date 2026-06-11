@@ -8,27 +8,6 @@ import { db } from "./utils/firestore.js";
 const cap = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
 const TZ = "America/Toronto";
 
-// Compute who should be on call today based on the rotation formula stored in Firestore.
-// Returns the first name (lowercase) or null if no roster is configured.
-async function getRotationOnCallName(today) {
-  const cfgSnap = await db.collection("settings").doc("onCallConfig").get();
-  const roster = cfgSnap.data()?.employees || [];
-  if (!roster.length) return null;
-
-  const ordSnap = await db.collection("settings").doc("rotationOrders").get();
-  const savedOrders = ordSnap.data() || {};
-
-  const year = parseInt(today.slice(0, 4));
-  const ord = (savedOrders[String(year)] || []).length ? savedOrders[String(year)] : roster;
-
-  const jan1 = Date.UTC(year, 0, 1);
-  const [y2, m2, d2] = today.split("-").map(Number);
-  const todayUTC = Date.UTC(y2, m2 - 1, d2);
-  const since = Math.floor((todayUTC - jan1) / 86400000);
-
-  return (ord[((since % ord.length) + ord.length) % ord.length] || "").toLowerCase();
-}
-
 // Manual trigger for the daily on-call reminder. Does exactly what the
 // scheduled oncallReminderSms does, but is callable from the admin UI
 // so an admin can resend it any time the scheduler misses a run.
@@ -64,28 +43,9 @@ export const oncallReminderNow = onCall({ cors: true }, async (request) => {
       else if (s.includes("on call") || s.includes("oncall")) outlookOnCall.add(name);
     }
 
-    // Priority for on-call name:
-    // 1. Firestore onCallAssignments — explicit manual overrides/swaps for today
-    // 2. Outlook calendar — the actual live schedule
-    // 3. Rotation formula — fallback if Outlook has no on-call event today
-    const assignSnap = await db.collection("onCallAssignments").where("date", "==", today).get();
-    let onCallNames;
-    let onCallSource;
-    if (!assignSnap.empty) {
-      // If duplicates exist (old data bug), only use the most-recently created doc
-      const docs = assignSnap.docs.sort((a, b) => (b.data().createdAt?.toMillis?.() ?? 0) - (a.data().createdAt?.toMillis?.() ?? 0));
-      if (docs.length > 1) console.warn(`[oncallReminder] ${docs.length} assignments found for ${today} — using most recent.`);
-      const name = (docs[0].data().employeeName || "").split(/\s+/)[0].toLowerCase();
-      onCallNames = name ? new Set([name]) : new Set();
-      onCallSource = "firestore-override";
-    } else if (outlookOnCall.size > 0) {
-      onCallNames = new Set([...outlookOnCall]);
-      onCallSource = "outlook";
-    } else {
-      const rotPerson = await getRotationOnCallName(today);
-      onCallNames = rotPerson ? new Set([rotPerson]) : new Set();
-      onCallSource = "rotation";
-    }
+    // Outlook is the source of truth — read on-call directly from the live calendar
+    const onCallNames = new Set([...outlookOnCall]);
+    const onCallSource = "outlook";
 
     const usersSnap = await db.collection("users").get();
     const users     = usersSnap.docs.map(d => d.data());
