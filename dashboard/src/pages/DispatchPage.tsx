@@ -716,8 +716,8 @@ export default function DispatchPage() {
           <span style={{ fontSize: 20, fontWeight: 800 }}>🗓 Job Board</span>
           <div style={s.segment}>
             <button style={boardView === "board"   ? s.segOn : s.segOff} onClick={() => setBoardView("board")}>JOB BOARD</button>
-            <button style={boardView === "oncall"  ? s.segOn : s.segOff} onClick={() => setBoardView("oncall")}>ON CALL</button>
-            <button style={boardView === "vacation"? s.segOn : s.segOff} onClick={() => setBoardView("vacation")}>VACATION</button>
+            <button style={boardView === "oncall"  ? s.segOn : s.segOff} onClick={() => { setBoardView("oncall");   setMonthRefreshKey(k => k + 1); }}>ON CALL</button>
+            <button style={boardView === "vacation"? s.segOn : s.segOff} onClick={() => { setBoardView("vacation"); setMonthRefreshKey(k => k + 1); }}>VACATION</button>
           </div>
           {boardView === "board" && (
             <>
