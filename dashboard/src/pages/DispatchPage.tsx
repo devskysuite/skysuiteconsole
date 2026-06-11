@@ -391,16 +391,18 @@ export default function DispatchPage() {
       for (const chip of chips) {
         if (chip.type === "vacation") {
           const m = chip.label.match(/vacation\s*[-–]\s*(.+)/i);
-          const name = m ? m[1].trim() : key.split("|")[0];
-          (vacations[date] ||= []).push(name);
+          const raw = m ? m[1].trim() : key.split("|")[0];
+          const full = allUsers.find(u => u.displayName.toLowerCase().startsWith(raw.toLowerCase()))?.displayName || raw;
+          (vacations[date] ||= []).push(full);
         } else if (chip.type === "oncall") {
           const m = chip.label.match(/^(.+?)\s+(?:on\s+call|oncall)/i);
-          oncall[date] = m ? m[1].trim() : key.split("|")[0];
+          const raw = m ? m[1].trim() : key.split("|")[0];
+          oncall[date] = allUsers.find(u => u.displayName.toLowerCase().startsWith(raw.toLowerCase()))?.displayName || raw;
         }
       }
     }
     return { vacations, oncall };
-  }, [calMap]);
+  }, [calMap, allUsers]);
 
   function shift(dir: number) {
     const d = new Date(anchor + "T00:00:00");
@@ -438,16 +440,18 @@ export default function DispatchPage() {
       for (const chip of chips) {
         if (chip.type === "vacation") {
           const mx = chip.label.match(/vacation\s*[-–]\s*(.+)/i);
-          const name = mx ? mx[1].trim() : key.split("|")[0];
-          (vacations[date] ||= []).push(name);
+          const raw = mx ? mx[1].trim() : key.split("|")[0];
+          const full = allUsers.find(u => u.displayName.toLowerCase().startsWith(raw.toLowerCase()))?.displayName || raw;
+          (vacations[date] ||= []).push(full);
         } else if (chip.type === "oncall") {
           const mx = chip.label.match(/^(.+?)\s+(?:on\s+call|oncall)/i);
-          oncall[date] = mx ? mx[1].trim() : key.split("|")[0];
+          const raw = mx ? mx[1].trim() : key.split("|")[0];
+          oncall[date] = allUsers.find(u => u.displayName.toLowerCase().startsWith(raw.toLowerCase()))?.displayName || raw;
         }
       }
     }
     return { vacations, oncall };
-  }, [monthCalMap]);
+  }, [monthCalMap, allUsers]);
 
   // Firestore assignments keyed by date — all entries so duplicates are visible
   const assignmentByDate = useMemo(() => {
@@ -537,15 +541,16 @@ export default function DispatchPage() {
       for (const chip of chips) {
         if (chip.type === "vacation" && chip.eventId) {
           const mx = chip.label.match(/vacation\s*[-–]\s*(.+)/i);
-          const name = mx ? mx[1].trim() : key.split("|")[0];
+          const raw = mx ? mx[1].trim() : key.split("|")[0];
+          const full = allUsers.find(u => u.displayName.toLowerCase().startsWith(raw.toLowerCase()))?.displayName || raw;
           const existing = (m[date] ||= []);
           if (!existing.some(x => x.eventId === chip.eventId))
-            existing.push({ name, eventId: chip.eventId });
+            existing.push({ name: full, eventId: chip.eventId });
         }
       }
     }
     return m;
-  }, [monthCalMap]);
+  }, [monthCalMap, allUsers]);
 
   const CAL_ID = "AAMkADgyOGUwMDUyLTNiZjMtNGQzNi1hNTgwLTQ2M2IzYzE2YmQ5MgBGAAAAAACGxuDePTlOQawDDU8UfW0gBwBxt6lSDH0kQY0tk4wDjNk8AAAAAAEGAABxt6lSDH0kQY0tk4wDjNk8AAALmQObAAA=";
 
@@ -657,6 +662,16 @@ export default function DispatchPage() {
             });
           }
         }
+        // Update Outlook calendar events server-side
+        const swapFn = httpsCallable<
+          { myDate: string; myName: string; theirDate?: string; theirName?: string },
+          { ok: boolean }
+        >(getFunctions(), "applyOnCallSwap");
+        swapFn({
+          myDate: assignment.date,
+          myName: assignment.employeeName,
+          ...(swapOfferDate ? { theirDate: swapOfferDate, theirName: newPerson.displayName } : {}),
+        }).catch(() => {});
       } else {
         // Non-admin: create a swap request (matches OnCallManagerPage schema)
         const targetEvent = swapTargetEvents.find(e => e.date === swapOfferDate);

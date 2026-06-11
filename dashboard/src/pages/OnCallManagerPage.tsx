@@ -929,6 +929,9 @@ export default function OnCallManagerPage({ adminMode = false }: { adminMode?: b
             <p style={{fontSize:12,color:"#6b7280",marginBottom:14}}>Auto-saved before every swap, push, or rebalance. Last 10 kept. Click ↩ Restore to roll back.</p>
             <BackupsList db={db} onRestore={restoreBackup} connected={connected} refreshKey={backupRefresh}/>
           </div>
+
+          {/* ICS Calendars */}
+          <IcsExportPanel accessToken={accessToken} calId={CAL_ID} db={db}/>
         </div>
       )}
 

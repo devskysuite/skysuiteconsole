@@ -29,9 +29,13 @@ export const getTargetOnCallDays = onCall({ cors: true }, async (request) => {
     for (const e of (json.value || [])) {
       const s = (e.subject || "").toLowerCase();
       if (!(s.includes("on call") || s.includes("oncall")) || s.includes("vacation")) continue;
-      // Match subject like "Jordan On Call" → extract first word
-      const name = s.replace(/(on\s*call|oncall)/i, "").trim().split(/\s+/)[0];
-      if (name !== firstName) continue;
+      // Extract the name from the subject (e.g. "Will On Call" → "will")
+      const subjectName = s.replace(/(on\s*call|oncall)/gi, "").trim().split(/\s+/)[0];
+      // Flexible match: "William" matches "will", "Will" matches "william", exact match
+      const matches = subjectName === firstName
+        || firstName.startsWith(subjectName)
+        || subjectName.startsWith(firstName);
+      if (!matches) continue;
       const date = e.start?.date || e.start?.dateTime?.slice(0, 10) || "";
       if (date) results.push({ date, eventId: e.id });
     }
