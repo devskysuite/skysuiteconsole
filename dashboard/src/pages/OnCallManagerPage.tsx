@@ -203,10 +203,11 @@ export default function OnCallManagerPage({ adminMode = false }: { adminMode?: b
       const d=res?.data||{};
       const onCall:string[]=d.onCall||[];
       const sent=(d.smsSent||[]).filter((s:any)=>s.msg==="sent").length;
+      const sourceLabel = d.onCallSource==="firestore-override" ? " (Firestore override)" : d.onCallSource==="outlook" ? " (Outlook)" : d.onCallSource==="rotation" ? " (rotation formula)" : "";
       const msg=onCall.length
         ? adminOnly
-          ? `✅ Admin notified. On-call today: ${onCall.join(", ")}.`
-          : `✅ Reminder sent. On-call today: ${onCall.join(", ")}. ${sent} SMS sent.`
+          ? `✅ Admin notified. On-call today: ${onCall.join(", ")}${sourceLabel}.`
+          : `✅ Reminder sent. On-call today: ${onCall.join(", ")}${sourceLabel}. ${sent} SMS sent.`
         : `✅ No one scheduled on call today — admin notified.`;
       setTriggerResult({type:"reminder",msg,ok:true});
     }catch(e:any){ setTriggerResult({type:"reminder",msg:`Error: ${e?.message||"failed"}`,ok:false}); }

@@ -62,9 +62,9 @@ export const oncallReminderSms = onSchedule(
     }
 
     // Priority for on-call name:
-    // 1. onCallAssignments (manual swap/override for today)
-    // 2. Rotation formula from Firestore (avoids stale Outlook events)
-    // 3. Outlook fallback (only if no roster configured)
+    // 1. Firestore onCallAssignments — explicit manual overrides/swaps for today
+    // 2. Outlook calendar — the actual live schedule
+    // 3. Rotation formula — fallback if Outlook has no on-call event today
     const assignSnap = await db.collection("onCallAssignments").where("date", "==", today).get();
     let onCallNames;
     if (!assignSnap.empty) {
@@ -73,13 +73,14 @@ export const oncallReminderSms = onSchedule(
       if (docs.length > 1) console.warn(`[oncallReminder] ${docs.length} assignments found for ${today} — using most recent.`);
       const name = (docs[0].data().employeeName || "").split(/\s+/)[0].toLowerCase();
       onCallNames = name ? new Set([name]) : new Set();
+      console.log(`[oncallReminder] Using Firestore override: ${name}`);
+    } else if (outlookOnCall.size > 0) {
+      onCallNames = new Set([...outlookOnCall]);
+      console.log(`[oncallReminder] Using Outlook calendar: ${[...outlookOnCall].join(", ")}`);
     } else {
       const rotPerson = await getRotationOnCallName(today);
-      if (rotPerson) {
-        onCallNames = new Set([rotPerson]);
-      } else {
-        onCallNames = new Set([...outlookOnCall]);
-      }
+      onCallNames = rotPerson ? new Set([rotPerson]) : new Set();
+      console.log(`[oncallReminder] Using rotation formula: ${rotPerson || "none"}`);
     }
 
     const usersSnap = await db.collection("users").get();
