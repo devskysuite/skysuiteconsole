@@ -263,7 +263,7 @@ export default function DispatchPage() {
 
   // Fetch target's future on-call days via Cloud Function (works for all auth levels)
   useEffect(() => {
-    if (!swapToUid || isAdmin) { setSwapTargetEvents([]); return; }
+    if (!swapToUid) { setSwapTargetEvents([]); return; }
     const user = allUsers.find(u => u.uid === swapToUid);
     if (!user) return;
     const firstName = user.displayName.split(" ")[0];
@@ -276,7 +276,7 @@ export default function DispatchPage() {
       .then(r => setSwapTargetEvents(r.data.days))
       .catch(() => setSwapTargetEvents([]))
       .finally(() => setSwapTargetLoading(false));
-  }, [swapToUid, isAdmin, allUsers]);
+  }, [swapToUid, allUsers]);
 
   // Approved vacation listener — lazy, starts on first visit to vacation view
   useEffect(() => {
@@ -994,10 +994,6 @@ export default function DispatchPage() {
                   }
                 }}
               >↔ Swap</button>
-              <button
-                style={{ background: "#7c3aed", color: "#fff", border: "none", borderRadius: 8, padding: "11px 0", fontSize: 14, fontWeight: 700, cursor: "pointer" }}
-                onClick={() => { setGiveAwayModal({ assignment: onCallActionModal.assignment }); setGiveToUid(""); setOnCallActionModal(null); }}
-              >🎁 Give Away</button>
               {onCallActionModal.assignment.id && (
                 <button
                   style={{ background: "transparent", color: "#dc2626", border: "1px solid #fca5a5", borderRadius: 8, padding: "11px 0", fontSize: 14, fontWeight: 700, cursor: "pointer" }}
@@ -1012,35 +1008,6 @@ export default function DispatchPage() {
         </div>
       )}
 
-      {/* ── Give Away Modal ── */}
-      {giveAwayModal && (
-        <div style={s.backdrop} onClick={() => { setGiveAwayModal(null); setGiveToUid(""); }}>
-          <div style={s.modal} onClick={e => e.stopPropagation()}>
-            <h2 style={{ fontSize: 17, fontWeight: 800, color: "#0d2e5e", marginBottom: 4 }}>Give Away On-Call Day</h2>
-            <p style={{ fontSize: 13, color: "#6b7280", marginBottom: 16 }}>
-              {new Date(giveAwayModal.assignment.date + "T00:00:00").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}
-              {" — "}<strong style={{ color: "#111827" }}>{giveAwayModal.assignment.employeeName}</strong> gives this day away
-            </p>
-            <label style={s.lbl}>Give to</label>
-            <select style={s.inp} value={giveToUid} onChange={e => setGiveToUid(e.target.value)}>
-              <option value="">Select employee…</option>
-              {allUsers.filter(u => u.uid !== giveAwayModal.assignment.uid).map(u => (
-                <option key={u.uid} value={u.uid}>{u.displayName}</option>
-              ))}
-            </select>
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
-              <button onClick={() => { setGiveAwayModal(null); setGiveToUid(""); }} style={s.cancelBtn}>Cancel</button>
-              <button
-                onClick={handleGiveAway}
-                disabled={giveAwayBusy || !giveToUid}
-                style={{ ...s.saveBtn, background: "#7c3aed", opacity: (giveAwayBusy || !giveToUid) ? 0.5 : 1 }}
-              >
-                {giveAwayBusy ? "Saving…" : "Give Away"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* ── Delete On-Call Confirm ── */}
       {deleteOnCallId && (() => {
@@ -1124,7 +1091,7 @@ export default function DispatchPage() {
               {" — "}<strong style={{ color: "#111827" }}>{swapModal.assignment.employeeName}</strong> is on call
             </p>
 
-            <label style={s.lbl}>{isAdmin ? "Swap with" : "Who to swap with?"}</label>
+            <label style={s.lbl}>Swap with</label>
             <select style={s.inp} value={swapToUid} onChange={e => { setSwapToUid(e.target.value); setSwapOfferDate(""); }}>
               <option value="">Select employee…</option>
               {allUsers
@@ -1135,51 +1102,40 @@ export default function DispatchPage() {
                 ))}
             </select>
 
-            {swapToUid && isAdmin && (
-              <>
-                <label style={s.lbl}>Day to swap with <span style={{ fontWeight: 400, color: "#9ca3af" }}>(optional)</span></label>
-                <input type="date" style={s.inp} value={swapOfferDate} onChange={e => setSwapOfferDate(e.target.value)} />
-                <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 3, marginBottom: 6 }}>Leave blank to hand off the day without a trade back</div>
-              </>
-            )}
-            {swapToUid && !isAdmin && (
+            {swapToUid && (
               <>
                 <label style={s.lbl}>
-                  Their on-call day to trade
+                  Their on-call day to swap
                   {swapTargetLoading && <span style={{ fontWeight: 400, color: "#9ca3af" }}> (loading…)</span>}
                 </label>
                 <select style={s.inp} value={swapOfferDate} onChange={e => setSwapOfferDate(e.target.value)}>
-                  <option value="">— Select a date —</option>
+                  <option value="">— Leave blank to give away —</option>
                   {swapTargetEvents.map(ev => (
                     <option key={ev.date} value={ev.date}>
                       {new Date(ev.date + "T00:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
                     </option>
                   ))}
                 </select>
-                {!swapTargetLoading && swapTargetEvents.length === 0 && swapToUid && (
-                  <div style={{ fontSize: 11, color: "#ef4444", marginTop: 3 }}>No future on-call days found for this person</div>
+                {!swapTargetLoading && swapTargetEvents.length === 0 && (
+                  <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 3 }}>No future on-call days found — leaving blank gives away the day</div>
                 )}
               </>
             )}
 
-            {!isAdmin && (
-              <>
-                <label style={s.lbl}>Reason (optional)</label>
-                <textarea
-                  style={{ ...s.inp, minHeight: 60, resize: "vertical", fontFamily: "inherit" }}
-                  value={swapReason}
-                  onChange={e => setSwapReason(e.target.value)}
-                  placeholder="Why do you need to swap?"
-                />
-              </>
-            )}
+            <label style={{ ...s.lbl, marginTop: 10 }}>Reason <span style={{ fontWeight: 400, color: "#9ca3af" }}>(optional)</span></label>
+            <textarea
+              style={{ ...s.inp, minHeight: 60, resize: "vertical", fontFamily: "inherit" }}
+              value={swapReason}
+              onChange={e => setSwapReason(e.target.value)}
+              placeholder="e.g. family event"
+            />
 
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
               <button onClick={closeSwap} style={s.cancelBtn}>Cancel</button>
               <button
                 onClick={submitSwap}
-                disabled={swapping || !swapToUid || (!isAdmin && !swapOfferDate)}
-                style={{ ...s.saveBtn, opacity: (swapping || !swapToUid || (!isAdmin && !swapOfferDate)) ? 0.5 : 1 }}
+                disabled={swapping || !swapToUid}
+                style={{ ...s.saveBtn, opacity: (swapping || !swapToUid) ? 0.5 : 1 }}
               >
                 {swapping ? "Saving…" : isAdmin ? "Swap Now" : "Send Request"}
               </button>
