@@ -854,10 +854,7 @@ export default function DispatchPage() {
               {techs.map(t => (
                 <Row key={t.uid} tech={t} days={days} byCell={byCell} calMap={calMap}
                   onAdd={(date) => setModal({ techUid: t.uid, techName: t.name, date })}
-                  onOpen={(v) => {
-                    if (v.jobId) { navigate(`/jobs/${v.jobId}`); }
-                    else { setModal({ techUid: t.uid, techName: t.name, date: v.date, visit: v }); }
-                  }}
+                  onOpen={(v) => setModal({ techUid: t.uid, techName: t.name, date: v.date, visit: v })}
                   onSwap={openSwap}
                   canEdit={!!isAdmin} />
               ))}
@@ -1109,6 +1106,7 @@ function Row({ tech, days, byCell, calMap, onAdd, onOpen, onSwap, canEdit }: {
   tech: Tech; days: string[]; byCell: Record<string, Visit[]>; calMap: CalMap;
   onAdd: (date: string) => void; onOpen: (v: Visit) => void; onSwap: (date: string) => void; canEdit: boolean;
 }) {
+  const navigate = useNavigate();
   const firstName = tech.name.split(/\s+/)[0].toLowerCase();
   return (
     <>
@@ -1152,7 +1150,7 @@ function Row({ tech, days, byCell, calMap, onAdd, onOpen, onSwap, canEdit }: {
                     </span>
                   </div>
                   <div style={{ fontWeight: 700, fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{v.title}</div>
-                  {v.jobNumber && <div style={{ fontSize: 10, opacity: 0.85 }}>{v.jobNumber}{v.visitNumber ? ` · Visit #${v.visitNumber}` : ""}</div>}
+                  {v.jobNumber && <div style={{ fontSize: 10, opacity: 0.85, ...(v.jobId ? { cursor: "pointer", textDecoration: "underline" } : {}) }} onClick={v.jobId ? (e) => { e.stopPropagation(); navigate(`/jobs/${v.jobId}`); } : undefined}>{v.jobNumber}{v.visitNumber ? ` · Visit #${v.visitNumber}` : ""}</div>}
                   {v.department && <div style={{ fontSize: 10, opacity: 0.75 }}>{v.department}</div>}
                   {(v.start || v.end) && <div style={{ fontSize: 10, opacity: 0.85 }}>{fmtTime(v.start)}{v.end ? ` - ${fmtTime(v.end)}` : ""}</div>}
                 </div>
@@ -1180,6 +1178,7 @@ function VisitModal({ init, onClose }: { init: { techUid: string; techName: stri
   const [priority, setPriority] = useState<string>(v?.priority || "normal");
   const [flagged, setFlagged] = useState(!!v?.flagged);
   const [notes, setNotes] = useState(v?.notes || "");
+  const [jobId, setJobId] = useState(v?.jobId || "");
   const [busy, setBusy] = useState(false);
   const [rescheduleMode, setRescheduleMode] = useState(false);
   const [rescheduleDate, setRescheduleDate] = useState(v?.date || init.date);
@@ -1229,16 +1228,26 @@ function VisitModal({ init, onClose }: { init: { techUid: string; techName: stri
   function selectJob(j: JobOption) {
     setTitle(j.customerName + (j.description ? ` — ${j.description}` : ""));
     setJobNumber(j.jobNumber);
+    setJobId(j.id);
     setJobQuery(`${j.jobNumber}  •  ${j.customerName}`);
     setJobDrop(false);
   }
 
   async function save() {
     if (!title.trim()) return;
+    if (!v && jobNumber.trim()) {
+      const snap = await getDocs(query(collection(db, "dispatchVisits"), where("jobNumber", "==", jobNumber.trim())));
+      const active = snap.docs.filter(d => !["complete", "canceled", "closed"].includes(d.data().status));
+      if (active.length > 0) {
+        const who = active[0].data().techName || "another tech";
+        alert(`This job already has an open visit assigned to ${who}. Complete or cancel it before adding another.`);
+        return;
+      }
+    }
     setBusy(true);
     const base = {
       techUid: init.techUid, techName: init.techName,
-      title: title.trim(), jobNumber: jobNumber.trim(),
+      title: title.trim(), jobNumber: jobNumber.trim(), jobId: jobId || undefined,
       start, end, priority, flagged, notes: notes.trim(),
     };
     try {
