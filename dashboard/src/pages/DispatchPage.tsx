@@ -1169,6 +1169,8 @@ function VisitModal({ init, onClose }: { init: { techUid: string; techName: stri
   const [title, setTitle] = useState(v?.title || "");
   const [jobNumber, setJobNumber] = useState(v?.jobNumber || "");
   const [date, setDate] = useState(v?.date || init.date);
+  const [endDateRange, setEndDateRange] = useState("");
+  const [excludeWeekends, setExcludeWeekends] = useState(true);
   const [start, setStart] = useState(v?.start || "08:00");
   const [end, setEnd] = useState(v?.end || "09:00");
   const [priority, setPriority] = useState<string>(v?.priority || "normal");
@@ -1177,6 +1179,22 @@ function VisitModal({ init, onClose }: { init: { techUid: string; techName: stri
   const [busy, setBusy] = useState(false);
   const [rescheduleMode, setRescheduleMode] = useState(false);
   const [rescheduleDate, setRescheduleDate] = useState(v?.date || init.date);
+
+  // Compute dates to create when in multi-day mode
+  const visitDates = useMemo(() => {
+    const effectiveEnd = (!v && endDateRange && endDateRange >= date) ? endDateRange : date;
+    const dates: string[] = [];
+    let cur = new Date(date + "T12:00:00");
+    const last = new Date(effectiveEnd + "T12:00:00");
+    while (cur <= last) {
+      const dow = cur.getDay();
+      if (!excludeWeekends || (dow !== 0 && dow !== 6)) {
+        dates.push(cur.toISOString().slice(0, 10));
+      }
+      cur.setDate(cur.getDate() + 1);
+    }
+    return dates;
+  }, [date, endDateRange, excludeWeekends, v]);
 
   // Job search (add-only)
   const [jobQuery, setJobQuery] = useState("");
@@ -1214,14 +1232,19 @@ function VisitModal({ init, onClose }: { init: { techUid: string; techName: stri
   async function save() {
     if (!title.trim()) return;
     setBusy(true);
-    const payload = {
-      techUid: init.techUid, techName: init.techName, date,
+    const base = {
+      techUid: init.techUid, techName: init.techName,
       title: title.trim(), jobNumber: jobNumber.trim(),
       start, end, priority, flagged, notes: notes.trim(),
     };
     try {
-      if (v) await updateDoc(doc(db, "dispatchVisits", v.id), payload);
-      else await addDoc(collection(db, "dispatchVisits"), { ...payload, status: "scheduled", createdAt: serverTimestamp(), createdBy: auth.currentUser?.uid || "" });
+      if (v) {
+        await updateDoc(doc(db, "dispatchVisits", v.id), { ...base, date });
+      } else {
+        for (const d of visitDates) {
+          await addDoc(collection(db, "dispatchVisits"), { ...base, date: d, status: "scheduled", createdAt: serverTimestamp(), createdBy: auth.currentUser?.uid || "" });
+        }
+      }
       onClose();
     } catch (e) { setBusy(false); }
   }
@@ -1308,8 +1331,29 @@ function VisitModal({ init, onClose }: { init: { techUid: string; techName: stri
 
         <div style={{ display: "flex", gap: 12 }}>
           <div style={{ flex: 1 }}><label style={s.lbl}>Job #</label><input style={s.inp} value={jobNumber} onChange={e => setJobNumber(e.target.value)} placeholder="#P25-0093" /></div>
-          <div style={{ flex: 1 }}><label style={s.lbl}>Date</label><input type="date" style={s.inp} value={date} onChange={e => setDate(e.target.value)} /></div>
+          <div style={{ flex: 1 }}><label style={s.lbl}>{v ? "Date" : "Start Date"}</label><input type="date" style={s.inp} value={date} onChange={e => setDate(e.target.value)} /></div>
         </div>
+
+        {!v && (
+          <div style={{ display: "flex", gap: 12, alignItems: "flex-end" }}>
+            <div style={{ flex: 1 }}>
+              <label style={s.lbl}>End Date <span style={{ fontWeight: 400, color: "#9ca3af" }}>(optional — for multiple visits)</span></label>
+              <input type="date" style={s.inp} value={endDateRange} min={date} onChange={e => setEndDateRange(e.target.value)} />
+            </div>
+            {endDateRange && endDateRange >= date && (
+              <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 600, color: "#374151", whiteSpace: "nowrap", paddingBottom: 8, cursor: "pointer" }}>
+                <input type="checkbox" checked={excludeWeekends} onChange={e => setExcludeWeekends(e.target.checked)} />
+                Skip weekends
+              </label>
+            )}
+          </div>
+        )}
+
+        {!v && endDateRange && endDateRange >= date && (
+          <div style={{ background: visitDates.length === 0 ? "#fef2f2" : "#f0fdf4", border: `1px solid ${visitDates.length === 0 ? "#fca5a5" : "#bbf7d0"}`, borderRadius: 8, padding: "7px 12px", fontSize: 13, fontWeight: 600, color: visitDates.length === 0 ? "#dc2626" : "#166534", marginTop: 4 }}>
+            {visitDates.length === 0 ? "No dates selected (all excluded)" : `${visitDates.length} visit${visitDates.length !== 1 ? "s" : ""} will be created`}
+          </div>
+        )}
 
         <div style={{ display: "flex", gap: 12 }}>
           <div style={{ flex: 1 }}><label style={s.lbl}>Start</label><input type="time" style={s.inp} value={start} onChange={e => setStart(e.target.value)} /></div>
@@ -1364,7 +1408,9 @@ function VisitModal({ init, onClose }: { init: { techUid: string; techName: stri
           <div style={{ display: "flex", gap: 10 }}>
             <button onClick={onClose} style={s.cancelBtn}>Close</button>
             {(!v || !isCancelled) && (
-              <button onClick={save} disabled={busy || !title.trim()} style={{ ...s.saveBtn, opacity: (busy || !title.trim()) ? 0.5 : 1 }}>{busy ? "Saving…" : "Save"}</button>
+              <button onClick={save} disabled={busy || !title.trim() || visitDates.length === 0} style={{ ...s.saveBtn, opacity: (busy || !title.trim() || visitDates.length === 0) ? 0.5 : 1 }}>
+                {busy ? "Saving…" : !v && visitDates.length > 1 ? `Add ${visitDates.length} Visits` : "Save"}
+              </button>
             )}
           </div>
         </div>
