@@ -127,13 +127,13 @@ export default function CreateVisitModal({ jobId, jobNumber, customerName, prope
     if (!form.department) errs.department = true;
     if (Object.keys(errs).length) { setErrors(errs); return; }
 
-    // Block if any target date already has an active visit for this job
-    if (jobNumber && visitDates.length > 0) {
+    // Block only if this same tech already has an open visit for this job on the same date
+    if (jobNumber && visitDates.length > 0 && form.primaryTechUid) {
       const snap = await getDocs(query(collection(db, "dispatchVisits"), where("jobNumber", "==", jobNumber)));
       const active = snap.docs.filter(d => !["complete", "canceled", "closed"].includes(d.data().status));
-      const conflictDate = visitDates.find(vd => active.some(d => d.data().date === vd));
+      const conflictDate = visitDates.find(vd => active.some(d => d.data().date === vd && d.data().techUid === form.primaryTechUid));
       if (conflictDate) {
-        alert(`${jobNumber} already has an open visit on ${conflictDate}. Mark it complete before adding another.`);
+        alert(`This technician already has an open visit for ${jobNumber} on ${conflictDate}. Mark it complete before adding another.`);
         return;
       }
     }
@@ -320,30 +320,28 @@ export default function CreateVisitModal({ jobId, jobNumber, customerName, prope
           {/* Additional Technicians */}
           <div style={{ marginBottom: 16 }}>
             <label style={lbl}>Additional Technicians</label>
-            {techs.filter(t => t.uid !== form.primaryTechUid).length === 0 ? (
-              <div style={{ fontSize: 12, color: "#9ca3af", padding: "8px 0" }}>
-                {form.primaryTechUid ? "No other technicians available" : "Select a primary technician first"}
-              </div>
-            ) : (
-              <div style={{ border: "1px solid #d1d5db", borderRadius: 6, padding: "6px 10px", maxHeight: 130, overflowY: "auto", background: "#fafafa" }}>
-                {techs.filter(t => t.uid !== form.primaryTechUid).map(t => (
-                  <label key={t.uid} style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 0", cursor: "pointer", fontSize: 13, color: "#111827" }}>
-                    <input
-                      type="checkbox"
-                      checked={additionalTechs.includes(t.name)}
-                      onChange={e => {
-                        if (e.target.checked) setAdditionalTechs(prev => [...prev, t.name]);
-                        else setAdditionalTechs(prev => prev.filter(n => n !== t.name));
-                      }}
-                    />
-                    {t.name}
-                  </label>
-                ))}
-              </div>
-            )}
+            <select
+              style={inp}
+              value=""
+              onChange={e => {
+                const name = e.target.value;
+                if (name && !additionalTechs.includes(name))
+                  setAdditionalTechs(prev => [...prev, name]);
+              }}
+            >
+              <option value="">— Add a technician —</option>
+              {techs.filter(t => t.uid !== form.primaryTechUid).map(t => (
+                <option key={t.uid} value={t.name} disabled={additionalTechs.includes(t.name)}>{t.name}</option>
+              ))}
+            </select>
             {additionalTechs.length > 0 && (
-              <div style={{ fontSize: 11, color: "#6b7280", marginTop: 4 }}>
-                Selected: {additionalTechs.join(", ")}
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
+                {additionalTechs.map(name => (
+                  <div key={name} style={{ background: "#eff6ff", color: "#1d4ed8", border: "1px solid #bfdbfe", borderRadius: 99, padding: "3px 10px", fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 5 }}>
+                    {name}
+                    <span style={{ cursor: "pointer", fontSize: 15, lineHeight: 1 }} onClick={() => setAdditionalTechs(prev => prev.filter(n => n !== name))}>×</span>
+                  </div>
+                ))}
               </div>
             )}
           </div>

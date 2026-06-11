@@ -1244,6 +1244,12 @@ function VisitModal({ init, onClose }: { init: { techUid: string; techName: stri
   const [busy, setBusy] = useState(false);
   const [rescheduleMode, setRescheduleMode] = useState(false);
   const [rescheduleDate, setRescheduleDate] = useState(v?.date || init.date);
+  const [additionalTechs, setAdditionalTechs] = useState<string[]>((v as any)?.additionalTechnicians || []);
+  const [allTechs, setAllTechs] = useState<{ uid: string; name: string }[]>([]);
+  useEffect(() => {
+    getDocs(query(collection(db, "users"), where("showInDispatch", "==", true)))
+      .then(snap => setAllTechs(snap.docs.map(d => ({ uid: d.data().uid || d.id, name: d.data().displayName || d.data().email || "" })).filter(t => t.name).sort((a, b) => a.name.localeCompare(b.name))));
+  }, []);
 
   // Compute dates to create when in multi-day mode
   const visitDates = useMemo(() => {
@@ -1304,10 +1310,9 @@ function VisitModal({ init, onClose }: { init: { techUid: string; techName: stri
     if (!v && jobNumber.trim()) {
       const snap = await getDocs(query(collection(db, "dispatchVisits"), where("jobNumber", "==", jobNumber.trim())));
       const active = snap.docs.filter(d => !["complete", "canceled", "closed"].includes(d.data().status));
-      const conflictDate = visitDates.find(vd => active.some(d => d.data().date === vd));
+      const conflictDate = visitDates.find(vd => active.some(d => d.data().date === vd && d.data().techUid === init.techUid));
       if (conflictDate) {
-        const who = active.find(d => d.data().date === conflictDate)?.data().techName || "another tech";
-        alert(`This job already has an open visit on ${conflictDate} assigned to ${who}. Complete or cancel it first.`);
+        alert(`${init.techName} already has an open visit for this job on ${conflictDate}. Mark it complete before adding another.`);
         return;
       }
     }
@@ -1327,6 +1332,7 @@ function VisitModal({ init, onClose }: { init: { techUid: string; techName: stri
       title: title.trim(), jobNumber: jobNumber.trim(), jobId: jobId || undefined,
       description: description.trim(), department: department.trim(),
       start, end, priority, flagged, notes: notes.trim(),
+      additionalTechnicians: additionalTechs,
     };
     try {
       if (v) {
@@ -1490,6 +1496,32 @@ function VisitModal({ init, onClose }: { init: { techUid: string; techName: stri
             <input type="checkbox" checked={flagged} onChange={e => setFlagged(e.target.checked)} /> Flagged
           </label>
         </div>
+
+        <label style={s.lbl}>Additional Technicians</label>
+        <select
+          style={s.inp}
+          value=""
+          onChange={e => {
+            const name = e.target.value;
+            if (name && !additionalTechs.includes(name))
+              setAdditionalTechs(prev => [...prev, name]);
+          }}
+        >
+          <option value="">— Add a technician —</option>
+          {allTechs.filter(t => t.uid !== init.techUid).map(t => (
+            <option key={t.uid} value={t.name} disabled={additionalTechs.includes(t.name)}>{t.name}</option>
+          ))}
+        </select>
+        {additionalTechs.length > 0 && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6, marginBottom: 8 }}>
+            {additionalTechs.map(name => (
+              <div key={name} style={{ background: "#eff6ff", color: "#1d4ed8", border: "1px solid #bfdbfe", borderRadius: 99, padding: "3px 10px", fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 5 }}>
+                {name}
+                <span style={{ cursor: "pointer", fontSize: 15, lineHeight: 1 }} onClick={() => setAdditionalTechs(prev => prev.filter(n => n !== name))}>×</span>
+              </div>
+            ))}
+          </div>
+        )}
 
         <label style={s.lbl}>Notes</label>
         <textarea style={{ ...s.inp, minHeight: 56, resize: "vertical" }} value={notes} onChange={e => setNotes(e.target.value)} />
