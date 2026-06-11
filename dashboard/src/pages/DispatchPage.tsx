@@ -8,6 +8,7 @@ import { useIsAdmin } from "../hooks/useIsAdmin";
 import Spinner from "../components/Spinner";
 import { getOutlookToken } from "../utils/outlookToken";
 import { getFunctions, httpsCallable } from "firebase/functions";
+import { useToast } from "../components/Toast";
 
 type OnCallAssignment = { id: string; date: string; uid: string; employeeName: string };
 type DispatchUser    = { uid: string; displayName: string };
@@ -83,6 +84,7 @@ function initials(name: string) {
 export default function DispatchPage() {
   const isAdmin = useIsAdmin();
   const navigate = useNavigate();
+  const { toast } = useToast();
   const [techs, setTechs] = useState<Tech[]>([]);
   const [visits, setVisits] = useState<Visit[]>([]);
   const [loading, setLoading] = useState(true);
@@ -663,15 +665,22 @@ export default function DispatchPage() {
           }
         }
         // Update Outlook calendar events server-side
-        const swapFn = httpsCallable<
-          { myDate: string; myName: string; theirDate?: string; theirName?: string },
-          { ok: boolean }
-        >(getFunctions(), "applyOnCallSwap");
-        swapFn({
-          myDate: assignment.date,
-          myName: assignment.employeeName,
-          ...(swapOfferDate ? { theirDate: swapOfferDate, theirName: newPerson.displayName } : {}),
-        }).catch(() => {});
+        try {
+          const swapFn = httpsCallable<
+            { myDate: string; myName: string; theirDate?: string; theirName?: string },
+            { ok: boolean; results?: Record<string, string> }
+          >(getFunctions(), "applyOnCallSwap");
+          const res = await swapFn({
+            myDate: assignment.date,
+            myName: assignment.employeeName,
+            ...(swapOfferDate ? { theirDate: swapOfferDate, theirName: newPerson.displayName } : {}),
+          });
+          const r = res.data.results || {};
+          const failed = Object.entries(r).filter(([, v]) => v !== "updated").map(([k, v]) => `${k}: ${v}`);
+          if (failed.length) toast(`Firestore updated, but Outlook: ${failed.join("; ")}`, "error");
+        } catch (e: any) {
+          toast(`Firestore updated, but Outlook update failed: ${e?.message || "unknown error"}`, "error");
+        }
       } else {
         // Non-admin: create a swap request (matches OnCallManagerPage schema)
         const targetEvent = swapTargetEvents.find(e => e.date === swapOfferDate);
@@ -826,7 +835,7 @@ export default function DispatchPage() {
               })}
               {outlookName && (() => {
                 const myFirst = auth.currentUser?.displayName?.split(" ")[0] || "";
-                const isMyChip = myFirst && outlookName.toLowerCase() === myFirst.toLowerCase();
+                const isMyChip = myFirst && outlookName.toLowerCase().startsWith(myFirst.toLowerCase());
                 const clickable = isAdmin || isMyChip;
                 const virtualAssignment = { id: "", date: d, uid: "", employeeName: outlookName };
                 return (

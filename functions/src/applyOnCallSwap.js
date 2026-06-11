@@ -40,28 +40,38 @@ export const applyOnCallSwap = onCall({ cors: true }, async (request) => {
   const myEventId    = await findEventId(token, myDate,   myName);
   const theirEventId = theirDate && theirName ? await findEventId(token, theirDate, theirName) : null;
 
-  const patch = (id, newSubject) =>
-    fetch(`https://graph.microsoft.com/v1.0/me/events/${id}`, {
+  async function patch(id, newSubject) {
+    const r = await fetch(`https://graph.microsoft.com/v1.0/me/events/${encodeURIComponent(id)}`, {
       method: "PATCH",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
       body: JSON.stringify({ subject: newSubject }),
     });
+    if (!r.ok) {
+      const body = await r.json().catch(() => ({}));
+      const msg = body?.error?.message || `HTTP ${r.status}`;
+      console.error(`applyOnCallSwap PATCH failed for ${id}: ${msg}`);
+      return { ok: false, error: msg };
+    }
+    return { ok: true };
+  }
 
   const results = {};
 
   if (myEventId) {
-    const r = await patch(myEventId, `${theirName.split(" ")[0]} On Call`);
-    results.myEvent = r.ok ? "updated" : `failed (${r.status})`;
+    const r = await patch(myEventId, `${(theirName || myName).split(" ")[0]} On Call`);
+    results.myEvent = r.ok ? "updated" : r.error || "failed";
   } else {
-    results.myEvent = "not found in Outlook";
+    console.error(`applyOnCallSwap: no event found for ${myName} on ${myDate}`);
+    results.myEvent = `not found in Outlook (${myName} on ${myDate})`;
   }
 
   if (theirDate && theirName) {
     if (theirEventId) {
       const r = await patch(theirEventId, `${myName.split(" ")[0]} On Call`);
-      results.theirEvent = r.ok ? "updated" : `failed (${r.status})`;
+      results.theirEvent = r.ok ? "updated" : r.error || "failed";
     } else {
-      results.theirEvent = "not found in Outlook";
+      console.error(`applyOnCallSwap: no event found for ${theirName} on ${theirDate}`);
+      results.theirEvent = `not found in Outlook (${theirName} on ${theirDate})`;
     }
   }
 
