@@ -60,7 +60,7 @@ const subHdr = (w?: number | string): React.CSSProperties => ({
   padding: "5px 8px", textTransform: "uppercase", letterSpacing: 0.4,
   border: B, textAlign: "left", whiteSpace: "nowrap", width: w, minWidth: w,
 });
-const cellInp: React.CSSProperties = { width: "100%", height: "100%", padding: "4px 7px", border: "none", outline: "none", background: "transparent", fontSize: 12, fontFamily: "inherit", boxSizing: "border-box" };
+const cellInp: React.CSSProperties = { width: "100%", height: "100%", padding: "4px 7px", border: "none", outline: "none", background: "transparent", fontSize: 12, fontFamily: "inherit", boxSizing: "border-box", color: "#111827", WebkitTextFillColor: "#111827" };
 const delBtnSt: React.CSSProperties = { background: "none", border: "none", color: "#ef4444", fontSize: 14, cursor: "pointer", padding: "0 4px", display: "block", margin: "0 auto" };
 const addRowSt: React.CSSProperties = { background: "none", border: "1px dashed #94a3b8", color: "#64748b", borderRadius: 4, padding: "3px 14px", fontSize: 11, cursor: "pointer" };
 
@@ -347,7 +347,7 @@ function OverridePanel({ p, onChange }: { p: PricingData; onChange: (k: string, 
         <input type="number" step="any"
           value={isPct ? +((p.settings as any)[key] * 100).toFixed(2) : (p.settings as any)[key]}
           onChange={e => onChange(key, isPct ? +e.target.value / 100 : +e.target.value)}
-          style={{ width: 72, padding: "4px 6px", border: "1px solid #334155", borderRadius: 5, fontSize: 12, background: "#1e293b", color: "#f1f5f9", textAlign: "right", outline: "none" }}
+          style={{ width: 72, padding: "4px 6px", border: "1px solid #334155", borderRadius: 5, fontSize: 12, background: "#1e293b", color: "#f1f5f9", WebkitTextFillColor: "#f1f5f9", textAlign: "right", outline: "none" }}
         />
         {isPct && <span style={{ fontSize: 11, color: "#64748b" }}>%</span>}
       </div>
