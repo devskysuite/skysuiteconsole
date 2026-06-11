@@ -5,6 +5,7 @@ import { getFunctions, httpsCallable } from "firebase/functions";
 import { db, auth } from "../firebase";
 import { getOutlookToken } from "../utils/outlookToken";
 import { useRole, isAdminRole } from "../hooks/useRole";
+import TimeOffNotifySettings from "../components/TimeOffNotifySettings";
 
 const callConflictCheckNow  = httpsCallable(getFunctions(), "conflictCheckNow");
 const callOncallReminderNow = httpsCallable(getFunctions(), "oncallReminderNow");
@@ -746,6 +747,9 @@ export default function OnCallManagerPage({ adminMode = false }: { adminMode?: b
               : <><p style={{fontSize:13,color:"#6b7280",marginBottom:10}}>Sign in with the SkySuite Outlook account to enable calendar features.</p>
                  <button onClick={connectOutlook} style={btnS("#1565c0")}>Connect Outlook</button></>}
           </div>
+
+          {/* Vacation Request Notifications */}
+          <TimeOffNotifySettings />
 
           {/* Conflict Alerts */}
           <OnCallAlertsPanel db={db}/>

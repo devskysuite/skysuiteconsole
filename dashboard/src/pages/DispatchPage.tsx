@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  collection, onSnapshot, query, where, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, getDocs,
+  collection, onSnapshot, query, where, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, getDocs, limit,
 } from "firebase/firestore";
 import { db, auth } from "../firebase";
 import { useIsAdmin } from "../hooks/useIsAdmin";
@@ -699,33 +699,43 @@ export default function DispatchPage() {
         const nextDays: string[] = [];
         for (let i = 1; i <= trailingCount; i++) nextDays.push(fmtYMD(new Date(yr, mo, i)));
 
-        const btnX: React.CSSProperties = { background: "none", border: "none", cursor: "pointer", padding: "0 2px", fontSize: 13, lineHeight: 1, color: "inherit", opacity: 0.7, flexShrink: 0 };
-        const addBtn: React.CSSProperties = { width: "100%", background: "none", borderRadius: 4, padding: "3px 0", fontSize: 11, cursor: "pointer", marginTop: 2 };
+        const chipBase: React.CSSProperties = { borderRadius: 4, padding: "3px 8px", fontSize: 11, fontWeight: 700, marginBottom: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const };
 
         function OnCallDayCell({ d, overflow }: { d: string; overflow?: boolean }) {
           const isToday = d === todayYMD;
           const assignment = !overflow ? assignmentByDate[d] : undefined;
-          const outlookName = !overflow ? monthSummary.oncall[d] : undefined;
+          const outlookName = !overflow && !assignment ? monthSummary.oncall[d] : undefined;
           const dayNum = parseInt(d.slice(8));
+          const canAdd = !overflow && isAdmin && !assignment;
           return (
-            <div style={{ background: overflow ? "#f9fafb" : "#fff", minHeight: 90, padding: "6px 8px" }}>
+            <div
+              style={{ background: overflow ? "#f9fafb" : "#fff", minHeight: 90, padding: "6px 8px", cursor: canAdd ? "pointer" : "default" }}
+              onClick={() => { if (canAdd) { setAddOnCallModal(d); setAddOnCallUid(""); } }}
+              title={canAdd ? "Click to assign on call" : undefined}
+            >
               <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 4, color: isToday ? "#fff" : overflow ? "#c0c8d4" : "#374151", background: isToday ? "#1565c0" : "transparent", borderRadius: isToday ? "50%" : 0, width: isToday ? 22 : "auto", height: isToday ? 22 : "auto", display: "flex", alignItems: "center", justifyContent: "center" }}>{dayNum}</div>
               {assignment && (
-                <div style={{ background: "#f5f3ff", color: "#6d28d9", border: "1px solid #ddd6fe", borderRadius: 4, padding: "2px 4px 2px 6px", fontSize: 11, fontWeight: 700, marginBottom: 2, display: "flex", alignItems: "center", gap: 2 }}>
-                  <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>{assignment.employeeName}</span>
-                  {isAdmin && <>
-                    <button style={btnX} title="Swap" onClick={e => { e.stopPropagation(); openSwap(d); }}>↔</button>
-                    <button style={btnX} title="Delete" onClick={e => { e.stopPropagation(); setDeleteOnCallId(assignment.id); }}>✕</button>
-                  </>}
+                <div style={{ display: "flex", gap: 2, alignItems: "stretch" }}>
+                  <div
+                    style={{ ...chipBase, flex: 1, background: "#f5f3ff", color: "#6d28d9", border: "1px solid #ddd6fe", cursor: isAdmin ? "pointer" : "default" }}
+                    onClick={e => { e.stopPropagation(); if (isAdmin) openSwap(d); }}
+                    title={isAdmin ? "Click to swap" : undefined}
+                  >
+                    {assignment.employeeName}
+                  </div>
+                  {isAdmin && (
+                    <div
+                      style={{ background: "#f5f3ff", border: "1px solid #ddd6fe", borderRadius: 4, padding: "2px 6px", fontSize: 13, color: "#6d28d9", cursor: "pointer", display: "flex", alignItems: "center" }}
+                      onClick={e => { e.stopPropagation(); setDeleteOnCallId(assignment.id); }}
+                      title="Remove assignment"
+                    >✕</div>
+                  )}
                 </div>
               )}
-              {!assignment && outlookName && (
-                <div style={{ background: "#f5f3ff", color: "#8b5cf6", border: "1px solid #ddd6fe", borderRadius: 4, padding: "2px 6px", fontSize: 11, fontWeight: 700, marginBottom: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const, opacity: 0.7 }} title="From Outlook — manage via OnCall page">
-                  {outlookName} (Outlook)
+              {outlookName && (
+                <div style={{ ...chipBase, background: "#f5f3ff", color: "#8b5cf6", border: "1px solid #ddd6fe", opacity: 0.65 }} title="Outlook only">
+                  {outlookName}
                 </div>
-              )}
-              {!assignment && !overflow && isAdmin && (
-                <button style={{ ...addBtn, border: "1px dashed #ddd6fe", color: "#8b5cf6" }} onClick={() => { setAddOnCallModal(d); setAddOnCallUid(""); }}>+ Add</button>
               )}
             </div>
           );
@@ -733,29 +743,47 @@ export default function DispatchPage() {
 
         function VacDayCell({ d, overflow }: { d: string; overflow?: boolean }) {
           const isToday = d === todayYMD;
-          // Outlook vacation with eventIds — fully editable
           const outlookVacs = !overflow ? (monthVacItems[d] || []) : [];
-          // Legacy Firestore-only entries (added before Outlook write support)
-          const fsVacs = !overflow ? (vacByDate[d] || []).filter(v => !outlookVacs.some(() => false)) : [];
+          const fsVacs = !overflow ? (vacByDate[d] || []) : [];
           const dayNum = parseInt(d.slice(8));
+          const canAdd = !overflow && isAdmin;
           return (
-            <div style={{ background: overflow ? "#f9fafb" : "#fff", minHeight: 90, padding: "6px 8px" }}>
+            <div
+              style={{ background: overflow ? "#f9fafb" : "#fff", minHeight: 90, padding: "6px 8px", cursor: canAdd ? "pointer" : "default" }}
+              onClick={() => { if (canAdd) { setAddVacModal(d); setAddVacEnd(d); setAddVacName(""); setAddVacUid(""); } }}
+              title={canAdd ? "Click to add vacation" : undefined}
+            >
               <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 4, color: isToday ? "#fff" : overflow ? "#c0c8d4" : "#374151", background: isToday ? "#1565c0" : "transparent", borderRadius: isToday ? "50%" : 0, width: isToday ? 22 : "auto", height: isToday ? 22 : "auto", display: "flex", alignItems: "center", justifyContent: "center" }}>{dayNum}</div>
               {outlookVacs.map((v, i) => (
-                <div key={"o" + i} style={{ background: "#fff7ed", color: "#c2410c", border: "1px solid #fed7aa", borderRadius: 4, padding: "2px 4px 2px 6px", fontSize: 11, fontWeight: 700, marginBottom: 2, display: "flex", alignItems: "center", gap: 2 }}>
-                  <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>{v.name}</span>
-                  {isAdmin && <button style={{ ...btnX, color: "#c2410c" }} title="Delete from Outlook" onClick={e => { e.stopPropagation(); setDeleteVacId(v.eventId); }}>✕</button>}
+                <div key={"o" + i} style={{ display: "flex", gap: 2, alignItems: "stretch", marginBottom: 2 }}>
+                  <div
+                    style={{ ...chipBase, flex: 1, background: "#fff7ed", color: "#c2410c", border: "1px solid #fed7aa", cursor: isAdmin ? "pointer" : "default", marginBottom: 0 }}
+                    onClick={e => { e.stopPropagation(); if (isAdmin) setDeleteVacId(v.eventId); }}
+                    title={isAdmin ? "Click to delete" : undefined}
+                  >{v.name}</div>
+                  {isAdmin && (
+                    <div
+                      style={{ background: "#fff7ed", border: "1px solid #fed7aa", borderRadius: 4, padding: "2px 6px", fontSize: 13, color: "#c2410c", cursor: "pointer", display: "flex", alignItems: "center" }}
+                      onClick={e => { e.stopPropagation(); setDeleteVacId(v.eventId); }}
+                    >✕</div>
+                  )}
                 </div>
               ))}
               {fsVacs.map((v, i) => (
-                <div key={"f" + i} style={{ background: "#fff7ed", color: "#c2410c", border: "1px solid #fed7aa", borderRadius: 4, padding: "2px 4px 2px 6px", fontSize: 11, fontWeight: 700, marginBottom: 2, display: "flex", alignItems: "center", gap: 2 }}>
-                  <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>{v.name}</span>
-                  {isAdmin && <button style={{ ...btnX, color: "#c2410c" }} title="Delete" onClick={e => { e.stopPropagation(); setDeleteVacId(v.id); }}>✕</button>}
+                <div key={"f" + i} style={{ display: "flex", gap: 2, alignItems: "stretch", marginBottom: 2 }}>
+                  <div
+                    style={{ ...chipBase, flex: 1, background: "#fff7ed", color: "#c2410c", border: "1px solid #fed7aa", cursor: isAdmin ? "pointer" : "default", marginBottom: 0 }}
+                    onClick={e => { e.stopPropagation(); if (isAdmin) setDeleteVacId(v.id); }}
+                    title={isAdmin ? "Click to delete" : undefined}
+                  >{v.name}</div>
+                  {isAdmin && (
+                    <div
+                      style={{ background: "#fff7ed", border: "1px solid #fed7aa", borderRadius: 4, padding: "2px 6px", fontSize: 13, color: "#c2410c", cursor: "pointer", display: "flex", alignItems: "center" }}
+                      onClick={e => { e.stopPropagation(); setDeleteVacId(v.id); }}
+                    >✕</div>
+                  )}
                 </div>
               ))}
-              {!overflow && isAdmin && (
-                <button style={{ ...addBtn, border: "1px dashed #fed7aa", color: "#ea580c" }} onClick={() => { setAddVacModal(d); setAddVacEnd(d); setAddVacName(""); setAddVacUid(""); }}>+ Add</button>
-              )}
             </div>
           );
         }
@@ -1056,6 +1084,8 @@ function Row({ tech, days, byCell, calMap, onAdd, onOpen, onSwap, canEdit }: {
   );
 }
 
+type JobOption = { id: string; jobNumber: string; customerName: string; status: string; description: string };
+
 function VisitModal({ init, onClose }: { init: { techUid: string; techName: string; date: string; visit?: Visit }; onClose: () => void }) {
   const v = init.visit;
   const isCancelled = v?.status === "canceled";
@@ -1070,6 +1100,39 @@ function VisitModal({ init, onClose }: { init: { techUid: string; techName: stri
   const [busy, setBusy] = useState(false);
   const [rescheduleMode, setRescheduleMode] = useState(false);
   const [rescheduleDate, setRescheduleDate] = useState(v?.date || init.date);
+
+  // Job search (add-only)
+  const [jobQuery, setJobQuery] = useState("");
+  const [allJobs, setAllJobs] = useState<JobOption[]>([]);
+  const [jobDrop, setJobDrop] = useState(false);
+
+  useEffect(() => {
+    if (v) return; // edit mode — no need to load jobs
+    getDocs(query(collection(db, "jobs"), where("status", "in", ["Open", "In Progress"]), limit(400)))
+      .then(snap => setAllJobs(snap.docs.map(d => ({
+        id: d.id,
+        jobNumber: d.data().jobNumber || "",
+        customerName: d.data().customerName || "",
+        status: d.data().status || "",
+        description: d.data().issueDescription || d.data().title || "",
+      }))))
+      .catch(() => {});
+  }, []);
+
+  const jobResults = useMemo(() => {
+    const q = jobQuery.trim().toLowerCase();
+    if (!q) return [];
+    return allJobs.filter(j =>
+      j.jobNumber.toLowerCase().includes(q) || j.customerName.toLowerCase().includes(q)
+    ).slice(0, 8);
+  }, [jobQuery, allJobs]);
+
+  function selectJob(j: JobOption) {
+    setTitle(j.customerName + (j.description ? ` — ${j.description}` : ""));
+    setJobNumber(j.jobNumber);
+    setJobQuery(`${j.jobNumber}  •  ${j.customerName}`);
+    setJobDrop(false);
+  }
 
   async function save() {
     if (!title.trim()) return;
@@ -1127,8 +1190,44 @@ function VisitModal({ init, onClose }: { init: { techUid: string; techName: stri
         <h2 style={{ fontSize: 18, fontWeight: 800, color: "#0d2e5e", marginBottom: 2 }}>{v ? "Edit Visit" : "Add Visit"}</h2>
         <p style={{ fontSize: 12, color: "#6b7280", marginBottom: 16 }}>{init.techName}</p>
 
-        <label style={s.lbl}>Customer / Job</label>
-        <input style={s.inp} value={title} onChange={e => setTitle(e.target.value)} placeholder="Office Renovation" autoFocus />
+        {/* Job search — add mode only */}
+        {!v && (
+          <div style={{ position: "relative", marginBottom: 4 }}>
+            <label style={s.lbl}>Search Job #  or Customer</label>
+            <input
+              style={s.inp}
+              value={jobQuery}
+              onChange={e => { setJobQuery(e.target.value); setJobDrop(true); }}
+              onFocus={() => jobResults.length > 0 && setJobDrop(true)}
+              onBlur={() => setTimeout(() => setJobDrop(false), 150)}
+              placeholder="Job # or customer name…"
+              autoFocus
+            />
+            {jobDrop && jobResults.length > 0 && (
+              <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: "#fff", border: "1px solid #d1d5db", borderRadius: 8, boxShadow: "0 6px 20px rgba(0,0,0,0.12)", zIndex: 200, maxHeight: 260, overflowY: "auto" }}>
+                {jobResults.map(j => (
+                  <div
+                    key={j.id}
+                    onMouseDown={() => selectJob(j)}
+                    style={{ padding: "9px 12px", cursor: "pointer", borderBottom: "1px solid #f0f0f0" }}
+                    onMouseOver={e => (e.currentTarget.style.background = "#f0f7ff")}
+                    onMouseOut={e => (e.currentTarget.style.background = "")}
+                  >
+                    <div style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
+                      <span style={{ fontWeight: 700, fontSize: 12, color: "#1565c0" }}>{j.jobNumber}</span>
+                      <span style={{ fontWeight: 600, fontSize: 13, color: "#374151" }}>{j.customerName}</span>
+                      <span style={{ fontSize: 11, color: "#6b7280", background: "#f3f4f6", borderRadius: 4, padding: "1px 5px" }}>{j.status}</span>
+                    </div>
+                    {j.description && <div style={{ fontSize: 11, color: "#6b7280", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{j.description}</div>}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        <label style={s.lbl}>Visit Title</label>
+        <input style={s.inp} value={title} onChange={e => setTitle(e.target.value)} placeholder="Office Renovation" autoFocus={!!v} />
 
         <div style={{ display: "flex", gap: 12 }}>
           <div style={{ flex: 1 }}><label style={s.lbl}>Job #</label><input style={s.inp} value={jobNumber} onChange={e => setJobNumber(e.target.value)} placeholder="#P25-0093" /></div>

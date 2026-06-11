@@ -18,6 +18,8 @@ import AddVehiclePage from "./pages/AddVehiclePage";
 import VehicleDetailPage from "./pages/VehicleDetailPage";
 import TimeOffPage from "./pages/TimeOffPage";
 import TimeOffApprovalsPage from "./pages/TimeOffApprovalsPage";
+import RequestVacationPage from "./pages/RequestVacationPage";
+import MyVacationRequestsPage from "./pages/MyVacationRequestsPage";
 import OnCallPage from "./pages/OnCallPage";
 import OnCallAdminPage from "./pages/OnCallAdminPage";
 import OnCallManagerPage from "./pages/OnCallManagerPage";
@@ -119,6 +121,8 @@ export default function App() {
                       <Route path="/repair-contacts" element={<RepairContactsPage />} />
                       <Route path="/time-off" element={<TimeOffPage />} />
                       <Route path="/time-off/approvals" element={<TimeOffApprovalsPage />} />
+                      <Route path="/time-off/request" element={<RequestVacationPage />} />
+                      <Route path="/time-off/my-requests" element={<MyVacationRequestsPage />} />
                       <Route path="/on-call" element={<OnCallManagerPage />} />
                       <Route path="/on-call/admin" element={<OnCallManagerPage adminMode={true} />} />
                       <Route path="/on-call/legacy" element={<OnCallPage />} />

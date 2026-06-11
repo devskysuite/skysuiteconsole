@@ -1,71 +1,44 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { onAuthStateChanged } from "firebase/auth";
 import {
-  addDoc, collection, doc, getDoc, getDocs, onSnapshot,
+  collection, doc, getDocs, onSnapshot,
   query, updateDoc, deleteDoc, where,
 } from "firebase/firestore";
 import { getFunctions, httpsCallable } from "firebase/functions";
 import { useToast } from "../components/Toast";
 import { useRole, canApproveTimeOff, isAdminRole } from "../hooks/useRole";
-import TimeOffNotifySettings from "../components/TimeOffNotifySettings";
 import { fmtISODate, timeOffStatusBadge } from "../utils/formatting";
 import type { TimeOffRequest } from "../types";
 import { auth, db } from "../firebase";
 import { getOutlookToken } from "../utils/outlookToken";
 
-const callSyncVacation     = httpsCallable(getFunctions(), "syncVacationEvent");
-const callNotifyApprovers  = httpsCallable(getFunctions(), "notifyApproversSms");
-const callVacation         = httpsCallable(getFunctions(), "vacationAction");
+const callSyncVacation = httpsCallable(getFunctions(), "syncVacationEvent");
+const callVacation     = httpsCallable(getFunctions(), "vacationAction");
 const CAL_ID     = "AAMkADgyOGUwMDUyLTNiZjMtNGQzNi1hNTgwLTQ2M2IzYzE2YmQ5MgBGAAAAAACGxuDePTlOQawDDU8UfW0gBwBxt6lSDH0kQY0tk4wDjNk8AAAAAAEGAABxt6lSDH0kQY0tk4wDjNk8AAALmQObAAA=";
 const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 const SHORT_MONTHS = MONTHS.map(m=>m.slice(0,3));
 const DAYS   = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
 
-type View = "month" | "list" | "request" | "my-requests" | "approvals";
+type View = "month" | "list" | "approvals";
 
 export default function TimeOffPage() {
   const { toast, confirm } = useToast();
   const role = useRole();
   const canApprove = canApproveTimeOff(role);
 
-  const [currentUser, setCurrentUser] = useState<{ uid: string; email: string; displayName: string } | null>(null);
-  const [myRequests,  setMyRequests]  = useState<TimeOffRequest[]>([]);
   const [allRequests, setAllRequests] = useState<TimeOffRequest[]>([]);
 
   // Calendar
   const todayDate = new Date();
   const [year,  setYear]  = useState(todayDate.getFullYear());
   const [month, setMonth] = useState(todayDate.getMonth());
-  const [view,  setView]  = useState<View>("month");
+  const [view, setView] = useState<View>("month");
   const [events, setEvents] = useState<{id:string;subject:string;start:string;end:string}[]>([]);
   const [calLoading, setCalLoading] = useState(false);
   const [token, setToken] = useState("");
 
-  // Request form
-  const [singleDay, setSingleDay] = useState(true);
-  const [startDate, setStartDate] = useState("");
-  const [endDate,   setEndDate]   = useState("");
-  const [reason,    setReason]    = useState("");
-  const [busy,    setBusy]    = useState(false);
-  const [error,   setError]   = useState("");
-  const [success, setSuccess] = useState("");
-
   const today = new Date().toISOString().split("T")[0];
-
-  useEffect(() => {
-    return onAuthStateChanged(auth, async (user) => {
-      if (!user) { setCurrentUser(null); return; }
-      try {
-        const snap = await getDocs(query(collection(db, "users"), where("uid", "==", user.uid)));
-        const data = snap.empty ? null : snap.docs[0].data();
-        setCurrentUser({ uid: user.uid, email: user.email ?? "", displayName: data?.displayName ?? user.email ?? "" });
-      } catch {
-        setCurrentUser({ uid: user.uid, email: user.email ?? "", displayName: user.email ?? "" });
-      }
-    });
-  }, []);
-
-  useEffect(() => { if (currentUser) loadMyRequests(); }, [currentUser]);
 
   // Listen for all requests (for approvers)
   useEffect(() => {
@@ -160,61 +133,9 @@ export default function TimeOffPage() {
     setVacBusy(false);
   }
 
-  async function loadMyRequests() {
-    if (!currentUser) return;
-    const snap = await getDocs(query(collection(db, "timeOffRequests"), where("uid", "==", currentUser.uid)));
-    const results = snap.docs.map(d => ({ id: d.id, ...d.data() } as TimeOffRequest));
-    const now = new Date().toISOString().split("T")[0];
-    for (const r of results) {
-      if (r.status === "PENDING" && r.startDate < now) {
-        updateDoc(doc(db, "timeOffRequests", r.id), { status: "DENIED" }).catch(() => {});
-        r.status = "DENIED";
-      }
-    }
-    results.sort((a, b) => (b.createdAt?.toMillis?.() ?? 0) - (a.createdAt?.toMillis?.() ?? 0));
-    setMyRequests(results);
-  }
-
-  async function submitRequest() {
-    setError(""); setSuccess("");
-    if (!startDate || (!singleDay && !endDate)) { setError(singleDay ? "Please select a date." : "Please select start and end dates."); return; }
-    const effectiveEnd = singleDay ? startDate : endDate;
-    if (effectiveEnd < startDate) { setError("End date cannot be before start date."); return; }
-    if (!currentUser) { setError("Not logged in."); return; }
-    const overlap = myRequests.find(r => r.status !== "DENIED" && startDate <= r.endDate && effectiveEnd >= r.startDate);
-    if (overlap) { setError(`You already have a ${overlap.status.toLowerCase()} request for ${overlap.startDate} – ${overlap.endDate}.`); return; }
-    const deniedOverlap = myRequests.find(r => r.status === "DENIED" && startDate <= r.endDate && effectiveEnd >= r.startDate);
-    if (deniedOverlap && !await confirm("This time was previously denied. Request anyway?")) return;
-    setBusy(true);
-    try {
-      await addDoc(collection(db, "timeOffRequests"), {
-        uid: currentUser.uid, employeeName: currentUser.displayName, employeeEmail: currentUser.email,
-        startDate, endDate: effectiveEnd, reason: reason.trim(), status: "PENDING", createdAt: new Date(),
-      });
-      // Notify approvers per the configured method(s). Always visible in the Approvals tab regardless.
-      try {
-        const nSnap = await getDoc(doc(db, "settings", "timeOffNotify"));
-        const notify = nSnap.data() || {};
-        if (notify.sms) {
-          callNotifyApprovers({ employeeName: currentUser.displayName, startDate, endDate: effectiveEnd }).catch(() => {});
-        }
-        if (notify.email) {
-          const idToken = await auth.currentUser?.getIdToken() ?? "";
-          fetch("/api/send-email", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ idToken, type: "time-off", payload: { employee_name: currentUser.displayName, employee_email: currentUser.email, start_date: startDate, end_date: effectiveEnd, reason: reason.trim() || "No reason provided" } }) }).catch(() => {});
-        }
-      } catch {}
-      setSuccess("Vacation request submitted successfully.");
-      setStartDate(""); setEndDate(""); setReason("");
-      await loadMyRequests();
-    } catch (e: any) { setError(e?.message ?? "Failed to submit."); }
-    finally { setBusy(false); }
-  }
-
-  // Switch tabs and refresh that tab's data so it never shows stale info.
   function switchView(v: View) {
     setView(v);
     if (v === "month" || v === "list") loadVacations();
-    if (v === "my-requests") loadMyRequests();
   }
 
   async function approveRequest(r: TimeOffRequest) {
@@ -283,12 +204,10 @@ export default function TimeOffPage() {
 
       <div style={{ background: "#fff", borderRadius: 12, padding: 20, boxShadow: "0 1px 4px rgba(0,0,0,0.07)" }}>
 
-        {/* ── Tab buttons — identical to On-Call ── */}
-        <div style={{ display: "flex", alignItems: "center", borderBottom: "2px solid #f0f0f0", marginBottom: 20 }}>
-          <TabBtn label="Calendar"          active={view==="month"}       onClick={()=>switchView("month")} />
-          <TabBtn label="List View"         active={view==="list"}        onClick={()=>switchView("list")} />
-          <TabBtn label="Request Vacation"  active={view==="request"}     onClick={()=>switchView("request")} />
-          <TabBtn label="My Requests"       active={view==="my-requests"} onClick={()=>switchView("my-requests")} />
+        {/* ── Tab buttons ── */}
+        <div style={{ display: "flex", alignItems: "center", gap: 4, borderBottom: "2px solid #f0f0f0", marginBottom: 20, flexWrap: "wrap" }}>
+          <TabBtn label="Calendar"  active={view==="month"} onClick={()=>switchView("month")} />
+          <TabBtn label="List View" active={view==="list"}  onClick={()=>switchView("list")} />
           {canApprove && (
             <TabBtn
               label={`Approvals${pendingCount > 0 ? ` (${pendingCount})` : ""}`}
@@ -296,6 +215,14 @@ export default function TimeOffPage() {
               onClick={()=>switchView("approvals")}
             />
           )}
+          <div style={{ marginLeft: "auto", display: "flex", gap: 8, paddingBottom: 2 }}>
+            <Link to="/time-off/request" style={{ background: "#1565c0", color: "#fff", border: "none", borderRadius: 8, padding: "6px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer", textDecoration: "none" }}>
+              + Request Vacation
+            </Link>
+            <Link to="/time-off/my-requests" style={{ background: "#f3f4f6", color: "#374151", border: "1px solid #d1d5db", borderRadius: 8, padding: "6px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer", textDecoration: "none" }}>
+              My Requests
+            </Link>
+          </div>
         </div>
 
         {/* ── Month nav ── */}
@@ -370,73 +297,9 @@ export default function TimeOffPage() {
           </div>
         )}
 
-        {/* ── Request Vacation ── */}
-        {view === "request" && (
-          <div style={{ maxWidth: 560 }}>
-            <h2 style={{ fontSize: 17, fontWeight: 700, marginBottom: 20, color: "#0d2e5e" }}>Request Vacation</h2>
-            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20 }}>
-              <span style={{ fontSize: 13, fontWeight: 600, color: singleDay ? "#aaa" : "#333" }}>Multiple Days</span>
-              <div onClick={() => { setSingleDay(!singleDay); setEndDate(""); }}
-                style={{ width: 44, height: 24, borderRadius: 12, cursor: "pointer", backgroundColor: singleDay ? "#1565c0" : "#ccc", position: "relative", transition: "background-color 0.2s" }}>
-                <div style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: "#fff", position: "absolute", top: 2, left: singleDay ? 22 : 2, transition: "left 0.2s", boxShadow: "0 1px 3px rgba(0,0,0,0.2)" }} />
-              </div>
-              <span style={{ fontSize: 13, fontWeight: 600, color: singleDay ? "#333" : "#aaa" }}>Single Day</span>
-            </div>
-            <div style={{ display: "flex", gap: 16, marginBottom: 16, flexWrap: "wrap" }}>
-              <div style={{ display: "flex", flexDirection: "column", flex: 1, minWidth: 160 }}>
-                <label style={lbl}>{singleDay ? "Date" : "Start Date"}</label>
-                <input type="date" style={inp} min={today} value={startDate} onChange={e => setStartDate(e.target.value)} />
-              </div>
-              {!singleDay && (
-                <div style={{ display: "flex", flexDirection: "column", flex: 1, minWidth: 160 }}>
-                  <label style={lbl}>End Date</label>
-                  <input type="date" style={inp} min={startDate || today} value={endDate} onChange={e => setEndDate(e.target.value)} />
-                </div>
-              )}
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", marginBottom: 16 }}>
-              <label style={lbl}>Reason (optional)</label>
-              <textarea style={{ ...inp, resize: "vertical", minHeight: 80, fontFamily: "inherit" }} value={reason} onChange={e => setReason(e.target.value)} placeholder="Any additional details…" />
-            </div>
-            {error   && <p style={{ color: "#cc0000", fontSize: 13, marginBottom: 12 }}>{error}</p>}
-            {success && <p style={{ color: "#007700", fontSize: 13, marginBottom: 12 }}>{success}</p>}
-            <button style={btnS("#1565c0")} onClick={submitRequest} disabled={busy}>{busy ? "Submitting…" : "Submit Request"}</button>
-          </div>
-        )}
-
-        {/* ── My Requests ── */}
-        {view === "my-requests" && (
-          <div>
-            <h2 style={{ fontSize: 17, fontWeight: 700, marginBottom: 16, color: "#0d2e5e" }}>My Vacation Requests</h2>
-            {myRequests.length === 0 ? (
-              <p style={{ color: "#888", fontSize: 14 }}>No requests submitted yet.</p>
-            ) : (
-              <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                <thead>
-                  <tr>
-                    <th style={th}>Start</th><th style={th}>End</th><th style={th}>Reason</th><th style={th}>Status</th><th style={th}>Submitted</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {myRequests.map(r => (
-                    <tr key={r.id} style={{ borderBottom: "1px solid #f5f5f5" }}>
-                      <td style={td}>{fmtISODate(r.startDate)}</td>
-                      <td style={td}>{fmtISODate(r.endDate)}</td>
-                      <td style={td}>{r.reason || "—"}</td>
-                      <td style={td}><span style={timeOffStatusBadge(r.status)}>{r.status}</span></td>
-                      <td style={td}>{r.createdAt?.toDate ? r.createdAt.toDate().toLocaleDateString("en-US",{month:"short",day:"2-digit",year:"numeric"}) : "—"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
-        )}
-
         {/* ── Approvals (managers/admins only) ── */}
         {view === "approvals" && canApprove && (
           <div>
-            {isAdminRole(role) && <TimeOffNotifySettings />}
             <h2 style={{ fontSize: 17, fontWeight: 700, marginBottom: 16, color: "#0d2e5e" }}>Vacation Approvals</h2>
             {allRequests.length === 0 ? (
               <p style={{ color: "#888", fontSize: 14 }}>No requests yet.</p>
