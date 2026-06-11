@@ -500,14 +500,33 @@ export default function OnCallManagerPage({ adminMode = false }: { adminMode?: b
   }
 
   async function resolveSwap(swap: SwapReq, accept: boolean) {
-    if (accept && accessToken) {
+    if (accept) {
+      if (!accessToken) {
+        window.alert("Outlook is not connected — cannot update the calendar. Please connect Outlook in the Setup tab first, then try again.");
+        return;
+      }
       await backupCalendar(`swap:${swap.requesterName}↔${swap.targetName}:${swap.myDate}`);
-      const myEventId   = swap.myEventId   || await findOnCallEventId(swap.myDate,   swap.requesterName.split(" ")[0]);
+      const myEventId    = swap.myEventId    || await findOnCallEventId(swap.myDate,   swap.requesterName.split(" ")[0]);
       const theirEventId = swap.theirEventId || await findOnCallEventId(swap.theirDate, swap.targetName.split(" ")[0]);
-      if (myEventId)    await graphFetch(accessToken, `/me/events/${myEventId}`,    "PATCH", { subject: `${swap.targetName.split(" ")[0]} On Call` }).catch(() => {});
-      if (theirEventId) await graphFetch(accessToken, `/me/events/${theirEventId}`, "PATCH", { subject: `${swap.requesterName.split(" ")[0]} On Call` }).catch(() => {});
+      const errs: string[] = [];
+      if (myEventId) {
+        const r = await graphFetch(accessToken, `/me/events/${myEventId}`, "PATCH", { subject: `${swap.targetName.split(" ")[0]} On Call` });
+        if (r?.error) errs.push(`${swap.requesterName}'s event: ${r.error.message}`);
+      } else {
+        errs.push(`Could not find ${swap.requesterName}'s on-call event for ${swap.myDate}`);
+      }
+      if (theirEventId) {
+        const r = await graphFetch(accessToken, `/me/events/${theirEventId}`, "PATCH", { subject: `${swap.requesterName.split(" ")[0]} On Call` });
+        if (r?.error) errs.push(`${swap.targetName}'s event: ${r.error.message}`);
+      } else {
+        errs.push(`Could not find ${swap.targetName}'s on-call event for ${swap.theirDate}`);
+      }
+      if (errs.length) {
+        window.alert(`Swap accepted in SkySuite but some Outlook updates failed:\n\n${errs.join("\n")}\n\nYou may need to update those days manually in Outlook.`);
+      }
     }
     await updateDoc(doc(db, "onCallSwapRequests", swap.id), { status: accept ? "ACCEPTED" : "DECLINED", resolvedAt: serverTimestamp() });
+    if (accept) setRefreshKey(k => k + 1);
   }
 
   async function runRotation(action:"preview"|"push"|"rebalance", rebalanceFrom?:string) {

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  collection, onSnapshot, query, where, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, getDocs, limit,
+  collection, onSnapshot, query, where, addDoc, updateDoc, deleteDoc, doc, getDoc, serverTimestamp, getDocs, limit,
 } from "firebase/firestore";
 import { db, auth } from "../firebase";
 import { useIsAdmin } from "../hooks/useIsAdmin";
@@ -97,6 +97,7 @@ export default function DispatchPage() {
   // On-call swap state
   const [assignments, setAssignments]     = useState<OnCallAssignment[]>([]);
   const [allUsers, setAllUsers]           = useState<DispatchUser[]>([]);
+  const [rosterNames, setRosterNames]     = useState<string[]>([]);
   const [swapModal, setSwapModal]         = useState<{ assignment: OnCallAssignment } | null>(null);
   const [swapToUid, setSwapToUid]         = useState("");
   const [swapOfferDate, setSwapOfferDate] = useState("");
@@ -106,8 +107,10 @@ export default function DispatchPage() {
   const [swapTargetEvents, setSwapTargetEvents] = useState<{ date: string; eventId: string }[]>([]);
   const [swapTargetLoading, setSwapTargetLoading] = useState(false);
 
-  // Top-level view: job board vs monthly on-call vs monthly vacation
-  const [boardView, setBoardView] = useState<"board" | "oncall" | "vacation">("board");
+  // Top-level view: job board vs monthly on-call vs monthly vacation — persisted across refreshes
+  const [boardView, setBoardView] = useState<"board" | "oncall" | "vacation">(
+    () => (localStorage.getItem("dispatch_boardView") as "board" | "oncall" | "vacation") || "board"
+  );
   const [monthAnchor, setMonthAnchor] = useState(() => {
     const n = new Date();
     return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}`;
@@ -241,7 +244,10 @@ export default function DispatchPage() {
     return () => { cancelled = true; };
   }, [boardView, monthAnchor, monthRefreshKey]);
 
-  // All users for swap dropdown
+  // Persist boardView across refreshes
+  useEffect(() => { localStorage.setItem("dispatch_boardView", boardView); }, [boardView]);
+
+  // All users + on-call roster for swap dropdown
   useEffect(() => {
     getDocs(collection(db, "users")).then(snap => {
       const list = snap.docs.map(d => ({
@@ -249,6 +255,9 @@ export default function DispatchPage() {
         displayName: (d.data().displayName || d.data().email || "") as string,
       })).filter(u => u.displayName).sort((a, b) => a.displayName.localeCompare(b.displayName));
       setAllUsers(list);
+    }).catch(() => {});
+    getDoc(doc(db, "settings", "onCallConfig")).then(snap => {
+      if (snap.exists() && snap.data().employees) setRosterNames(snap.data().employees as string[]);
     }).catch(() => {});
   }, []);
 
@@ -1136,17 +1145,20 @@ export default function DispatchPage() {
               {" — "}<strong style={{ color: "#111827" }}>{swapModal.assignment.employeeName}</strong> is on call
             </p>
 
-            <label style={s.lbl}>{isAdmin ? "Swap to" : "Who will cover?"}</label>
+            <label style={s.lbl}>{isAdmin ? "Swap with" : "Who to swap with?"}</label>
             <select style={s.inp} value={swapToUid} onChange={e => { setSwapToUid(e.target.value); setSwapOfferDate(""); }}>
               <option value="">Select employee…</option>
-              {allUsers.filter(u => u.uid !== swapModal.assignment.uid).map(u => (
-                <option key={u.uid} value={u.uid}>{u.displayName}</option>
-              ))}
+              {allUsers
+                .filter(u => u.uid !== swapModal.assignment.uid)
+                .filter(u => rosterNames.length === 0 || rosterNames.some(r => u.displayName.toLowerCase().startsWith(r.toLowerCase())))
+                .map(u => (
+                  <option key={u.uid} value={u.uid}>{u.displayName}</option>
+                ))}
             </select>
 
             {swapToUid && isAdmin && (
               <>
-                <label style={s.lbl}>Give them a day in exchange <span style={{ fontWeight: 400, color: "#9ca3af" }}>(optional)</span></label>
+                <label style={s.lbl}>Day to swap with <span style={{ fontWeight: 400, color: "#9ca3af" }}>(optional)</span></label>
                 <input type="date" style={s.inp} value={swapOfferDate} onChange={e => setSwapOfferDate(e.target.value)} />
                 <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 3, marginBottom: 6 }}>Leave blank to hand off the day without a trade back</div>
               </>
