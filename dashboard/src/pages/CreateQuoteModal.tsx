@@ -62,6 +62,7 @@ export default function CreateQuoteModal({
   const [propContacts, setPropContacts] = useState<{ id: string; name: string; phone?: string; email?: string }[]>([]);
   const [authorizedContacts, setAuthorizedContacts] = useState<{ id: string; name: string; phone?: string; email?: string }[]>([]);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
 
   const set = <K extends keyof QuoteForm>(k: K) => (v: QuoteForm[K]) =>
     setForm(f => ({ ...f, [k]: v }));
@@ -124,7 +125,12 @@ export default function CreateQuoteModal({
   }
 
   async function generate() {
-    if (!form.title.trim()) return;
+    const missing: string[] = [];
+    if (!form.title.trim()) missing.push("Quote Title");
+    if (!form.department) missing.push("Department");
+    if (!form.quoteDueBy) missing.push("Quote Due By");
+    if (missing.length) { setSaveError(`Required: ${missing.join(", ")}`); return; }
+    setSaveError("");
     setSaving(true);
     try {
       const year = new Date().getFullYear().toString().slice(-2);
@@ -153,9 +159,12 @@ export default function CreateQuoteModal({
         tags: [],
       });
       onCreated(ref.id, quoteNumber);
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      alert("Failed to create quote.");
+      const msg = e?.code === "permission-denied"
+        ? "Permission denied — check Firestore rules for the quotes/counters collections."
+        : (e?.message || String(e));
+      setSaveError(`Failed: ${msg}`);
     } finally {
       setSaving(false);
     }
@@ -286,13 +295,20 @@ export default function CreateQuoteModal({
         </div>
 
         {/* Footer */}
-        <div style={{ padding:"14px 28px", borderTop:"1px solid #e5e7eb", display:"flex", gap:10 }}>
-          <button
-            disabled={!form.title.trim() || !form.department || saving}
-            onClick={generate}
-            style={{ background:"#16a34a", color:"#fff", border:"none", borderRadius:8, padding:"9px 22px", fontSize:14, fontWeight:700, cursor:"pointer", opacity:(!form.title.trim()||!form.department||saving)?0.5:1 }}
-          >{saving ? "Creating…" : "Create Quote"}</button>
-          <button onClick={onClose} style={{ background:"#6b7280", color:"#fff", border:"none", borderRadius:8, padding:"9px 18px", fontSize:14, fontWeight:600, cursor:"pointer" }}>Cancel</button>
+        <div style={{ padding:"14px 28px", borderTop:"1px solid #e5e7eb" }}>
+          {saveError && (
+            <div style={{ color:"#dc2626", fontSize:12, fontWeight:600, marginBottom:10, background:"#fef2f2", border:"1px solid #fecaca", borderRadius:6, padding:"7px 12px" }}>
+              {saveError}
+            </div>
+          )}
+          <div style={{ display:"flex", gap:10 }}>
+            <button
+              disabled={saving}
+              onClick={generate}
+              style={{ background:"#16a34a", color:"#fff", border:"none", borderRadius:8, padding:"9px 22px", fontSize:14, fontWeight:700, cursor:"pointer", opacity:saving?0.5:1 }}
+            >{saving ? "Creating…" : "Create Quote"}</button>
+            <button onClick={onClose} style={{ background:"#6b7280", color:"#fff", border:"none", borderRadius:8, padding:"9px 18px", fontSize:14, fontWeight:600, cursor:"pointer" }}>Cancel</button>
+          </div>
         </div>
       </div>
     </div>
