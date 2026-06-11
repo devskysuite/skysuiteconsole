@@ -4,12 +4,15 @@ import { db } from "../firebase";
 import { useNavigate, useLocation } from "react-router-dom";
 
 // ── Module-level cache (survives component re-mounts within a session) ────────
+// Increment CACHE_VER to force a fresh load when cache shape changes
+const CACHE_VER = 2;
 let cacheLoaded = false;
+let cacheLoadedVer = 0;
 let cachePromise: Promise<void> | null = null;
 
 const cacheCustomers:  { id: string; name: string }[] = [];
 const cacheProperties: { id: string; name: string; customerName: string }[] = [];
-const cacheJobs:       { id: string; jobNumber: string; customerName: string; status: string; customerPO: string; invoiceIds: string }[] = [];
+const cacheJobs:       { id: string; jobNumber: string; customerName: string; status: string; customerPO: string; invoiceIds: string; description: string }[] = [];
 const cachePOs: {
   id: string; poNumber: string; vendor: string; jobNumber: string; jobId: string;
   bills: { receiptNumber: string; billNumber: string; vendor: string; poId: string; jobNumber: string; jobId: string }[];
@@ -17,15 +20,21 @@ const cachePOs: {
 const cacheVisits: { id: string; jobId: string; jobNumber: string; visitNumber: string; techName: string; title: string }[] = [];
 
 function ensureCache(): Promise<void> {
-  if (cacheLoaded) return Promise.resolve();
-  if (cachePromise) return cachePromise;
+  if (cacheLoaded && cacheLoadedVer === CACHE_VER) return Promise.resolve();
+  if (cachePromise && cacheLoadedVer === CACHE_VER) return cachePromise;
+  // Reset stale cache arrays if version changed
+  if (cacheLoadedVer !== CACHE_VER) {
+    cacheCustomers.length = 0; cacheProperties.length = 0;
+    cacheJobs.length = 0; cachePOs.length = 0; cacheVisits.length = 0;
+    cacheLoaded = false; cachePromise = null;
+  }
   cachePromise = (async () => {
     const [cs, ps, js, pos, vs] = await Promise.all([
-      getDocs(query(collection(db, "customers"),     limit(250))),
-      getDocs(query(collection(db, "properties"),    limit(250))),
-      getDocs(query(collection(db, "jobs"),           limit(300))),
-      getDocs(query(collection(db, "purchaseOrders"), limit(250))),
-      getDocs(query(collection(db, "dispatchVisits"), limit(200))),
+      getDocs(collection(db, "customers")),               // no limit — load ALL customers
+      getDocs(collection(db, "properties")),              // no limit — load ALL properties
+      getDocs(query(collection(db, "jobs"),           limit(500))),
+      getDocs(query(collection(db, "purchaseOrders"), limit(300))),
+      getDocs(query(collection(db, "dispatchVisits"), limit(300))),
     ]);
     cacheCustomers.push(...cs.docs.map(d => ({ id: d.id, name: d.data().name || "" })));
     cacheProperties.push(...ps.docs.map(d => ({
@@ -40,6 +49,7 @@ function ensureCache(): Promise<void> {
       status:       d.data().status       || "",
       customerPO:   d.data().customerPO   || "",
       invoiceIds:   d.data().invoiceIds   || "",
+      description:  d.data().issueDescription || d.data().title || "",
     })));
     cachePOs.push(...pos.docs.map(d => {
       const bills = (d.data().bills || []).map((b: Record<string, string>) => ({
@@ -68,6 +78,7 @@ function ensureCache(): Promise<void> {
       title:       d.data().title       || "",
     })));
     cacheLoaded = true;
+    cacheLoadedVer = CACHE_VER;
   })();
   return cachePromise;
 }
@@ -107,9 +118,12 @@ function runSearch(q: string): ResultItem[] {
       j.jobNumber.toLowerCase().includes(lq) ||
       j.customerName.toLowerCase().includes(lq) ||
       (j.customerPO && j.customerPO.toLowerCase().includes(lq)) ||
-      (j.invoiceIds && j.invoiceIds.toLowerCase().includes(lq))
-    )
-      out.push({ type: "job", title: j.jobNumber || "(no number)", sub: j.customerName, href: `/jobs/${j.id}` });
+      (j.invoiceIds && j.invoiceIds.toLowerCase().includes(lq)) ||
+      (j.description && j.description.toLowerCase().includes(lq))
+    ) {
+      const sub = [j.customerName, j.description].filter(Boolean).join(" — ");
+      out.push({ type: "job", title: j.jobNumber || "(no number)", sub, href: `/jobs/${j.id}` });
+    }
   }
   for (const v of cacheVisits) {
     if (count("visit") >= 6) break;
@@ -158,7 +172,7 @@ export default function GlobalSearch() {
   const [q, setQ]        = useState("");
   const [results, setResults] = useState<ResultItem[]>([]);
   const [open, setOpen]   = useState(false);
-  const [cacheReady, setCacheReady] = useState(cacheLoaded);
+  const [cacheReady, setCacheReady] = useState(cacheLoaded && cacheLoadedVer === CACHE_VER);
   const [cacheErr, setCacheErr]     = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef     = useRef<HTMLInputElement>(null);
