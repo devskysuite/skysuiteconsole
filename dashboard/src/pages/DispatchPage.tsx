@@ -480,9 +480,16 @@ export default function DispatchPage() {
     if (!newPerson) return;
     setGiveAwayBusy(true);
     try {
-      await updateDoc(doc(db, "onCallAssignments", assignment.id), {
-        uid: giveToUid, employeeName: newPerson.displayName,
-      });
+      if (assignment.id) {
+        await updateDoc(doc(db, "onCallAssignments", assignment.id), {
+          uid: giveToUid, employeeName: newPerson.displayName,
+        });
+      } else {
+        await addDoc(collection(db, "onCallAssignments"), {
+          date: assignment.date, uid: giveToUid, employeeName: newPerson.displayName,
+          assignedByUid: auth.currentUser?.uid || "", createdAt: serverTimestamp(),
+        });
+      }
       await addDoc(collection(db, "onCallGiveaways"), {
         fromUid: assignment.uid, fromName: assignment.employeeName,
         toUid: giveToUid, toName: newPerson.displayName,
@@ -597,9 +604,16 @@ export default function DispatchPage() {
     setSwapping(true);
     try {
       if (isAdmin) {
-        await updateDoc(doc(db, "onCallAssignments", assignment.id), {
-          uid: swapToUid, employeeName: newPerson.displayName,
-        });
+        if (assignment.id) {
+          await updateDoc(doc(db, "onCallAssignments", assignment.id), {
+            uid: swapToUid, employeeName: newPerson.displayName,
+          });
+        } else {
+          await addDoc(collection(db, "onCallAssignments"), {
+            date: assignment.date, uid: swapToUid, employeeName: newPerson.displayName,
+            assignedByUid: auth.currentUser?.uid || "", createdAt: serverTimestamp(),
+          });
+        }
         if (swapOfferDate) {
           const existing = assignments.find(a => a.date === swapOfferDate && a.uid === swapToUid);
           if (existing) {
@@ -755,7 +769,11 @@ export default function DispatchPage() {
                 </div>
               ))}
               {outlookName && (
-                <div style={{ ...chipBase, background: isToday ? "#7c3aed" : "#f5f3ff", color: isToday ? "#fff" : "#8b5cf6", border: isToday ? "2px solid #6d28d9" : "1px solid #ddd6fe", boxShadow: isToday ? "0 0 0 3px #c4b5fd" : undefined, opacity: isToday ? 1 : 0.65 }} title="Outlook only">
+                <div
+                  style={{ ...chipBase, background: isToday ? "#7c3aed" : "#f5f3ff", color: isToday ? "#fff" : "#8b5cf6", border: isToday ? "2px solid #6d28d9" : "1px solid #ddd6fe", boxShadow: isToday ? "0 0 0 3px #c4b5fd" : undefined, opacity: isToday ? 1 : 0.65, cursor: isAdmin ? "pointer" : "default" }}
+                  onClick={e => { e.stopPropagation(); if (isAdmin) setOnCallActionModal({ date: d, assignment: { id: "", date: d, uid: "", employeeName: outlookName } }); }}
+                  title={isAdmin ? "Click for options" : "Outlook only"}
+                >
                   {outlookName}{isToday ? " · TODAY" : ""}
                 </div>
               )}
@@ -777,34 +795,20 @@ export default function DispatchPage() {
             >
               <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 4, color: isToday ? "#fff" : overflow ? "#c0c8d4" : "#374151", background: isToday ? "#1565c0" : "transparent", borderRadius: isToday ? "50%" : 0, width: isToday ? 22 : "auto", height: isToday ? 22 : "auto", display: "flex", alignItems: "center", justifyContent: "center" }}>{dayNum}</div>
               {outlookVacs.map((v, i) => (
-                <div key={"o" + i} style={{ display: "flex", gap: 2, alignItems: "stretch", marginBottom: 2 }}>
-                  <div
-                    style={{ ...chipBase, flex: 1, background: "#fff7ed", color: "#c2410c", border: "1px solid #fed7aa", cursor: isAdmin ? "pointer" : "default", marginBottom: 0 }}
-                    onClick={e => { e.stopPropagation(); if (isAdmin) setDeleteVacId(v.eventId); }}
-                    title={isAdmin ? "Click to delete" : undefined}
-                  >{v.name}</div>
-                  {isAdmin && (
-                    <div
-                      style={{ background: "#fff7ed", border: "1px solid #fed7aa", borderRadius: 4, padding: "2px 6px", fontSize: 13, color: "#c2410c", cursor: "pointer", display: "flex", alignItems: "center" }}
-                      onClick={e => { e.stopPropagation(); setDeleteVacId(v.eventId); }}
-                    >✕</div>
-                  )}
-                </div>
+                <div
+                  key={"o" + i}
+                  style={{ ...chipBase, background: "#fff7ed", color: "#c2410c", border: "1px solid #fed7aa", cursor: isAdmin ? "pointer" : "default" }}
+                  onClick={e => { e.stopPropagation(); if (isAdmin) setDeleteVacId(v.eventId); }}
+                  title={isAdmin ? "Click to delete" : undefined}
+                >{v.name}</div>
               ))}
               {fsVacs.map((v, i) => (
-                <div key={"f" + i} style={{ display: "flex", gap: 2, alignItems: "stretch", marginBottom: 2 }}>
-                  <div
-                    style={{ ...chipBase, flex: 1, background: "#fff7ed", color: "#c2410c", border: "1px solid #fed7aa", cursor: isAdmin ? "pointer" : "default", marginBottom: 0 }}
-                    onClick={e => { e.stopPropagation(); if (isAdmin) setDeleteVacId(v.id); }}
-                    title={isAdmin ? "Click to delete" : undefined}
-                  >{v.name}</div>
-                  {isAdmin && (
-                    <div
-                      style={{ background: "#fff7ed", border: "1px solid #fed7aa", borderRadius: 4, padding: "2px 6px", fontSize: 13, color: "#c2410c", cursor: "pointer", display: "flex", alignItems: "center" }}
-                      onClick={e => { e.stopPropagation(); setDeleteVacId(v.id); }}
-                    >✕</div>
-                  )}
-                </div>
+                <div
+                  key={"f" + i}
+                  style={{ ...chipBase, background: "#fff7ed", color: "#c2410c", border: "1px solid #fed7aa", cursor: isAdmin ? "pointer" : "default" }}
+                  onClick={e => { e.stopPropagation(); if (isAdmin) setDeleteVacId(v.id); }}
+                  title={isAdmin ? "Click to delete" : undefined}
+                >{v.name}</div>
               ))}
             </div>
           );
@@ -928,16 +932,27 @@ export default function DispatchPage() {
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               <button
                 style={{ background: "#1565c0", color: "#fff", border: "none", borderRadius: 8, padding: "11px 0", fontSize: 14, fontWeight: 700, cursor: "pointer" }}
-                onClick={() => { const a = onCallActionModal; setOnCallActionModal(null); openSwap(a.date); }}
+                onClick={() => {
+                  const a = onCallActionModal;
+                  setOnCallActionModal(null);
+                  if (a.assignment.id) {
+                    openSwap(a.date);
+                  } else {
+                    setSwapModal({ assignment: a.assignment });
+                    setSwapToUid(""); setSwapOfferDate(""); setSwapReason("");
+                  }
+                }}
               >↔ Swap</button>
               <button
                 style={{ background: "#7c3aed", color: "#fff", border: "none", borderRadius: 8, padding: "11px 0", fontSize: 14, fontWeight: 700, cursor: "pointer" }}
                 onClick={() => { setGiveAwayModal({ assignment: onCallActionModal.assignment }); setGiveToUid(""); setOnCallActionModal(null); }}
               >🎁 Give Away</button>
-              <button
-                style={{ background: "transparent", color: "#dc2626", border: "1px solid #fca5a5", borderRadius: 8, padding: "11px 0", fontSize: 14, fontWeight: 700, cursor: "pointer" }}
-                onClick={() => { setDeleteOnCallId(onCallActionModal.assignment.id); setOnCallActionModal(null); }}
-              >✕ Delete</button>
+              {onCallActionModal.assignment.id && (
+                <button
+                  style={{ background: "transparent", color: "#dc2626", border: "1px solid #fca5a5", borderRadius: 8, padding: "11px 0", fontSize: 14, fontWeight: 700, cursor: "pointer" }}
+                  onClick={() => { setDeleteOnCallId(onCallActionModal.assignment.id); setOnCallActionModal(null); }}
+                >✕ Delete</button>
+              )}
             </div>
             <div style={{ marginTop: 14, textAlign: "right" }}>
               <button onClick={() => setOnCallActionModal(null)} style={s.cancelBtn}>Cancel</button>
@@ -1251,9 +1266,10 @@ function VisitModal({ init, onClose }: { init: { techUid: string; techName: stri
     if (!v && jobNumber.trim()) {
       const snap = await getDocs(query(collection(db, "dispatchVisits"), where("jobNumber", "==", jobNumber.trim())));
       const active = snap.docs.filter(d => !["complete", "canceled", "closed"].includes(d.data().status));
-      if (active.length > 0) {
-        const who = active[0].data().techName || "another tech";
-        alert(`This job already has an open visit assigned to ${who}. Complete or cancel it before adding another.`);
+      const conflictDate = visitDates.find(vd => active.some(d => d.data().date === vd));
+      if (conflictDate) {
+        const who = active.find(d => d.data().date === conflictDate)?.data().techName || "another tech";
+        alert(`This job already has an open visit on ${conflictDate} assigned to ${who}. Complete or cancel it first.`);
         return;
       }
     }
@@ -1395,18 +1411,18 @@ function VisitModal({ init, onClose }: { init: { techUid: string; techName: stri
         </div>
 
         {!v && (
-          <div style={{ display: "flex", gap: 12, alignItems: "flex-end" }}>
-            <div style={{ flex: 1 }}>
+          <>
+            <div>
               <label style={s.lbl}>End Date <span style={{ fontWeight: 400, color: "#9ca3af" }}>(optional — for multiple visits)</span></label>
               <input type="date" style={s.inp} value={endDateRange} min={date} onChange={e => setEndDateRange(e.target.value)} />
             </div>
             {endDateRange && endDateRange >= date && (
-              <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 600, color: "#374151", whiteSpace: "nowrap", paddingBottom: 8, cursor: "pointer" }}>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, margin: "6px 0 2px", fontSize: 13, fontWeight: 600, color: "#374151", cursor: "pointer" }}>
                 <input type="checkbox" checked={excludeWeekends} onChange={e => setExcludeWeekends(e.target.checked)} />
                 Skip weekends
               </label>
             )}
-          </div>
+          </>
         )}
 
         {!v && endDateRange && endDateRange >= date && (
