@@ -20,7 +20,7 @@ interface Props {
 // ── Constants ─────────────────────────────────────────────────────────────────
 const WORK_TYPES  = ["Service Call","Quoted Work","Maintenance","Emergency","Project","Inspection","Commissioning","Start-up","Other"];
 const JOB_TYPES   = ["Service","Project","Quote","Emergency","Warranty"];
-const DEPARTMENTS = ["Electrical","Automation","Industrial","Commercial","HVAC","Plumbing","Maintenance","General","Other"];
+const DEPARTMENTS = ["Automation and Controls","Electrical","Panel Build","Programming","Bucket Truck","Service"];
 const PRIORITIES  = ["Low","Medium","High","Critical"];
 
 // ── Styles ────────────────────────────────────────────────────────────────────
@@ -149,6 +149,13 @@ export default function CreateJobModal({ property, onClose, onCreated }: Props) 
       setDispatchTechs(list);
     }).catch(() => {});
   }, [property.customerId]);
+
+  // Auto-populate visit primary tech from preferred technician
+  useEffect(() => {
+    if (!form.preferredTechnician || !dispatchTechs.length) return;
+    const match = dispatchTechs.find(t => t.name === form.preferredTechnician);
+    if (match) setVisitForm(f => ({ ...f, primaryTechUid: match.uid }));
+  }, [form.preferredTechnician, dispatchTechs]);
 
   // Close on Escape
   useEffect(() => {

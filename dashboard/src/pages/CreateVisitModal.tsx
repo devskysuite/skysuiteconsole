@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { addDoc, collection, getDocs, query, where } from "firebase/firestore";
 import { auth, db } from "../firebase";
 
-const DEPARTMENTS = ["Electrical","Automation","Industrial","Commercial","HVAC","Plumbing","Maintenance","General","Other"];
+const DEPARTMENTS = ["Automation and Controls","Electrical","Panel Build","Programming","Bucket Truck","Service"];
 
 interface Props {
   jobId: string;
