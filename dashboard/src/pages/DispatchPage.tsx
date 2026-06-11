@@ -806,41 +806,52 @@ export default function DispatchPage() {
           const isToday = d === todayYMD;
           const dayAssignments = !overflow ? (assignmentByDate[d] || []) : [];
           const outlookName = !overflow && dayAssignments.length === 0 ? monthSummary.oncall[d] : undefined;
-          const hasFs = dayAssignments.length > 0;
-          const hasOl = !!outlookName;
-          const isOnCall = hasFs || hasOl;
-          const activeAssignment = hasFs
-            ? dayAssignments[0]
-            : hasOl ? { id: "", date: d, uid: "", employeeName: outlookName! } : null;
-          const myFirst = auth.currentUser?.displayName?.split(" ")[0]?.toLowerCase() || "";
-          const isMyDay = hasFs
-            ? dayAssignments[0].uid === auth.currentUser?.uid
-            : hasOl && myFirst && outlookName!.toLowerCase().startsWith(myFirst);
-          const canAdd = !overflow && isAdmin && !isOnCall;
-
-          let bg = overflow ? "#f9fafb" : "#fff";
-          if (!overflow && isOnCall) bg = isToday ? "#7c3aed" : hasFs ? "#ede9fe" : "#f5f3ff";
-
-          function handleClick() {
-            if (overflow) return;
-            if (isOnCall && activeAssignment) {
-              if (isAdmin) { setOnCallActionModal({ date: d, assignment: activeAssignment }); }
-              else if (isMyDay) { setSwapModal({ assignment: activeAssignment }); setSwapToUid(""); setSwapOfferDate(""); setSwapReason(""); }
-            } else if (canAdd) { setAddOnCallModal(d); setAddOnCallUid(""); }
-          }
-
+          const canAdd = !overflow && isAdmin && dayAssignments.length === 0 && !outlookName;
           const lbl = dateLabel(d, overflow);
-          const numColor = isToday && isOnCall ? "#fff" : isToday ? "#fff" : overflow ? "#9ca3af" : isOnCall ? "#6d28d9" : "#374151";
           return (
             <div
-              style={{ background: bg, minHeight: 120, padding: "8px 10px", cursor: (!overflow && (isOnCall ? (isAdmin || isMyDay) : canAdd)) ? "pointer" : "default", boxSizing: "border-box" as const }}
-              onClick={handleClick}
-              title={isAdmin && isOnCall ? "Click for options" : isAdmin && canAdd ? "Click to assign" : isMyDay ? "Click to request swap" : undefined}
+              style={{ background: overflow ? "#f9fafb" : "#fff", minHeight: 120, padding: "8px 10px", cursor: canAdd ? "pointer" : "default", boxSizing: "border-box" as const }}
+              onClick={() => { if (canAdd) { setAddOnCallModal(d); setAddOnCallUid(""); } }}
+              title={canAdd ? "Click to assign on call" : undefined}
             >
-              <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                <div style={{ fontSize: overflow ? 11 : 13, fontWeight: isOnCall ? 800 : 500, color: numColor, background: isToday ? (isOnCall ? "rgba(255,255,255,0.25)" : "#1565c0") : "transparent", borderRadius: isToday ? 99 : 4, padding: isToday ? "2px 7px" : "0 2px", lineHeight: "20px" }}>{lbl}</div>
-                {isOnCall && !overflow && <div style={{ width: 7, height: 7, borderRadius: "50%", background: isToday ? "#fff" : hasFs ? "#7c3aed" : "#a78bfa", flexShrink: 0 }} />}
-              </div>
+              <div style={{ fontSize: overflow ? 11 : 13, fontWeight: 500, marginBottom: 4, color: isToday ? "#fff" : overflow ? "#9ca3af" : "#374151", background: isToday ? "#1565c0" : "transparent", borderRadius: isToday ? 99 : 4, padding: isToday ? "2px 7px" : "0 2px", lineHeight: "20px", display: "inline-block" }}>{lbl}</div>
+              {dayAssignments.map(assignment => {
+                const isMyChip = assignment.uid === auth.currentUser?.uid;
+                const clickable = isAdmin || isMyChip;
+                return (
+                  <div
+                    key={assignment.id}
+                    style={{ ...chipBase, background: isToday ? "#7c3aed" : "#f5f3ff", color: isToday ? "#fff" : "#6d28d9", border: isToday ? "2px solid #6d28d9" : "1px solid #ddd6fe", boxShadow: isToday ? "0 0 0 3px #c4b5fd" : undefined, cursor: clickable ? "pointer" : "default" }}
+                    onClick={e => {
+                      e.stopPropagation();
+                      if (isAdmin) setOnCallActionModal({ date: d, assignment });
+                      else if (isMyChip) { setSwapModal({ assignment }); setSwapToUid(""); setSwapOfferDate(""); setSwapReason(""); }
+                    }}
+                    title={isAdmin ? "Click for options" : isMyChip ? "Click to request swap" : undefined}
+                  >
+                    {assignment.employeeName}{isToday ? " · TODAY" : ""}
+                  </div>
+                );
+              })}
+              {outlookName && (() => {
+                const myFirst = auth.currentUser?.displayName?.split(" ")[0] || "";
+                const isMyChip = myFirst && outlookName.toLowerCase().startsWith(myFirst.toLowerCase());
+                const clickable = isAdmin || isMyChip;
+                const virtualAssignment = { id: "", date: d, uid: "", employeeName: outlookName };
+                return (
+                  <div
+                    style={{ ...chipBase, background: isToday ? "#7c3aed" : "#f5f3ff", color: isToday ? "#fff" : "#8b5cf6", border: isToday ? "2px solid #6d28d9" : "1px solid #ddd6fe", boxShadow: isToday ? "0 0 0 3px #c4b5fd" : undefined, opacity: isToday ? 1 : 0.65, cursor: clickable ? "pointer" : "default" }}
+                    onClick={e => {
+                      e.stopPropagation();
+                      if (isAdmin) setOnCallActionModal({ date: d, assignment: virtualAssignment });
+                      else if (isMyChip) { setSwapModal({ assignment: virtualAssignment }); setSwapToUid(""); setSwapOfferDate(""); setSwapReason(""); }
+                    }}
+                    title={isAdmin ? "Click for options" : isMyChip ? "Click to request swap" : "Outlook only"}
+                  >
+                    {outlookName}{isToday ? " · TODAY" : ""}
+                  </div>
+                );
+              })()}
             </div>
           );
         }
