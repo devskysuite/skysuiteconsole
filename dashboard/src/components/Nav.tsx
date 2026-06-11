@@ -163,7 +163,6 @@ function IconCheckCircle() {
 // ── Nav data ──────────────────────────────────────────────────────────────────
 const BASE_LINKS = [
   { to: "/dashboard", label: "Tools" },
-  { to: "/on-call",   label: "On-Call" },
   { to: "/dispatch",  label: "Job Board" },
 ];
 
@@ -344,17 +343,11 @@ export default function Nav() {
         {BASE_LINKS.map(l => (
           <Link key={l.to} to={l.to} style={{
             ...styles.link,
-            ...(pathname === l.to || (pathname.startsWith(l.to + "/") && !(l.to === "/on-call" && pathname.startsWith("/on-call/admin"))) || (l.to === "/dashboard" && (pathname === "/tools" || pathname.startsWith("/tools/") || pathname === "/vehicles" || pathname.startsWith("/vehicles/") || pathname === "/bookings" || pathname === "/contacts")) ? styles.linkActive : {}),
+            ...(pathname === l.to || pathname.startsWith(l.to + "/") || (l.to === "/dashboard" && (pathname === "/tools" || pathname.startsWith("/tools/") || pathname === "/vehicles" || pathname.startsWith("/vehicles/") || pathname === "/bookings" || pathname === "/contacts")) ? styles.linkActive : {}),
           }}>
             {l.label}
           </Link>
         ))}
-
-        {/* Vacation */}
-        <Link to="/time-off" style={{ ...styles.link, ...(pathname.startsWith("/time-off") ? styles.linkActive : {}), position: "relative" as const }}>
-          Vacation
-          {pendingTimeOff > 0 && <span style={styles.badge}>{pendingTimeOff}</span>}
-        </Link>
 
         {/* Directory dropdown */}
         <div ref={directoryRef} style={{ position: "relative" }}>
@@ -495,7 +488,6 @@ export default function Nav() {
     {/* Mobile panel */}
     <div className={`mobile-nav-panel${mobileMenuOpen ? " open" : ""}`}>
       {BASE_LINKS.map(l => <Link key={l.to} to={l.to} className="mobile-nav-link">{l.label}</Link>)}
-      <Link to="/time-off" className="mobile-nav-link">Vacation</Link>
       {OPERATIONS_GROUPS.flatMap(g => g.items).map(item => <Link key={item.to} to={item.to} className="mobile-nav-link">{item.label}</Link>)}
       {DIRECTORY_ITEMS.map(item => <Link key={item.to} to={item.to} className="mobile-nav-link">{item.label}</Link>)}
       {RESOURCE_ITEMS.map(item => <Link key={item.to} to={item.to} className="mobile-nav-link">{item.label}</Link>)}
