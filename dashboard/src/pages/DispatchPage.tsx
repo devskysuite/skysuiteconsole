@@ -810,7 +810,7 @@ export default function DispatchPage() {
           const lbl = dateLabel(d, overflow);
           return (
             <div
-              style={{ background: overflow ? "#f9fafb" : "#fff", minHeight: 120, padding: "8px 10px", cursor: canAdd ? "pointer" : "default", boxSizing: "border-box" as const }}
+              style={{ background: overflow ? "#f9fafb" : "#fff", minHeight: 160, padding: "8px 10px", cursor: canAdd ? "pointer" : "default", boxSizing: "border-box" as const }}
               onClick={() => { if (canAdd) { setAddOnCallModal(d); setAddOnCallUid(""); } }}
               title={canAdd ? "Click to assign on call" : undefined}
             >
@@ -864,7 +864,7 @@ export default function DispatchPage() {
           const lbl = dateLabel(d, overflow);
           return (
             <div
-              style={{ background: overflow ? "#f9fafb" : "#fff", minHeight: 120, padding: "8px 10px", cursor: canAdd ? "pointer" : "default", boxSizing: "border-box" as const }}
+              style={{ background: overflow ? "#f9fafb" : "#fff", minHeight: 160, padding: "8px 10px", cursor: canAdd ? "pointer" : "default", boxSizing: "border-box" as const }}
               onClick={() => { if (canAdd) { setAddVacModal(d); setAddVacEnd(d); setAddVacName(""); setAddVacUid(""); } }}
               title={canAdd ? "Click to add vacation" : undefined}
             >
