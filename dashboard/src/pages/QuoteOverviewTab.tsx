@@ -7,7 +7,6 @@ import {
   LabourLine,
   MaterialLine,
   PricingData,
-  PricingSettings,
   TravelData,
 } from "./QuotePricingTab";
 
@@ -17,145 +16,97 @@ function fmt$(n: number) {
   return "$" + (n || 0).toLocaleString("en-CA", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+function blankMat(): MaterialLine {
+  return { id: uid(), qty: 0, unit: "ea", manufacturer: "", partNumber: "", description: "", unitPrice: 0, supplier: "" };
+}
+function blankLabour(): LabourLine {
+  return { id: uid(), hours: 0, description: "", timeType: "Regular Time" };
+}
+
+// Pre-populate blank rows so it looks like an Excel template from the start
+const MAT_ROWS   = 20;
+const ELEC_ROWS  = 10;
+const PROG_ROWS  = 10;
+
+function initPricing(raw: PricingData): PricingData {
+  const p = { ...DEFAULT_PRICING, ...raw, settings: { ...DEFAULT_PRICING.settings, ...raw.settings } };
+  // Pad up to template row counts if the arrays are shorter
+  while (p.materials.length < MAT_ROWS)        p.materials        = [...p.materials,        blankMat()];
+  while (p.electricianLines.length < ELEC_ROWS) p.electricianLines = [...p.electricianLines, blankLabour()];
+  while (p.programmerLines.length < PROG_ROWS)  p.programmerLines  = [...p.programmerLines,  blankLabour()];
+  return p;
+}
+
 // ── Cell Styles ────────────────────────────────────────────────────────────────
-const BORDER = "1px solid #d1d5db";
+const B = "1px solid #d1d5db";
 
-const cellBase: React.CSSProperties = {
-  border: BORDER,
-  padding: 0,
-  verticalAlign: "middle",
-  position: "relative",
-};
-const cellInp: React.CSSProperties = {
-  width: "100%", height: "100%",
-  padding: "4px 6px",
-  border: "none", outline: "none",
-  background: "transparent",
-  fontSize: 12,
-  fontFamily: "inherit",
-  boxSizing: "border-box",
-};
-const calcCell: React.CSSProperties = {
-  ...cellBase,
-  background: "#f9fafb",
-  padding: "4px 8px",
-  fontSize: 12,
-  textAlign: "right",
-  color: "#374151",
-  fontWeight: 600,
-  whiteSpace: "nowrap",
-};
-const sectionHdr: React.CSSProperties = {
-  background: "#0d2e5e",
-  color: "#fff",
-  fontWeight: 800,
-  fontSize: 12,
-  padding: "7px 10px",
-  letterSpacing: 0.5,
-  border: BORDER,
-};
-const subHdr: React.CSSProperties = {
-  background: "#1e3a6e",
-  color: "#cbd5e1",
-  fontWeight: 700,
-  fontSize: 11,
-  padding: "5px 8px",
-  textTransform: "uppercase" as const,
-  letterSpacing: 0.4,
-  border: BORDER,
-  textAlign: "left" as const,
-};
-const totRow: React.CSSProperties = {
-  background: "#f0f4ff",
-  fontWeight: 700,
-  fontSize: 12,
-  padding: "5px 8px",
-  border: BORDER,
-  textAlign: "right" as const,
-  color: "#1e40af",
-};
+const cellBase: React.CSSProperties = { border: B, padding: 0, verticalAlign: "middle" };
+const calcCell: React.CSSProperties = { border: B, background: "#f5f7fa", padding: "4px 8px", fontSize: 12, textAlign: "right", color: "#374151", fontWeight: 600, whiteSpace: "nowrap" };
+const calcCellL: React.CSSProperties = { ...calcCell, textAlign: "left", color: "#6b7280", fontWeight: 400 };
+const numCell: React.CSSProperties  = { ...calcCell, color: "#0d2e5e" };
+const totCell: React.CSSProperties  = { border: B, background: "#e8f0fe", padding: "5px 8px", fontSize: 12, textAlign: "right", fontWeight: 800, color: "#1e3a8a", whiteSpace: "nowrap" };
+const sectionHdr: React.CSSProperties = { background: "#0d2e5e", color: "#fff", fontWeight: 800, fontSize: 12, padding: "7px 12px", letterSpacing: 0.5, border: B };
+const colHdr = (w?: number | string): React.CSSProperties => ({
+  background: "#1e3a6e", color: "#cbd5e1", fontWeight: 700, fontSize: 11,
+  padding: "5px 8px", textTransform: "uppercase", letterSpacing: 0.4,
+  border: B, textAlign: "left", whiteSpace: "nowrap",
+  width: w, minWidth: w,
+});
+const rowNum: React.CSSProperties = { ...calcCellL, textAlign: "center", color: "#9ca3af", width: 30, minWidth: 30, userSelect: "none" };
+const delBtnSt: React.CSSProperties = { background: "none", border: "none", color: "#ef4444", fontSize: 14, cursor: "pointer", padding: "0 4px", display: "block", margin: "0 auto" };
+const addRowSt: React.CSSProperties = { background: "none", border: "1px dashed #9ca3af", color: "#6b7280", borderRadius: 4, padding: "3px 14px", fontSize: 11, cursor: "pointer" };
+const cellInp: React.CSSProperties = { width: "100%", height: "100%", padding: "4px 7px", border: "none", outline: "none", background: "transparent", fontSize: 12, fontFamily: "inherit", boxSizing: "border-box" };
 
-// ── Editable cell ──────────────────────────────────────────────────────────────
-function Cell({
-  value, onChange, type = "text", align = "left", w,
-}: {
-  value: string | number;
-  onChange: (v: string) => void;
-  type?: string;
-  align?: "left" | "right" | "center";
-  w?: number | string;
+function Cell({ value, onChange, type = "text", align = "left", w }: {
+  value: string | number; onChange: (v: string) => void;
+  type?: string; align?: "left" | "right" | "center"; w?: number | string;
 }) {
   return (
     <td style={{ ...cellBase, width: w, minWidth: w }}>
-      <input
-        type={type}
-        style={{ ...cellInp, textAlign: align }}
-        value={value}
-        onChange={e => onChange(e.target.value)}
-        step={type === "number" ? "any" : undefined}
-      />
+      <input type={type} value={value} onChange={e => onChange(e.target.value)}
+        style={{ ...cellInp, textAlign: align }} step={type === "number" ? "any" : undefined} />
     </td>
   );
 }
 
-// ── Overview Panel ─────────────────────────────────────────────────────────────
-function OvRow({ label, value, sub }: { label: string; value: string; sub?: boolean }) {
+function SelectCell({ value, onChange, options, w }: { value: string; onChange: (v: string) => void; options: string[]; w?: number | string }) {
   return (
-    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: sub ? "3px 0" : "5px 0", borderBottom: "1px solid #f3f4f6" }}>
-      <span style={{ fontSize: sub ? 11 : 12, color: sub ? "#6b7280" : "#374151", paddingLeft: sub ? 10 : 0 }}>{label}</span>
-      <span style={{ fontSize: sub ? 11 : 12, fontWeight: sub ? 500 : 700, color: "#111827" }}>{value}</span>
-    </div>
+    <td style={{ ...cellBase, width: w, minWidth: w }}>
+      <select value={value} onChange={e => onChange(e.target.value)} style={{ ...cellInp, cursor: "pointer" }}>
+        {options.map(o => <option key={o}>{o}</option>)}
+      </select>
+    </td>
   );
 }
 
-function OvSection({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div style={{ marginBottom: 14 }}>
-      <div style={{ fontSize: 10, fontWeight: 800, color: "#0d2e5e", textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 5, paddingBottom: 4, borderBottom: "2px solid #0d2e5e" }}>{title}</div>
-      {children}
+// ── Summary footer bar ─────────────────────────────────────────────────────────
+function SummaryBar({ s }: { s: ReturnType<typeof calcSummary> }) {
+  const item = (label: string, value: string, accent?: boolean) => (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: "0 18px", borderRight: "1px solid #1e3a6e" }}>
+      <span style={{ fontSize: 10, color: "#93c5fd", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>{label}</span>
+      <span style={{ fontSize: 14, fontWeight: 900, color: accent ? "#22d3ee" : "#fff", marginTop: 1 }}>{value}</span>
     </div>
   );
-}
-
-function MkpField({ label, pct, onChange }: { label: string; pct: number; onChange: (v: number) => void }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "3px 0", borderBottom: "1px solid #f3f4f6" }}>
-      <span style={{ fontSize: 11, color: "#6b7280" }}>{label}</span>
-      <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-        <input
-          type="number"
-          step={0.1}
-          value={+(pct * 100).toFixed(1)}
-          onChange={e => onChange(+e.target.value / 100)}
-          style={{ width: 54, border: "1px solid #d1d5db", borderRadius: 4, padding: "2px 5px", fontSize: 11, textAlign: "right" }}
-        />
-        <span style={{ fontSize: 11, color: "#9ca3af" }}>%</span>
-      </div>
-    </div>
-  );
-}
-
-function RateField({ label, value, onChange, prefix = "$" }: { label: string; value: number; onChange: (v: number) => void; prefix?: string }) {
-  return (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "3px 0", borderBottom: "1px solid #f3f4f6" }}>
-      <span style={{ fontSize: 11, color: "#6b7280" }}>{label}</span>
-      <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-        <span style={{ fontSize: 11, color: "#9ca3af" }}>{prefix}</span>
-        <input
-          type="number"
-          step="any"
-          value={value}
-          onChange={e => onChange(+e.target.value)}
-          style={{ width: 64, border: "1px solid #d1d5db", borderRadius: 4, padding: "2px 5px", fontSize: 11, textAlign: "right" }}
-        />
+    <div style={{ position: "sticky", bottom: 0, background: "#0d2e5e", display: "flex", alignItems: "center", padding: "8px 0", zIndex: 10, borderTop: "2px solid #1e40af" }}>
+      {item("Materials", fmt$(s.matSell))}
+      {item("Electrician", fmt$(s.elecSell))}
+      {item("Programmer", fmt$(s.progSell))}
+      {item("Other Costs", fmt$(s.otherSell))}
+      {item("Travel", fmt$(s.travelSell))}
+      <div style={{ flex: 1 }} />
+      {item("Net Profit", fmt$(s.netProfit))}
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: "0 20px" }}>
+        <span style={{ fontSize: 10, color: "#93c5fd", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>Total Quote</span>
+        <span style={{ fontSize: 18, fontWeight: 900, color: "#22d3ee", marginTop: 1 }}>{fmt$(s.totalSell)}</span>
       </div>
     </div>
   );
 }
 
 // ── Main Component ─────────────────────────────────────────────────────────────
-export default function QuoteOverviewTab({ quoteId, pricing: init }: { quoteId: string; pricing: PricingData }) {
-  const [p, setP] = useState<PricingData>(() => ({ ...DEFAULT_PRICING, ...init, settings: { ...DEFAULT_PRICING.settings, ...init.settings } }));
+export default function QuoteOverviewTab({ quoteId, pricing: raw }: { quoteId: string; pricing: PricingData }) {
+  const [p, setP] = useState<PricingData>(() => initPricing(raw));
   const [saving, setSaving] = useState(false);
 
   const save = useCallback(async (data: PricingData) => {
@@ -164,12 +115,9 @@ export default function QuoteOverviewTab({ quoteId, pricing: init }: { quoteId: 
   }, [quoteId]);
 
   function upd(next: PricingData) { setP(next); save(next); }
-  function updS(k: keyof PricingSettings, v: number) { upd({ ...p, settings: { ...p.settings, [k]: v } }); }
 
   // Materials
-  function addMat() {
-    upd({ ...p, materials: [...p.materials, { id: uid(), qty: 1, unit: "ea", manufacturer: "", partNumber: "", description: "", unitPrice: 0, supplier: "" }] });
-  }
+  function addMat() { upd({ ...p, materials: [...p.materials, blankMat()] }); }
   function updMat(id: string, k: keyof MaterialLine, v: string | number) {
     upd({ ...p, materials: p.materials.map(m => m.id === id ? { ...m, [k]: v } : m) });
   }
@@ -183,9 +131,10 @@ export default function QuoteOverviewTab({ quoteId, pricing: init }: { quoteId: 
   function delOther(i: number) { upd({ ...p, otherCosts: p.otherCosts.filter((_, idx) => idx !== i) }); }
 
   // Labour
+  const TIME_TYPES = ["Regular Time", "1.5x Overtime", "Double Time"];
   function addLabour(role: "elec" | "prog") {
-    const line: LabourLine = { id: uid(), hours: 0, description: "", timeType: "Regular Time" };
-    upd(role === "elec" ? { ...p, electricianLines: [...p.electricianLines, line] } : { ...p, programmerLines: [...p.programmerLines, line] });
+    const key = role === "elec" ? "electricianLines" : "programmerLines";
+    upd({ ...p, [key]: [...p[key], blankLabour()] });
   }
   function updLabour(role: "elec" | "prog", id: string, k: keyof LabourLine, v: string | number) {
     const key = role === "elec" ? "electricianLines" : "programmerLines";
@@ -201,342 +150,247 @@ export default function QuoteOverviewTab({ quoteId, pricing: init }: { quoteId: 
 
   const s = calcSummary(p);
 
-  const thStyle = (w?: number | string): React.CSSProperties => ({
-    ...subHdr,
-    width: w,
-    minWidth: w,
-    position: "sticky",
-    top: 0,
-    zIndex: 1,
-  });
-
-  const delBtnStyle: React.CSSProperties = {
-    background: "none", border: "none", color: "#ef4444",
-    fontSize: 14, cursor: "pointer", padding: "0 4px", lineHeight: 1,
-  };
-  const addRowStyle: React.CSSProperties = {
-    background: "none", border: "1px dashed #9ca3af",
-    color: "#6b7280", borderRadius: 4, padding: "3px 10px",
-    fontSize: 11, cursor: "pointer", margin: "4px 0",
-  };
+  const tbl: React.CSSProperties = { borderCollapse: "collapse", width: "100%", tableLayout: "auto" };
 
   return (
-    <div style={{ display: "flex", gap: 0, alignItems: "flex-start", height: "calc(100vh - 220px)", overflow: "hidden" }}>
+    <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 160px)", overflow: "hidden" }}>
+      {/* Saving indicator */}
+      {saving && <div style={{ position: "absolute", top: 8, right: 16, fontSize: 11, color: "#9ca3af", zIndex: 20 }}>Saving…</div>}
 
-      {/* ── LEFT: Spreadsheet ── */}
-      <div style={{ flex: 1, overflowY: "auto", overflowX: "auto", paddingRight: 12 }}>
-        {saving && <div style={{ fontSize: 11, color: "#9ca3af", marginBottom: 6 }}>Saving…</div>}
+      {/* Scrollable content */}
+      <div style={{ flex: 1, overflowY: "auto", overflowX: "auto" }}>
 
-        {/* MATERIALS */}
-        <table style={{ borderCollapse: "collapse", width: "100%", marginBottom: 16, tableLayout: "auto" }}>
+        {/* ── MATERIALS ── */}
+        <table style={tbl}>
           <tbody>
-            <tr><td colSpan={10} style={sectionHdr}>MATERIALS</td></tr>
+            <tr><td colSpan={11} style={sectionHdr}>MATERIALS &nbsp;<span style={{ fontWeight:400, fontSize:11, opacity:0.7 }}>Markup: {(p.settings.materialMarkup*100).toFixed(0)}%</span></td></tr>
             <tr>
-              <th style={thStyle(28)}>#</th>
-              <th style={thStyle(46)}>Qty</th>
-              <th style={thStyle(46)}>Unit</th>
-              <th style={thStyle(100)}>Manufacturer</th>
-              <th style={thStyle(90)}>Part #</th>
-              <th style={{ ...thStyle(), minWidth: 200 }}>Description</th>
-              <th style={thStyle(80)}>Unit Price</th>
-              <th style={thStyle(80)}>Total</th>
-              <th style={thStyle(100)}>Supplier</th>
-              <th style={thStyle(30)}></th>
+              <th style={colHdr(30)}>#</th>
+              <th style={colHdr(50)}>Qty</th>
+              <th style={colHdr(50)}>Unit</th>
+              <th style={colHdr(110)}>Manufacturer</th>
+              <th style={colHdr(100)}>Part #</th>
+              <th style={{ ...colHdr(), minWidth: 240 }}>Description</th>
+              <th style={colHdr(90)}>Unit Price</th>
+              <th style={colHdr(95)}>Total Cost</th>
+              <th style={colHdr(95)}>Sell Price</th>
+              <th style={colHdr(110)}>Supplier</th>
+              <th style={colHdr(30)}></th>
             </tr>
             {p.materials.map((m, i) => {
-              const total = (m.qty || 0) * (m.unitPrice || 0);
+              const cost = (m.qty || 0) * (m.unitPrice || 0);
+              const sell = cost * (1 + p.settings.materialMarkup);
               return (
-                <tr key={m.id} style={{ background: i % 2 === 0 ? "#fff" : "#fafafa" }}>
-                  <td style={{ ...calcCell, textAlign: "center", fontWeight: 400, color: "#9ca3af" }}>{i + 1}</td>
-                  <Cell value={m.qty} onChange={v => updMat(m.id, "qty", +v)} type="number" align="right" w={46} />
-                  <Cell value={m.unit} onChange={v => updMat(m.id, "unit", v)} w={46} />
-                  <Cell value={m.manufacturer} onChange={v => updMat(m.id, "manufacturer", v)} w={100} />
-                  <Cell value={m.partNumber} onChange={v => updMat(m.id, "partNumber", v)} w={90} />
+                <tr key={m.id} style={{ background: i % 2 === 0 ? "#fff" : "#fafbfc" }}>
+                  <td style={rowNum}>{i + 1}</td>
+                  <Cell value={m.qty || ""} onChange={v => updMat(m.id, "qty", +v || 0)} type="number" align="right" w={50} />
+                  <Cell value={m.unit} onChange={v => updMat(m.id, "unit", v)} w={50} />
+                  <Cell value={m.manufacturer} onChange={v => updMat(m.id, "manufacturer", v)} w={110} />
+                  <Cell value={m.partNumber} onChange={v => updMat(m.id, "partNumber", v)} w={100} />
                   <Cell value={m.description} onChange={v => updMat(m.id, "description", v)} />
-                  <Cell value={m.unitPrice} onChange={v => updMat(m.id, "unitPrice", +v)} type="number" align="right" w={80} />
-                  <td style={calcCell}>{fmt$(total)}</td>
-                  <Cell value={m.supplier} onChange={v => updMat(m.id, "supplier", v)} w={100} />
+                  <Cell value={m.unitPrice || ""} onChange={v => updMat(m.id, "unitPrice", +v || 0)} type="number" align="right" w={90} />
+                  <td style={cost > 0 ? numCell : calcCell}>{cost > 0 ? fmt$(cost) : ""}</td>
+                  <td style={sell > 0 ? { ...numCell, color:"#059669" } : calcCell}>{sell > 0 ? fmt$(sell) : ""}</td>
+                  <Cell value={m.supplier} onChange={v => updMat(m.id, "supplier", v)} w={110} />
                   <td style={{ ...cellBase, textAlign: "center", width: 30 }}>
-                    <button onClick={() => delMat(m.id)} style={delBtnStyle}>×</button>
+                    <button onClick={() => delMat(m.id)} style={delBtnSt}>×</button>
                   </td>
                 </tr>
               );
             })}
             <tr>
-              <td colSpan={7} style={{ border: BORDER, padding: "4px 8px", background: "#fafafa" }}>
-                <button onClick={addMat} style={addRowStyle}>+ Add Row</button>
+              <td colSpan={7} style={{ border: B, padding: "5px 10px", background: "#f5f7fa" }}>
+                <button onClick={addMat} style={addRowSt}>+ Add Row</button>
               </td>
-              <td style={totRow}>{fmt$(s.matCost)}</td>
-              <td colSpan={2} style={{ ...totRow, textAlign: "left", color: "#059669", paddingLeft: 10 }}>
-                Sell: {fmt$(s.matSell)}
-              </td>
+              <td style={totCell}>{fmt$(s.matCost)}</td>
+              <td style={{ ...totCell, color: "#059669" }}>{fmt$(s.matSell)}</td>
+              <td colSpan={2} style={{ border: B, background: "#f5f7fa" }}></td>
             </tr>
           </tbody>
         </table>
 
-        {/* LABOUR — ELECTRICIAN */}
-        <table style={{ borderCollapse: "collapse", width: "100%", marginBottom: 16 }}>
+        {/* ── LABOUR — ELECTRICIAN ── */}
+        <table style={{ ...tbl, marginTop: 12 }}>
           <tbody>
-            <tr><td colSpan={7} style={sectionHdr}>LABOUR — ELECTRICIAN &nbsp;<span style={{ fontWeight: 400, fontSize: 11, opacity: 0.7 }}>Rate: {fmt$(p.settings.electricianRate)}/hr</span></td></tr>
+            <tr><td colSpan={8} style={sectionHdr}>
+              LABOUR — ELECTRICIAN &nbsp;
+              <span style={{ fontWeight:400, fontSize:11, opacity:0.7 }}>
+                Regular: {fmt$(p.settings.electricianRate)}/hr &nbsp;|&nbsp; OT: {fmt$(p.settings.electricianRate * 1.5)}/hr &nbsp;|&nbsp; DT: {fmt$(p.settings.electricianRate * 2)}/hr
+              </span>
+            </td></tr>
             <tr>
-              <th style={thStyle(28)}>#</th>
-              <th style={{ ...thStyle(), minWidth: 220 }}>Description</th>
-              <th style={thStyle(140)}>Time Type</th>
-              <th style={thStyle(60)}>Hours</th>
-              <th style={thStyle(80)}>Rate/hr</th>
-              <th style={thStyle(90)}>Total</th>
-              <th style={thStyle(30)}></th>
+              <th style={colHdr(30)}>#</th>
+              <th style={{ ...colHdr(), minWidth: 280 }}>Description</th>
+              <th style={colHdr(150)}>Time Type</th>
+              <th style={colHdr(70)}>Hours</th>
+              <th style={colHdr(90)}>Rate/hr</th>
+              <th style={colHdr(95)}>Cost</th>
+              <th style={colHdr(95)}>Sell</th>
+              <th style={colHdr(30)}></th>
             </tr>
             {p.electricianLines.map((l, i) => {
               const rate = l.timeType === "1.5x Overtime" ? p.settings.electricianRate * 1.5
-                : l.timeType === "Double Time" ? p.settings.electricianRate * 2
-                : p.settings.electricianRate;
-              const total = (l.hours || 0) * rate;
+                : l.timeType === "Double Time" ? p.settings.electricianRate * 2 : p.settings.electricianRate;
+              const intRate = l.timeType === "1.5x Overtime" ? p.settings.electricianInternalRate * 1.5
+                : l.timeType === "Double Time" ? p.settings.electricianInternalRate * 2 : p.settings.electricianInternalRate;
+              const sell = (l.hours || 0) * rate;
+              const cost = (l.hours || 0) * intRate;
               return (
-                <tr key={l.id} style={{ background: i % 2 === 0 ? "#fff" : "#fafafa" }}>
-                  <td style={{ ...calcCell, textAlign: "center", fontWeight: 400, color: "#9ca3af" }}>{i + 1}</td>
+                <tr key={l.id} style={{ background: i % 2 === 0 ? "#fff" : "#fafbfc" }}>
+                  <td style={rowNum}>{i + 1}</td>
                   <Cell value={l.description} onChange={v => updLabour("elec", l.id, "description", v)} />
-                  <td style={cellBase}>
-                    <select
-                      value={l.timeType}
-                      onChange={e => updLabour("elec", l.id, "timeType", e.target.value)}
-                      style={{ ...cellInp, cursor: "pointer" }}
-                    >
-                      <option>Regular Time</option>
-                      <option>1.5x Overtime</option>
-                      <option>Double Time</option>
-                    </select>
-                  </td>
-                  <Cell value={l.hours} onChange={v => updLabour("elec", l.id, "hours", +v)} type="number" align="right" w={60} />
+                  <SelectCell value={l.timeType} onChange={v => updLabour("elec", l.id, "timeType", v)} options={TIME_TYPES} w={150} />
+                  <Cell value={l.hours || ""} onChange={v => updLabour("elec", l.id, "hours", +v || 0)} type="number" align="right" w={70} />
                   <td style={calcCell}>{fmt$(rate)}</td>
-                  <td style={calcCell}>{fmt$(total)}</td>
+                  <td style={cost > 0 ? numCell : calcCell}>{cost > 0 ? fmt$(cost) : ""}</td>
+                  <td style={sell > 0 ? { ...numCell, color:"#059669" } : calcCell}>{sell > 0 ? fmt$(sell) : ""}</td>
                   <td style={{ ...cellBase, textAlign: "center", width: 30 }}>
-                    <button onClick={() => delLabour("elec", l.id)} style={delBtnStyle}>×</button>
+                    <button onClick={() => delLabour("elec", l.id)} style={delBtnSt}>×</button>
                   </td>
                 </tr>
               );
             })}
             <tr>
-              <td colSpan={3} style={{ border: BORDER, padding: "4px 8px", background: "#fafafa" }}>
-                <button onClick={() => addLabour("elec")} style={addRowStyle}>+ Add Row</button>
+              <td colSpan={3} style={{ border: B, padding: "5px 10px", background: "#f5f7fa" }}>
+                <button onClick={() => addLabour("elec")} style={addRowSt}>+ Add Row</button>
               </td>
-              <td style={totRow}>{s.elecHours} hrs</td>
-              <td style={{ border: BORDER, background: "#f0f4ff" }}></td>
-              <td style={totRow}>{fmt$(s.elecSell)}</td>
-              <td style={{ border: BORDER, background: "#f0f4ff" }}></td>
+              <td style={totCell}>{s.elecHours} hrs</td>
+              <td style={{ border: B, background: "#f5f7fa" }}></td>
+              <td style={totCell}>{fmt$(s.elecCost)}</td>
+              <td style={{ ...totCell, color:"#059669" }}>{fmt$(s.elecSell)}</td>
+              <td style={{ border: B, background: "#f5f7fa" }}></td>
             </tr>
           </tbody>
         </table>
 
-        {/* LABOUR — PROGRAMMER */}
-        <table style={{ borderCollapse: "collapse", width: "100%", marginBottom: 16 }}>
+        {/* ── LABOUR — PROGRAMMER ── */}
+        <table style={{ ...tbl, marginTop: 12 }}>
           <tbody>
-            <tr><td colSpan={7} style={sectionHdr}>LABOUR — PROGRAMMER &nbsp;<span style={{ fontWeight: 400, fontSize: 11, opacity: 0.7 }}>Rate: {fmt$(p.settings.programmerRate)}/hr</span></td></tr>
+            <tr><td colSpan={8} style={sectionHdr}>
+              LABOUR — PROGRAMMER &nbsp;
+              <span style={{ fontWeight:400, fontSize:11, opacity:0.7 }}>
+                Regular: {fmt$(p.settings.programmerRate)}/hr &nbsp;|&nbsp; OT: {fmt$(p.settings.programmerRate * 1.5)}/hr &nbsp;|&nbsp; DT: {fmt$(p.settings.programmerRate * 2)}/hr
+              </span>
+            </td></tr>
             <tr>
-              <th style={thStyle(28)}>#</th>
-              <th style={{ ...thStyle(), minWidth: 220 }}>Description</th>
-              <th style={thStyle(140)}>Time Type</th>
-              <th style={thStyle(60)}>Hours</th>
-              <th style={thStyle(80)}>Rate/hr</th>
-              <th style={thStyle(90)}>Total</th>
-              <th style={thStyle(30)}></th>
+              <th style={colHdr(30)}>#</th>
+              <th style={{ ...colHdr(), minWidth: 280 }}>Description</th>
+              <th style={colHdr(150)}>Time Type</th>
+              <th style={colHdr(70)}>Hours</th>
+              <th style={colHdr(90)}>Rate/hr</th>
+              <th style={colHdr(95)}>Cost</th>
+              <th style={colHdr(95)}>Sell</th>
+              <th style={colHdr(30)}></th>
             </tr>
             {p.programmerLines.map((l, i) => {
               const rate = l.timeType === "1.5x Overtime" ? p.settings.programmerRate * 1.5
-                : l.timeType === "Double Time" ? p.settings.programmerRate * 2
-                : p.settings.programmerRate;
-              const total = (l.hours || 0) * rate;
+                : l.timeType === "Double Time" ? p.settings.programmerRate * 2 : p.settings.programmerRate;
+              const intRate = l.timeType === "1.5x Overtime" ? p.settings.programmerInternalRate * 1.5
+                : l.timeType === "Double Time" ? p.settings.programmerInternalRate * 2 : p.settings.programmerInternalRate;
+              const sell = (l.hours || 0) * rate;
+              const cost = (l.hours || 0) * intRate;
               return (
-                <tr key={l.id} style={{ background: i % 2 === 0 ? "#fff" : "#fafafa" }}>
-                  <td style={{ ...calcCell, textAlign: "center", fontWeight: 400, color: "#9ca3af" }}>{i + 1}</td>
+                <tr key={l.id} style={{ background: i % 2 === 0 ? "#fff" : "#fafbfc" }}>
+                  <td style={rowNum}>{i + 1}</td>
                   <Cell value={l.description} onChange={v => updLabour("prog", l.id, "description", v)} />
-                  <td style={cellBase}>
-                    <select
-                      value={l.timeType}
-                      onChange={e => updLabour("prog", l.id, "timeType", e.target.value)}
-                      style={{ ...cellInp, cursor: "pointer" }}
-                    >
-                      <option>Regular Time</option>
-                      <option>1.5x Overtime</option>
-                      <option>Double Time</option>
-                    </select>
-                  </td>
-                  <Cell value={l.hours} onChange={v => updLabour("prog", l.id, "hours", +v)} type="number" align="right" w={60} />
+                  <SelectCell value={l.timeType} onChange={v => updLabour("prog", l.id, "timeType", v)} options={TIME_TYPES} w={150} />
+                  <Cell value={l.hours || ""} onChange={v => updLabour("prog", l.id, "hours", +v || 0)} type="number" align="right" w={70} />
                   <td style={calcCell}>{fmt$(rate)}</td>
-                  <td style={calcCell}>{fmt$(total)}</td>
+                  <td style={cost > 0 ? numCell : calcCell}>{cost > 0 ? fmt$(cost) : ""}</td>
+                  <td style={sell > 0 ? { ...numCell, color:"#059669" } : calcCell}>{sell > 0 ? fmt$(sell) : ""}</td>
                   <td style={{ ...cellBase, textAlign: "center", width: 30 }}>
-                    <button onClick={() => delLabour("prog", l.id)} style={delBtnStyle}>×</button>
+                    <button onClick={() => delLabour("prog", l.id)} style={delBtnSt}>×</button>
                   </td>
                 </tr>
               );
             })}
             <tr>
-              <td colSpan={3} style={{ border: BORDER, padding: "4px 8px", background: "#fafafa" }}>
-                <button onClick={() => addLabour("prog")} style={addRowStyle}>+ Add Row</button>
+              <td colSpan={3} style={{ border: B, padding: "5px 10px", background: "#f5f7fa" }}>
+                <button onClick={() => addLabour("prog")} style={addRowSt}>+ Add Row</button>
               </td>
-              <td style={totRow}>{s.progHours} hrs</td>
-              <td style={{ border: BORDER, background: "#f0f4ff" }}></td>
-              <td style={totRow}>{fmt$(s.progSell)}</td>
-              <td style={{ border: BORDER, background: "#f0f4ff" }}></td>
+              <td style={totCell}>{s.progHours} hrs</td>
+              <td style={{ border: B, background: "#f5f7fa" }}></td>
+              <td style={totCell}>{fmt$(s.progCost)}</td>
+              <td style={{ ...totCell, color:"#059669" }}>{fmt$(s.progSell)}</td>
+              <td style={{ border: B, background: "#f5f7fa" }}></td>
             </tr>
           </tbody>
         </table>
 
-        {/* OTHER COSTS */}
-        <table style={{ borderCollapse: "collapse", width: "100%", marginBottom: 16 }}>
+        {/* ── OTHER COSTS ── */}
+        <table style={{ ...tbl, marginTop: 12 }}>
           <tbody>
-            <tr><td colSpan={6} style={sectionHdr}>OTHER COSTS</td></tr>
+            <tr><td colSpan={7} style={sectionHdr}>OTHER COSTS</td></tr>
             <tr>
-              <th style={thStyle(28)}>#</th>
-              <th style={{ ...thStyle(), minWidth: 200 }}>Description</th>
-              <th style={thStyle(100)}>Cost</th>
-              <th style={thStyle(90)}>Markup %</th>
-              <th style={thStyle(100)}>Sell Price</th>
-              <th style={thStyle(30)}></th>
+              <th style={colHdr(30)}>#</th>
+              <th style={{ ...colHdr(), minWidth: 260 }}>Description</th>
+              <th style={colHdr(110)}>Cost</th>
+              <th style={colHdr(100)}>Markup %</th>
+              <th style={colHdr(110)}>Sell Price</th>
+              <th style={colHdr(30)}></th>
             </tr>
             {p.otherCosts.map((o, i) => {
               const markup = o.markup ?? p.settings.otherCostsMarkup;
               const sell = (o.cost || 0) * (1 + markup);
               return (
-                <tr key={i} style={{ background: i % 2 === 0 ? "#fff" : "#fafafa" }}>
-                  <td style={{ ...calcCell, textAlign: "center", fontWeight: 400, color: "#9ca3af" }}>{i + 1}</td>
+                <tr key={i} style={{ background: i % 2 === 0 ? "#fff" : "#fafbfc" }}>
+                  <td style={rowNum}>{i + 1}</td>
                   <Cell value={o.description} onChange={v => updOther(i, "description", v)} />
-                  <Cell value={o.cost} onChange={v => updOther(i, "cost", +v)} type="number" align="right" w={100} />
+                  <Cell value={o.cost || ""} onChange={v => updOther(i, "cost", +v || 0)} type="number" align="right" w={110} />
                   <td style={cellBase}>
-                    <input
-                      type="number" step={0.1}
+                    <input type="number" step={0.1}
                       value={+(markup * 100).toFixed(1)}
                       onChange={e => updOther(i, "markup", +e.target.value / 100)}
-                      style={{ ...cellInp, textAlign: "right" }}
-                    />
+                      style={{ ...cellInp, textAlign: "right" }} />
                   </td>
-                  <td style={calcCell}>{fmt$(sell)}</td>
+                  <td style={sell > 0 ? { ...numCell, color:"#059669" } : calcCell}>{sell > 0 ? fmt$(sell) : ""}</td>
                   <td style={{ ...cellBase, textAlign: "center", width: 30 }}>
-                    <button onClick={() => delOther(i)} style={delBtnStyle}>×</button>
+                    <button onClick={() => delOther(i)} style={delBtnSt}>×</button>
                   </td>
                 </tr>
               );
             })}
             <tr>
-              <td colSpan={2} style={{ border: BORDER, padding: "4px 8px", background: "#fafafa" }}>
-                <button onClick={addOther} style={addRowStyle}>+ Add Row</button>
+              <td colSpan={2} style={{ border: B, padding: "5px 10px", background: "#f5f7fa" }}>
+                <button onClick={addOther} style={addRowSt}>+ Add Row</button>
               </td>
-              <td style={totRow}>{fmt$(s.otherCost)}</td>
-              <td style={{ border: BORDER, background: "#f0f4ff" }}></td>
-              <td style={totRow}>{fmt$(s.otherSell)}</td>
-              <td style={{ border: BORDER, background: "#f0f4ff" }}></td>
+              <td style={totCell}>{fmt$(s.otherCost)}</td>
+              <td style={{ border: B, background: "#f5f7fa" }}></td>
+              <td style={{ ...totCell, color:"#059669" }}>{fmt$(s.otherSell)}</td>
+              <td style={{ border: B, background: "#f5f7fa" }}></td>
             </tr>
           </tbody>
         </table>
 
-        {/* TRAVEL & SITE */}
-        <table style={{ borderCollapse: "collapse", width: "100%", marginBottom: 16 }}>
+        {/* ── TRAVEL & SITE ── */}
+        <table style={{ ...tbl, marginTop: 12, marginBottom: 0 }}>
           <tbody>
-            <tr><td colSpan={7} style={sectionHdr}>TRAVEL & SITE</td></tr>
+            <tr><td colSpan={8} style={sectionHdr}>TRAVEL & SITE</td></tr>
             <tr>
-              <th style={thStyle()}>Workers</th>
-              <th style={thStyle()}>Days On Site</th>
-              <th style={thStyle()}>Travel Hrs/Trip</th>
-              <th style={thStyle()}>Hrs/Day On Site</th>
-              <th style={thStyle()}>KM/Day</th>
-              <th style={thStyle()}>407 Charge ($)</th>
-              <th style={thStyle()}>Travel Sell Total</th>
+              <th style={colHdr()}>Workers</th>
+              <th style={colHdr()}>Days On Site</th>
+              <th style={colHdr()}>Travel Hrs/Trip</th>
+              <th style={colHdr()}>KM/Day</th>
+              <th style={colHdr()}>407 Charge ($)</th>
+              <th style={colHdr()}>Total Travel Hrs</th>
+              <th style={colHdr()}>Travel Sell</th>
             </tr>
-            <tr>
-              <Cell value={p.travel.workers} onChange={v => updTravel("workers", +v)} type="number" align="right" />
-              <Cell value={p.travel.days} onChange={v => updTravel("days", +v)} type="number" align="right" />
-              <Cell value={p.travel.travelTimeHrs} onChange={v => updTravel("travelTimeHrs", +v)} type="number" align="right" />
-              <Cell value={p.travel.hoursPerDay} onChange={v => updTravel("hoursPerDay", +v)} type="number" align="right" />
-              <Cell value={p.travel.kmPerDay} onChange={v => updTravel("kmPerDay", +v)} type="number" align="right" />
-              <Cell value={p.travel.charge407} onChange={v => updTravel("charge407", +v)} type="number" align="right" />
-              <td style={totRow}>{fmt$(s.travelSell)}</td>
+            <tr style={{ background: "#fff" }}>
+              <Cell value={p.travel.workers || ""} onChange={v => updTravel("workers", +v || 0)} type="number" align="right" />
+              <Cell value={p.travel.days || ""} onChange={v => updTravel("days", +v || 0)} type="number" align="right" />
+              <Cell value={p.travel.travelTimeHrs || ""} onChange={v => updTravel("travelTimeHrs", +v || 0)} type="number" align="right" />
+              <Cell value={p.travel.kmPerDay || ""} onChange={v => updTravel("kmPerDay", +v || 0)} type="number" align="right" />
+              <Cell value={p.travel.charge407 || ""} onChange={v => updTravel("charge407", +v || 0)} type="number" align="right" />
+              <td style={numCell}>{s.totalTravelHrs} hrs</td>
+              <td style={{ ...totCell, color:"#059669" }}>{fmt$(s.travelSell)}</td>
             </tr>
           </tbody>
         </table>
 
       </div>
 
-      {/* ── RIGHT: Overview Panel ── */}
-      <div style={{
-        width: 260, flexShrink: 0,
-        borderLeft: "1px solid #e5e7eb",
-        paddingLeft: 16,
-        overflowY: "auto",
-        height: "100%",
-        background: "#fff",
-      }}>
-        <div style={{ fontSize: 13, fontWeight: 800, color: "#0d2e5e", marginBottom: 14, paddingBottom: 8, borderBottom: "2px solid #0d2e5e" }}>
-          QUOTE OVERVIEW
-        </div>
-
-        <OvSection title="Rates">
-          <RateField label="Electrician ($/hr)" value={p.settings.electricianRate} onChange={v => updS("electricianRate", v)} />
-          <RateField label="Programmer ($/hr)"  value={p.settings.programmerRate}  onChange={v => updS("programmerRate", v)} />
-          <RateField label="Travel ($/hr)"       value={p.settings.travelRate}      onChange={v => updS("travelRate", v)} />
-          <RateField label="Mileage ($/km)"      value={p.settings.mileageRate}     onChange={v => updS("mileageRate", v)} />
-        </OvSection>
-
-        <OvSection title="Materials">
-          <MkpField label="Markup %" pct={p.settings.materialMarkup} onChange={v => updS("materialMarkup", v)} />
-          <OvRow label="Cost" value={fmt$(s.matCost)} sub />
-          <OvRow label="Sell" value={fmt$(s.matSell)} sub />
-        </OvSection>
-
-        <OvSection title="Labour — Electrician">
-          <OvRow label="Hours" value={`${s.elecHours} hrs`} sub />
-          <OvRow label="Total Sell" value={fmt$(s.elecSell)} sub />
-        </OvSection>
-
-        <OvSection title="Labour — Programmer">
-          <OvRow label="Hours" value={`${s.progHours} hrs`} sub />
-          <OvRow label="Total Sell" value={fmt$(s.progSell)} sub />
-        </OvSection>
-
-        <OvSection title="Other Costs">
-          <MkpField label="Default Markup %" pct={p.settings.otherCostsMarkup} onChange={v => updS("otherCostsMarkup", v)} />
-          <OvRow label="Cost" value={fmt$(s.otherCost)} sub />
-          <OvRow label="Sell" value={fmt$(s.otherSell)} sub />
-        </OvSection>
-
-        <OvSection title="Travel">
-          <OvRow label="Travel Hrs" value={`${s.totalTravelHrs} hrs`} sub />
-          <OvRow label="Sell" value={fmt$(s.travelSell)} sub />
-        </OvSection>
-
-        {/* Grand Total */}
-        <div style={{ background: "#0d2e5e", borderRadius: 8, padding: "12px 14px", marginBottom: 14 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-            <span style={{ fontSize: 11, color: "#93c5fd" }}>Materials</span>
-            <span style={{ fontSize: 11, color: "#fff", fontWeight: 600 }}>{fmt$(s.matSell)}</span>
-          </div>
-          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-            <span style={{ fontSize: 11, color: "#93c5fd" }}>Labour</span>
-            <span style={{ fontSize: 11, color: "#fff", fontWeight: 600 }}>{fmt$(s.elecSell + s.progSell + s.travelSell)}</span>
-          </div>
-          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
-            <span style={{ fontSize: 11, color: "#93c5fd" }}>Other Costs</span>
-            <span style={{ fontSize: 11, color: "#fff", fontWeight: 600 }}>{fmt$(s.otherSell)}</span>
-          </div>
-          <div style={{ borderTop: "1px solid #1e3a6e", paddingTop: 8, display: "flex", justifyContent: "space-between" }}>
-            <span style={{ fontSize: 14, color: "#fff", fontWeight: 800 }}>TOTAL</span>
-            <span style={{ fontSize: 16, color: "#22d3ee", fontWeight: 900 }}>{fmt$(s.totalSell)}</span>
-          </div>
-        </div>
-
-        {/* Profit */}
-        <OvSection title="Profit Analysis">
-          <OvSection title="">
-            <MkpField label="Overhead %" pct={p.settings.overheadRate} onChange={v => updS("overheadRate", v)} />
-            <MkpField label="Tax Rate %" pct={p.settings.taxRate}      onChange={v => updS("taxRate", v)} />
-          </OvSection>
-          <OvRow label="Total Cost" value={fmt$(s.totalCost)} />
-          <OvRow label="Net Profit" value={fmt$(s.netProfit)} />
-          <OvRow label="Margin %" value={`${(s.netMarginPct * 100).toFixed(1)}%`} />
-          <OvRow label="After-Tax Profit" value={fmt$(s.afterTaxProfit)} sub />
-        </OvSection>
-
-        {saving && <div style={{ fontSize: 11, color: "#9ca3af", textAlign: "center", marginTop: 8 }}>Saving…</div>}
-      </div>
+      {/* ── Sticky bottom summary bar ── */}
+      <SummaryBar s={s} />
     </div>
   );
 }

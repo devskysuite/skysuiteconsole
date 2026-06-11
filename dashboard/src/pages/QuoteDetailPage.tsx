@@ -424,14 +424,12 @@ export default function QuoteDetailPage() {
       )}
 
       {tab === "Overview" && (
-        <div style={{ padding:"0 24px 24px" }}>
-          <QuoteOverviewTab
-            quoteId={quoteId!}
-            pricing={(quote as any).pricing
-              ? { ...DEFAULT_PRICING, ...(quote as any).pricing, settings: { ...DEFAULT_PRICING.settings, ...((quote as any).pricing?.settings || {}) } }
-              : DEFAULT_PRICING}
-          />
-        </div>
+        <QuoteOverviewTab
+          quoteId={quoteId!}
+          pricing={(quote as any).pricing
+            ? { ...DEFAULT_PRICING, ...(quote as any).pricing, settings: { ...DEFAULT_PRICING.settings, ...((quote as any).pricing?.settings || {}) } }
+            : DEFAULT_PRICING}
+        />
       )}
 
       {tab === "Pricing" && (

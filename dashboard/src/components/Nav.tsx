@@ -222,6 +222,12 @@ const ADMIN_GROUPS: { heading: string; items: { to: string; label: string; icon:
     ],
   },
   {
+    heading: "Quotes",
+    items: [
+      { to: "/admin/quote-setup", label: "Quote Setup", icon: <IconFileText /> },
+    ],
+  },
+  {
     heading: "Settings",
     items: [
       { to: "/categories",      label: "Categories",      icon: <IconTag /> },

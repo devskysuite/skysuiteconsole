@@ -43,6 +43,7 @@ import OperationsReceiptsBillsPage from "./pages/OperationsReceiptsBillsPage";
 import PODetailPage from "./pages/PODetailPage";
 import ImportJobsPage from "./pages/ImportJobsPage";
 import QuoteDetailPage from "./pages/QuoteDetailPage";
+import QuoteSetupPage from "./pages/QuoteSetupPage";
 import Nav from "./components/Nav";
 import { ToastProvider } from "./components/Toast";
 import Spinner from "./components/Spinner";
@@ -72,7 +73,7 @@ import { useLocation } from "react-router-dom";
 
 function AppLayout({ children }: { children: React.ReactNode }) {
   const { pathname } = useLocation();
-  const fullWidth = pathname.startsWith("/dispatch") || pathname.startsWith("/on-call") || pathname.startsWith("/time-off") || pathname.startsWith("/customers") || pathname.startsWith("/properties") || pathname.startsWith("/vendors") || pathname.startsWith("/pricebook") || pathname.startsWith("/jobs") || pathname.startsWith("/accounting") || pathname.startsWith("/operations") || pathname.startsWith("/purchase-orders") || pathname.startsWith("/import");
+  const fullWidth = pathname.startsWith("/dispatch") || pathname.startsWith("/on-call") || pathname.startsWith("/time-off") || pathname.startsWith("/customers") || pathname.startsWith("/properties") || pathname.startsWith("/vendors") || pathname.startsWith("/pricebook") || pathname.startsWith("/jobs") || pathname.startsWith("/accounting") || pathname.startsWith("/operations") || pathname.startsWith("/purchase-orders") || pathname.startsWith("/import") || pathname.startsWith("/quotes");
   return (
     <>
       <Nav />
@@ -148,6 +149,7 @@ export default function App() {
                       <Route path="/operations/receipts-bills" element={<OperationsReceiptsBillsPage />} />
                       <Route path="/import/jobs" element={<ImportJobsPage />} />
                       <Route path="/quotes/:quoteId" element={<QuoteDetailPage />} />
+                      <Route path="/admin/quote-setup" element={<QuoteSetupPage />} />
                     </Routes>
                 </AppLayout>
               </RequireAuth>
