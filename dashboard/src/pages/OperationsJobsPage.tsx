@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { collection, getDocs, orderBy, query } from "firebase/firestore";
+import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
 import { db } from "../firebase";
 import { Link } from "react-router-dom";
 
@@ -115,12 +115,15 @@ export default function OperationsJobsPage() {
   const [sortDir, setSortDir] = useState<SortDir>("desc");
 
   useEffect(() => {
-    getDocs(query(collection(db, "jobs"), orderBy("jobNumber", "desc")))
-      .then(snap => {
+    const unsub = onSnapshot(
+      query(collection(db, "jobs"), orderBy("jobNumber", "desc")),
+      snap => {
         setJobs(snap.docs.map(d => ({ id: d.id, ...(d.data() as Omit<Job, "id">) })));
         setLoading(false);
-      })
-      .catch(() => setLoading(false));
+      },
+      () => setLoading(false)
+    );
+    return unsub;
   }, []);
 
   function handleSort(col: string) {

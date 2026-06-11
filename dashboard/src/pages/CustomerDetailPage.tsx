@@ -139,7 +139,6 @@ export default function CustomerDetailPage() {
   // Jobs & Visits state
   const [jobsList,     setJobsList]     = useState<JobRow[]>([]);
   const [visitsList,   setVisitsList]   = useState<VisitRow[]>([]);
-  const [jvStarted,    setJvStarted]    = useState(false);
   const [jobsReady,    setJobsReady]    = useState(false);
   const [visitsReady,  setVisitsReady]  = useState(false);
   const [jobsTrunc,    setJobsTrunc]    = useState(false);
@@ -201,52 +200,50 @@ export default function CustomerDetailPage() {
     }).catch(() => {});
   }, [customerId]);
 
-  // Jobs & Visits — two-phase lazy load: jobs first (fast), visits in background
+  // Jobs live listener — starts as soon as customer loads
   useEffect(() => {
-    if (tab !== "Jobs & Visits" || jvStarted || !customer) return;
-    setJvStarted(true);
-
-    async function load() {
-      // Phase 1: load up to JV_JOB_LIMIT jobs — shows jobs table immediately
-      const jobSnap = await getDocs(
-        query(collection(db, "jobs"), where("customerName", "==", customer!.name), limit(JV_JOB_LIMIT + 1))
-      ).catch(() => null);
-      const raw = jobSnap?.docs || [];
-      const truncated = raw.length > JV_JOB_LIMIT;
-      const docs = truncated ? raw.slice(0, JV_JOB_LIMIT) : raw;
-      const jobs: JobRow[] = docs.map(d => ({ id: d.id, ...(d.data() as Omit<JobRow,"id">) }));
-      jobs.sort((a, b) => {
-        const n = (s: string) => parseInt(s.replace(/\D/g, "") || "0");
-        return n(b.jobNumber || "") - n(a.jobNumber || "");
-      });
-      setJobsList(jobs);
-      setJobsTrunc(truncated);
-      setJobsReady(true); // ← jobs table renders NOW
-
-      // Phase 2: load visits for those jobs in background
-      if (jobs.length === 0) { setVisitsReady(true); return; }
-      const jobIds = jobs.map(j => j.id);
-      const jobMap = Object.fromEntries(jobs.map(j => [j.id, j.propertyName]));
-      const all: VisitRow[] = [];
-      for (let i = 0; i < jobIds.length; i += 10) {
-        const batch = jobIds.slice(i, i + 10);
-        const vSnap = await getDocs(
-          query(collection(db, "dispatchVisits"), where("jobId", "in", batch))
-        ).catch(() => null);
-        if (vSnap) {
-          all.push(...vSnap.docs.map(d => ({
-            id: d.id,
-            propertyName: jobMap[d.data().jobId] || "",
-            ...(d.data() as Omit<VisitRow,"id"|"propertyName">),
-          })));
-        }
+    if (!customer) return;
+    setJobsReady(false);
+    const unsub = onSnapshot(
+      query(collection(db, "jobs"), where("customerName", "==", customer.name), limit(JV_JOB_LIMIT)),
+      snap => {
+        const jobs: JobRow[] = snap.docs.map(d => ({ id: d.id, ...(d.data() as Omit<JobRow,"id">) }));
+        jobs.sort((a, b) => {
+          const n = (s: string) => parseInt(s.replace(/\D/g, "") || "0");
+          return n(b.jobNumber || "") - n(a.jobNumber || "");
+        });
+        setJobsTrunc(snap.docs.length >= JV_JOB_LIMIT);
+        setJobsList(jobs);
+        setJobsReady(true);
       }
+    );
+    return unsub;
+  }, [customer?.name]);
+
+  // Visits — reload whenever jobsList changes
+  useEffect(() => {
+    if (!jobsReady) return;
+    if (jobsList.length === 0) { setVisitsList([]); setVisitsReady(true); return; }
+    setVisitsReady(false);
+    const jobIds = jobsList.map(j => j.id);
+    const jobMap = Object.fromEntries(jobsList.map(j => [j.id, j.propertyName]));
+    const batches: string[][] = [];
+    for (let i = 0; i < jobIds.length; i += 10) batches.push(jobIds.slice(i, i + 10));
+    Promise.all(
+      batches.map(batch => getDocs(query(collection(db, "dispatchVisits"), where("jobId", "in", batch))).catch(() => null))
+    ).then(snaps => {
+      const all: VisitRow[] = (snaps.filter(Boolean) as NonNullable<typeof snaps[0]>[]).flatMap(snap =>
+        snap.docs.map(d => ({
+          id: d.id,
+          propertyName: jobMap[d.data().jobId] || "",
+          ...(d.data() as Omit<VisitRow,"id"|"propertyName">),
+        }))
+      );
       all.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
       setVisitsList(all);
-      setVisitsReady(true); // ← visits sections render NOW
-    }
-    load();
-  }, [tab, customer, jvStarted]);
+      setVisitsReady(true);
+    });
+  }, [jobsList, jobsReady]);
 
   async function toggleCreditHold() {
     if (!customerId || !customer) return;
