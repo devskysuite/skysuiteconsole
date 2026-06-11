@@ -747,16 +747,16 @@ export default function DispatchPage() {
               {dayAssignments.map(assignment => (
                 <div
                   key={assignment.id}
-                  style={{ ...chipBase, background: "#f5f3ff", color: "#6d28d9", border: "1px solid #ddd6fe", cursor: isAdmin ? "pointer" : "default" }}
+                  style={{ ...chipBase, background: isToday ? "#7c3aed" : "#f5f3ff", color: isToday ? "#fff" : "#6d28d9", border: isToday ? "2px solid #6d28d9" : "1px solid #ddd6fe", boxShadow: isToday ? "0 0 0 3px #c4b5fd" : undefined, cursor: isAdmin ? "pointer" : "default" }}
                   onClick={e => { e.stopPropagation(); if (isAdmin) setOnCallActionModal({ date: d, assignment }); }}
                   title={isAdmin ? "Click for options" : undefined}
                 >
-                  {assignment.employeeName}
+                  {assignment.employeeName}{isToday ? " · TODAY" : ""}
                 </div>
               ))}
               {outlookName && (
-                <div style={{ ...chipBase, background: "#f5f3ff", color: "#8b5cf6", border: "1px solid #ddd6fe", opacity: 0.65 }} title="Outlook only">
-                  {outlookName}
+                <div style={{ ...chipBase, background: isToday ? "#7c3aed" : "#f5f3ff", color: isToday ? "#fff" : "#8b5cf6", border: isToday ? "2px solid #6d28d9" : "1px solid #ddd6fe", boxShadow: isToday ? "0 0 0 3px #c4b5fd" : undefined, opacity: isToday ? 1 : 0.65 }} title="Outlook only">
+                  {outlookName}{isToday ? " · TODAY" : ""}
                 </div>
               )}
             </div>
