@@ -16,3 +16,4 @@ export { conflictCheckNow } from "./src/conflictCheckNow.js";
 export { oncallReminderNow } from "./src/oncallReminderNow.js";
 export { refreshOutlookToken } from "./src/refreshOutlookToken.js";
 export { exchangeOutlookCode } from "./src/exchangeOutlookCode.js";
+export { getTargetOnCallDays } from "./src/getTargetOnCallDays.js";

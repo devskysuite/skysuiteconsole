@@ -6,7 +6,7 @@ import {
 import { db, auth } from "../firebase";
 import { useIsAdmin } from "../hooks/useIsAdmin";
 import Spinner from "../components/Spinner";
-import { getOutlookToken } from "../utils/outlookToken";
+import { getFunctions, httpsCallable } from "firebase/functions";
 
 type OnCallAssignment = { id: string; date: string; uid: string; employeeName: string };
 type DispatchUser    = { uid: string; displayName: string };
@@ -103,7 +103,6 @@ export default function DispatchPage() {
   const [swapOfferDate, setSwapOfferDate] = useState("");
   const [swapReason, setSwapReason]       = useState("");
   const [swapping, setSwapping]           = useState(false);
-  const [swapOlToken, setSwapOlToken]     = useState("");
   const [swapTargetEvents, setSwapTargetEvents] = useState<{ date: string; eventId: string }[]>([]);
   const [swapTargetLoading, setSwapTargetLoading] = useState(false);
 
@@ -261,43 +260,22 @@ export default function DispatchPage() {
     }).catch(() => {});
   }, []);
 
-  // Load Outlook token when non-admin opens swap modal
+  // Fetch target's future on-call days via Cloud Function (works for all auth levels)
   useEffect(() => {
-    if (!swapModal || isAdmin) return;
-    getOutlookToken().then(t => { if (t && t !== "disconnected") setSwapOlToken(t as string); });
-  }, [swapModal, isAdmin]);
-
-  // Fetch target's future on-call days from Outlook (non-admin swap)
-  useEffect(() => {
-    if (!swapOlToken || !swapToUid || isAdmin) { setSwapTargetEvents([]); return; }
+    if (!swapToUid || isAdmin) { setSwapTargetEvents([]); return; }
     const user = allUsers.find(u => u.uid === swapToUid);
     if (!user) return;
-    const firstName = user.displayName.split(" ")[0].toLowerCase();
-    const OL_CAL_ID = "AAMkADgyOGUwMDUyLTNiZjMtNGQzNi1hNTgwLTQ2M2IzYzE2YmQ5MgBGAAAAAACGxuDePTlOQawDDU8UfW0gBwBxt6lSDH0kQY0tk4wDjNk8AAAAAAEGAABxt6lSDH0kQY0tk4wDjNk8AAALmQObAAA=";
-    const today = new Date().toISOString().slice(0, 10);
-    const endD = new Date(); endD.setMonth(endD.getMonth() + 12);
-    const endStr = endD.toISOString().slice(0, 10);
+    const firstName = user.displayName.split(" ")[0];
     setSwapTargetLoading(true);
     setSwapTargetEvents([]);
-    (async () => {
-      const evs: { date: string; eventId: string }[] = [];
-      let url = `https://graph.microsoft.com/v1.0/me/calendars/${encodeURIComponent(OL_CAL_ID)}/calendarView?startDateTime=${today}T00:00:00&endDateTime=${endStr}T00:00:00&$top=999&$select=id,subject,start`;
-      while (url) {
-        const data = await fetch(url, { headers: { Authorization: `Bearer ${swapOlToken}` } }).then(r => r.json());
-        for (const e of (data.value || [])) {
-          const s = (e.subject || "").toLowerCase();
-          if (!(s.includes("on call") || s.includes("oncall")) || s.includes("vacation")) continue;
-          const name = (e.subject || "").replace(/(on call|oncall)/gi, "").trim().split(" ")[0].toLowerCase();
-          if (name !== firstName) continue;
-          const date = e.start?.date || e.start?.dateTime?.slice(0, 10) || "";
-          if (date) evs.push({ date, eventId: e.id });
-        }
-        url = data["@odata.nextLink"] || "";
-      }
-      setSwapTargetEvents(evs);
-      setSwapTargetLoading(false);
-    })().catch(() => setSwapTargetLoading(false));
-  }, [swapOlToken, swapToUid, isAdmin, allUsers]);
+    const fn = httpsCallable<{ firstName: string }, { days: { date: string; eventId: string }[] }>(
+      getFunctions(), "getTargetOnCallDays"
+    );
+    fn({ firstName })
+      .then(r => setSwapTargetEvents(r.data.days))
+      .catch(() => setSwapTargetEvents([]))
+      .finally(() => setSwapTargetLoading(false));
+  }, [swapToUid, isAdmin, allUsers]);
 
   // Approved vacation listener — lazy, starts on first visit to vacation view
   useEffect(() => {
@@ -644,7 +622,7 @@ export default function DispatchPage() {
 
   function closeSwap() {
     setSwapModal(null); setSwapToUid(""); setSwapOfferDate(""); setSwapReason("");
-    setSwapOlToken(""); setSwapTargetEvents([]); setSwapTargetLoading(false);
+    setSwapTargetEvents([]); setSwapTargetLoading(false);
   }
 
   async function submitSwap() {
