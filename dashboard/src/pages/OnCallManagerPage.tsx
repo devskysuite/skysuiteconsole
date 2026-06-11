@@ -356,6 +356,12 @@ export default function OnCallManagerPage({ adminMode = false }: { adminMode?: b
     })().catch(()=>setLoading(false));
   },[accessToken,year,month,refreshKey]);
 
+  // Auto-refresh Outlook events every 60s when calendar tab is open
+  useEffect(()=>{
+    if(!connected||tab!=="calendar") return;
+    const id=setInterval(()=>setRefreshKey(k=>k+1),60_000);
+    return ()=>clearInterval(id);
+  },[connected,tab]);
 
   async function connectOutlook() {
     const v=genVerifier(), c=await genChallenge(v);
