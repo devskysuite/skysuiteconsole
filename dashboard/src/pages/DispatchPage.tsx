@@ -1186,7 +1186,7 @@ function Row({ tech, days, byCell, calMap, onAdd, onOpen, onSwap, canEdit }: {
   );
 }
 
-type JobOption = { id: string; jobNumber: string; customerName: string; status: string; description: string };
+type JobOption = { id: string; jobNumber: string; customerName: string; status: string; description: string; department?: string };
 
 function VisitModal({ init, onClose }: { init: { techUid: string; techName: string; date: string; visit?: Visit }; onClose: () => void }) {
   const v = init.visit;
@@ -1239,6 +1239,7 @@ function VisitModal({ init, onClose }: { init: { techUid: string; techName: stri
         customerName: d.data().customerName || "",
         status: d.data().status || "",
         description: d.data().issueDescription || d.data().title || "",
+        department: d.data().departmentsNeeded || "",
       }))))
       .catch(() => {});
   }, []);
@@ -1256,6 +1257,7 @@ function VisitModal({ init, onClose }: { init: { techUid: string; techName: stri
     setJobNumber(j.jobNumber);
     setJobId(j.id);
     setJobQuery(`${j.jobNumber}  •  ${j.customerName}`);
+    if (j.department) setDepartment(j.department);
     setJobDrop(false);
   }
 
