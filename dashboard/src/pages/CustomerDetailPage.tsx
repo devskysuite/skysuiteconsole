@@ -18,6 +18,7 @@ interface Customer {
   createdBy: string; createdOn: string; customerType: string;
   email: string; phone: string; tags: string; syncStatus: string;
   creditLimit?: number;
+  creditHold?: boolean;
   pricebook?: string;
   taxCode?: string;
   taxExemptId?: string;
@@ -245,6 +246,13 @@ export default function CustomerDetailPage() {
     load();
   }, [tab, customer, jvStarted]);
 
+  async function toggleCreditHold() {
+    if (!customerId || !customer) return;
+    const next = !customer.creditHold;
+    await updateDoc(doc(db, "customers", customerId), { creditHold: next });
+    setCustomer(c => c ? { ...c, creditHold: next } : c);
+  }
+
   async function saveNotes() {
     if (!customerId) return;
     await setDoc(doc(db, "customers", customerId, "meta", "notes"), { text: notes });
@@ -328,10 +336,26 @@ export default function CustomerDetailPage() {
           }}>{customer.status}</span>
           {tc && <span style={{ ...tc, fontSize: 12, fontWeight: 600, padding: "3px 10px", borderRadius: 99 }}>{customer.customerType}</span>}
           {customer.code && <span style={{ fontSize: 12, color: "#9ca3af", fontWeight: 500 }}>{customer.code}</span>}
+          {customer.creditHold && (
+            <span style={{ background: "#fef2f2", color: "#991b1b", border: "1px solid #fca5a5", fontSize: 12, fontWeight: 800, padding: "3px 10px", borderRadius: 99, letterSpacing: 0.3 }}>
+              CREDIT HOLD
+            </span>
+          )}
         </div>
-        {isAdmin && (
-          <button onClick={() => setEditModal(true)} style={{ ...btnS("#1565c0"), fontSize: 13 }}>Edit</button>
-        )}
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          {isAdmin && (
+            <button
+              onClick={toggleCreditHold}
+              style={{ ...btnS(customer.creditHold ? "#991b1b" : "#6b7280"), fontSize: 13 }}
+              title={customer.creditHold ? "Remove credit hold" : "Place on credit hold"}
+            >
+              {customer.creditHold ? "Remove Hold" : "Place on Hold"}
+            </button>
+          )}
+          {isAdmin && (
+            <button onClick={() => setEditModal(true)} style={{ ...btnS("#1565c0"), fontSize: 13 }}>Edit</button>
+          )}
+        </div>
       </div>
 
       {/* ── Two-column body ── */}

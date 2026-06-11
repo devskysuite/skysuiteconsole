@@ -31,6 +31,8 @@ interface Customer {
   tags: string;
   syncStatus: string;
   taxCode?: string;
+  paymentTerms?: string;
+  creditHold?: boolean;
 }
 
 // ── CSV parser (handles quoted multiline fields) ───────────────────────────────
@@ -377,9 +379,9 @@ export default function CustomersPage() {
   // Filter + search
   const filtered = useMemo(() => {
     let list = [...customers];
-    if (filter === "warning") list = list.filter(c => c.outstandingBalance > 0 && c.overdueBalance === 0);
-    if (filter === "risk")    list = list.filter(c => c.creditLimit > 0 && c.overdueBalance > 0 && c.overdueBalance < 50000);
-    if (filter === "hold")    list = list.filter(c => c.creditLimit > 0 && c.overdueBalance >= 50000);
+    if (filter === "warning") list = list.filter(c => !!c.paymentTerms && c.overdueBalance > 0);
+    if (filter === "risk")    list = list.filter(c => c.creditLimit > 0 && c.outstandingBalance > c.creditLimit);
+    if (filter === "hold")    list = list.filter(c => !!c.creditHold);
     if (search) {
       const q = search.toLowerCase();
       list = list.filter(c =>
@@ -404,9 +406,9 @@ export default function CustomersPage() {
   const rangeStart  = pageSize === "all" ? 1 : safePage * pageSize + 1;
   const rangeEnd    = pageSize === "all" ? filtered.length : Math.min(safePage * pageSize + pageSize, filtered.length);
 
-  const cntWarning = useMemo(() => customers.filter(c => c.outstandingBalance > 0 && c.overdueBalance === 0).length, [customers]);
-  const cntRisk    = useMemo(() => customers.filter(c => c.creditLimit > 0 && c.overdueBalance > 0 && c.overdueBalance < 50000).length, [customers]);
-  const cntHold    = useMemo(() => customers.filter(c => c.creditLimit > 0 && c.overdueBalance >= 50000).length, [customers]);
+  const cntWarning = useMemo(() => customers.filter(c => !!c.paymentTerms && c.overdueBalance > 0).length, [customers]);
+  const cntRisk    = useMemo(() => customers.filter(c => c.creditLimit > 0 && c.outstandingBalance > c.creditLimit).length, [customers]);
+  const cntHold    = useMemo(() => customers.filter(c => !!c.creditHold).length, [customers]);
 
   // ── CSV import ────────────────────────────────────────────────────────────
   async function handleImport(e: React.ChangeEvent<HTMLInputElement>) {
