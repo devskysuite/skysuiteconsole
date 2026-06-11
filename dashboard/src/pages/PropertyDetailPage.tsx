@@ -4,6 +4,7 @@ import { addDoc, collection, deleteDoc, doc, getDocs, getDoc, limit, onSnapshot,
 import { db } from "../firebase";
 import { useIsAdmin } from "../hooks/useIsAdmin";
 import CreateJobModal from "./CreateJobModal";
+import CreateQuoteModal from "./CreateQuoteModal";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface Property {
@@ -192,6 +193,9 @@ export default function PropertyDetailPage() {
   const [propertyContacts, setPropertyContacts] = useState<Contact[]>([]);
   const [contactMenu,  setContactMenu]  = useState<string | null>(null);
   const [contactModal, setContactModal] = useState<Contact | null | "new">(null);
+  const [quotes, setQuotes]             = useState<any[]>([]);
+  const [quotesLoading, setQuotesLoading] = useState(true);
+  const [createQuoteOpen, setCreateQuoteOpen] = useState(false);
 
   useEffect(() => {
     if (!propertyId) return;
@@ -242,6 +246,21 @@ export default function PropertyDetailPage() {
     setup();
     return () => unsub?.();
   }, [property?.customerId, property?.customerName]);
+
+  useEffect(() => {
+    if (!propertyId) return;
+    return onSnapshot(
+      query(collection(db, "quotes"), where("propertyId", "==", propertyId)),
+      snap => {
+        const list = snap.docs
+          .map(d => ({ id: d.id, ...d.data() }))
+          .sort((a: any, b: any) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+        setQuotes(list);
+        setQuotesLoading(false);
+      },
+      () => setQuotesLoading(false)
+    );
+  }, [propertyId]);
 
   useEffect(() => {
     if (!propertyId) return;
@@ -660,7 +679,62 @@ export default function PropertyDetailPage() {
               </div>
             )}
 
-            {tab !== "Jobs & Visits" && tab !== "Details" && tab !== "Contacts" && (
+            {tab === "Quotes" && (
+              <div>
+                <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:16 }}>
+                  <div style={{ fontSize:15, fontWeight:700, color:"#111827" }}>Quotes</div>
+                  <button onClick={() => setCreateQuoteOpen(true)} style={{ background:"#16a34a", color:"#fff", border:"none", borderRadius:7, padding:"8px 18px", fontSize:13, fontWeight:700, cursor:"pointer" }}>+ New Quote</button>
+                </div>
+                <div style={{ background:"#fff", borderRadius:12, border:"1px solid #e5e7eb", overflow:"hidden" }}>
+                  <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
+                    <thead>
+                      <tr style={{ background:"#f9fafb", borderBottom:"2px solid #e5e7eb" }}>
+                        {["Quote #","Title","Status","Department","Project Manager","Due By","Created On"].map(h => (
+                          <th key={h} style={{ padding:"10px 14px", textAlign:"left", fontSize:11, fontWeight:700, color:"#6b7280", textTransform:"uppercase", letterSpacing:0.4, whiteSpace:"nowrap" }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody style={{ background:"#fff" }}>
+                      {quotesLoading ? (
+                        <tr><td colSpan={7} style={{ padding:"40px 20px", textAlign:"center", color:"#9ca3af" }}>Loading…</td></tr>
+                      ) : quotes.length === 0 ? (
+                        <tr><td colSpan={7} style={{ padding:"40px 20px", textAlign:"center", color:"#9ca3af" }}>No quotes yet.</td></tr>
+                      ) : quotes.map((q: any) => {
+                        const SC: Record<string, { bg: string; color: string }> = {
+                          "Draft":            { bg:"#f3f4f6", color:"#374151" },
+                          "Ready":            { bg:"#dbeafe", color:"#1e40af" },
+                          "Sent To Customer": { bg:"#fef3c7", color:"#92400e" },
+                          "Accepted":         { bg:"#dcfce7", color:"#166534" },
+                          "Rejected":         { bg:"#fee2e2", color:"#991b1b" },
+                          "Expired":          { bg:"#f3f4f6", color:"#9ca3af" },
+                        };
+                        const sc = SC[q.status] || SC["Draft"];
+                        return (
+                          <tr key={q.id} style={{ borderBottom:"1px solid #f0f0f0" }}>
+                            <td style={{ padding:"10px 14px", fontWeight:700 }}>
+                              <Link to={`/quotes/${q.id}`} style={{ color:"#1565c0", textDecoration:"none" }}>{q.quoteNumber}</Link>
+                            </td>
+                            <td style={{ padding:"10px 14px", maxWidth:220, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{q.title || "—"}</td>
+                            <td style={{ padding:"10px 14px" }}>
+                              <span style={{ background:sc.bg, color:sc.color, fontSize:11, fontWeight:700, padding:"2px 8px", borderRadius:99 }}>{q.status || "—"}</span>
+                            </td>
+                            <td style={{ padding:"10px 14px", color:"#6b7280" }}>{q.department || "—"}</td>
+                            <td style={{ padding:"10px 14px", color:"#374151" }}>{q.projectManager || "—"}</td>
+                            <td style={{ padding:"10px 14px", color:"#374151" }}>{q.quoteDueBy || "—"}</td>
+                            <td style={{ padding:"10px 14px", color:"#374151" }}>{q.createdAt ? new Date(q.createdAt).toLocaleDateString("en-CA") : "—"}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                  <div style={{ padding:"10px 16px", fontSize:12, color:"#9ca3af", borderTop:"1px solid #e5e7eb", display:"flex", justifyContent:"flex-end" }}>
+                    {quotes.length} quote{quotes.length !== 1 ? "s" : ""}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {tab !== "Jobs & Visits" && tab !== "Details" && tab !== "Contacts" && tab !== "Quotes" && (
               <div style={{ background: "#fff", borderRadius: 12, border: "1px solid #e5e7eb", padding: "60px 24px", textAlign: "center", color: "#9ca3af", fontSize: 14 }}>
                 {tab} — coming soon
               </div>
@@ -671,6 +745,24 @@ export default function PropertyDetailPage() {
 
       {editOpen && property && (
         <EditModal property={property} onSave={saveEdit} onClose={() => setEditOpen(false)} />
+      )}
+
+      {createQuoteOpen && property && (
+        <CreateQuoteModal
+          propertyId={propertyId!}
+          propertyName={property.name}
+          propertyAddress={property.propertyAddress || ""}
+          customerId={property.customerId}
+          customerName={property.customerName}
+          billingCustomer={property.billingCustomer}
+          billingAddress={property.billingAddress}
+          onClose={() => setCreateQuoteOpen(false)}
+          onCreated={(_id, num) => {
+            setCreateQuoteOpen(false);
+            setTab("Quotes");
+            alert(`Quote ${num} created.`);
+          }}
+        />
       )}
 
       {contactModal !== null && (

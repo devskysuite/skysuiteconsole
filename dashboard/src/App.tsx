@@ -42,6 +42,7 @@ import OperationsPurchaseOrdersPage from "./pages/OperationsPurchaseOrdersPage";
 import OperationsReceiptsBillsPage from "./pages/OperationsReceiptsBillsPage";
 import PODetailPage from "./pages/PODetailPage";
 import ImportJobsPage from "./pages/ImportJobsPage";
+import QuoteDetailPage from "./pages/QuoteDetailPage";
 import Nav from "./components/Nav";
 import { ToastProvider } from "./components/Toast";
 import Spinner from "./components/Spinner";
@@ -146,6 +147,7 @@ export default function App() {
                       <Route path="/purchase-orders/:poId" element={<PODetailPage />} />
                       <Route path="/operations/receipts-bills" element={<OperationsReceiptsBillsPage />} />
                       <Route path="/import/jobs" element={<ImportJobsPage />} />
+                      <Route path="/quotes/:quoteId" element={<QuoteDetailPage />} />
                     </Routes>
                 </AppLayout>
               </RequireAuth>

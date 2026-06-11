@@ -7,6 +7,7 @@ import {
 import { db, auth } from "../firebase";
 import { useIsAdmin } from "../hooks/useIsAdmin";
 import CreateJobModal from "./CreateJobModal";
+import CreateQuoteModal from "./CreateQuoteModal";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface Customer {
@@ -169,6 +170,9 @@ export default function CustomerDetailPage() {
   const [properties,     setProperties]     = useState<Property[]>([]);
   const [contacts,       setContacts]       = useState<Contact[]>([]);
   const [propAuthContacts, setPropAuthContacts] = useState<(Contact & { propertyName: string; propertyId: string })[]>([]);
+  const [quotes,         setQuotes]         = useState<any[]>([]);
+  const [quotesLoading,  setQuotesLoading]  = useState(true);
+  const [createQuoteOpen, setCreateQuoteOpen] = useState<{ propertyId: string; propertyName: string; propertyAddress: string } | null>(null);
   const [notes,          setNotes]          = useState("");
   const [notesSaved,     setNotesSaved]     = useState(false);
   const [showNoteInput,  setShowNoteInput]  = useState(false);
@@ -241,6 +245,22 @@ export default function CustomerDetailPage() {
     return onSnapshot(collection(db, "customers", customerId, "contacts"), snap => {
       setContacts(snap.docs.map(d => ({ id: d.id, ...d.data() } as Contact)));
     });
+  }, [customerId]);
+
+  // Quotes for this customer
+  useEffect(() => {
+    if (!customerId) return;
+    return onSnapshot(
+      query(collection(db, "quotes"), where("customerId", "==", customerId)),
+      snap => {
+        const list = snap.docs
+          .map(d => ({ id: d.id, ...d.data() }))
+          .sort((a: any, b: any) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+        setQuotes(list);
+        setQuotesLoading(false);
+      },
+      () => setQuotesLoading(false)
+    );
   }, [customerId]);
 
   // Authorized contacts from all properties — cascade up to customer contacts tab
@@ -1269,8 +1289,91 @@ export default function CustomerDetailPage() {
               );
             })()}
 
+            {/* ── Quotes tab ── */}
+            {tab === "Quotes" && (() => {
+              const SC: Record<string, { bg: string; color: string }> = {
+                "Draft":            { bg:"#f3f4f6", color:"#374151" },
+                "Ready":            { bg:"#dbeafe", color:"#1e40af" },
+                "Sent To Customer": { bg:"#fef3c7", color:"#92400e" },
+                "Accepted":         { bg:"#dcfce7", color:"#166534" },
+                "Rejected":         { bg:"#fee2e2", color:"#991b1b" },
+                "Expired":          { bg:"#f3f4f6", color:"#9ca3af" },
+              };
+              return (
+                <div>
+                  <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:16 }}>
+                    <div style={{ fontSize:15, fontWeight:700, color:"#111827" }}>Quotes</div>
+                    {properties.length > 0 && (
+                      <div style={{ display:"flex", gap:8 }}>
+                        {properties.length === 1 ? (
+                          <button
+                            onClick={() => setCreateQuoteOpen({ propertyId: properties[0].id!, propertyName: properties[0].name, propertyAddress: (properties[0] as any).propertyAddress || "" })}
+                            style={{ background:"#16a34a", color:"#fff", border:"none", borderRadius:7, padding:"8px 18px", fontSize:13, fontWeight:700, cursor:"pointer" }}
+                          >+ New Quote</button>
+                        ) : (
+                          <select
+                            style={{ border:"1px solid #d1d5db", borderRadius:7, padding:"7px 12px", fontSize:13, cursor:"pointer" }}
+                            defaultValue=""
+                            onChange={e => {
+                              const p = properties.find(x => x.id === e.target.value);
+                              if (p) setCreateQuoteOpen({ propertyId: p.id!, propertyName: p.name, propertyAddress: (p as any).propertyAddress || "" });
+                              e.target.value = "";
+                            }}
+                          >
+                            <option value="">+ New Quote for property…</option>
+                            {properties.map(p => <option key={p.id} value={p.id!}>{p.name}</option>)}
+                          </select>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ background:"#fff", borderRadius:12, border:"1px solid #e5e7eb", overflow:"hidden" }}>
+                    <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
+                      <thead>
+                        <tr style={{ background:"#f9fafb", borderBottom:"2px solid #e5e7eb" }}>
+                          {["Quote #","Property","Title","Status","Department","Project Manager","Due By","Created"].map(h => (
+                            <th key={h} style={{ padding:"10px 14px", textAlign:"left", fontSize:11, fontWeight:700, color:"#6b7280", textTransform:"uppercase", letterSpacing:0.4, whiteSpace:"nowrap" }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody style={{ background:"#fff" }}>
+                        {quotesLoading ? (
+                          <tr><td colSpan={8} style={{ padding:"40px 20px", textAlign:"center", color:"#9ca3af" }}>Loading…</td></tr>
+                        ) : quotes.length === 0 ? (
+                          <tr><td colSpan={8} style={{ padding:"40px 20px", textAlign:"center", color:"#9ca3af" }}>No quotes yet.</td></tr>
+                        ) : quotes.map((q: any) => {
+                          const sc = SC[q.status] || SC["Draft"];
+                          return (
+                            <tr key={q.id} style={{ borderBottom:"1px solid #f0f0f0" }}>
+                              <td style={{ padding:"10px 14px", fontWeight:700 }}>
+                                <Link to={`/quotes/${q.id}`} style={{ color:"#1565c0", textDecoration:"none" }}>{q.quoteNumber}</Link>
+                              </td>
+                              <td style={{ padding:"10px 14px", color:"#374151" }}>
+                                {q.propertyId ? <Link to={`/properties/${q.propertyId}`} style={{ color:"#1565c0", textDecoration:"none" }}>{q.propertyName}</Link> : q.propertyName || "—"}
+                              </td>
+                              <td style={{ padding:"10px 14px", maxWidth:200, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{q.title || "—"}</td>
+                              <td style={{ padding:"10px 14px" }}>
+                                <span style={{ background:sc.bg, color:sc.color, fontSize:11, fontWeight:700, padding:"2px 8px", borderRadius:99 }}>{q.status || "—"}</span>
+                              </td>
+                              <td style={{ padding:"10px 14px", color:"#6b7280" }}>{q.department || "—"}</td>
+                              <td style={{ padding:"10px 14px", color:"#374151" }}>{q.projectManager || "—"}</td>
+                              <td style={{ padding:"10px 14px", color:"#374151" }}>{q.quoteDueBy || "—"}</td>
+                              <td style={{ padding:"10px 14px", color:"#374151" }}>{q.createdAt ? new Date(q.createdAt).toLocaleDateString("en-CA") : "—"}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                    <div style={{ padding:"10px 16px", fontSize:12, color:"#9ca3af", borderTop:"1px solid #e5e7eb", display:"flex", justifyContent:"flex-end" }}>
+                      {quotes.length} quote{quotes.length !== 1 ? "s" : ""}
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
             {/* ── Stub tabs ── */}
-            {tab !== "Properties" && tab !== "Contacts" && tab !== "Jobs & Visits" && tab !== "Accounting" && (
+            {tab !== "Properties" && tab !== "Contacts" && tab !== "Jobs & Visits" && tab !== "Accounting" && tab !== "Quotes" && (
               <div style={{ textAlign: "center", padding: "48px 0", color: "#9ca3af" }}>
                 <div style={{ fontSize: 28, marginBottom: 8, opacity: 0.4 }}>
                   {tab === "Attachments" ? "📎" : tab === "History" ? "🕐" : "📄"}
@@ -1305,6 +1408,22 @@ export default function CustomerDetailPage() {
           property={{ id: "", name: "", customerName: customer.name, customerId: customerId || "", billingCustomer: customer.name }}
           onClose={() => setCreateJobOpen(false)}
           onCreated={() => { setCreateJobOpen(false); }}
+        />
+      )}
+
+      {createQuoteOpen && customer && customerId && (
+        <CreateQuoteModal
+          propertyId={createQuoteOpen.propertyId}
+          propertyName={createQuoteOpen.propertyName}
+          propertyAddress={createQuoteOpen.propertyAddress}
+          customerId={customerId}
+          customerName={customer.name}
+          billingCustomer={customer.name}
+          onClose={() => setCreateQuoteOpen(null)}
+          onCreated={(_id, num) => {
+            setCreateQuoteOpen(null);
+            alert(`Quote ${num} created.`);
+          }}
         />
       )}
 
