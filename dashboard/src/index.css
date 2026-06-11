@@ -55,7 +55,8 @@ input:focus, select:focus, textarea:focus {
 .global-search-input::placeholder {
   color: rgba(255, 255, 255, 0.45);
 }
-.global-search-input {
+.global-search-input,
+.input-on-dark {
   color: #fff !important;
   -webkit-text-fill-color: #fff !important;
 }
@@ -65,6 +66,13 @@ input:focus, select:focus, textarea:focus {
   color: #fff !important;
   -webkit-text-fill-color: #fff !important;
   box-shadow: none !important;
+}
+.input-on-dark:focus {
+  background: transparent !important;
+  border-color: rgba(255,255,255,0.3) !important;
+  box-shadow: none !important;
+  color: #fff !important;
+  -webkit-text-fill-color: #fff !important;
 }
 
 /* Hamburger button - hidden on desktop */

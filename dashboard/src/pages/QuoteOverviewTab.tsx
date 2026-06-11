@@ -444,6 +444,7 @@ function SectionBlock({ sec, idx, settings, collapsed, onToggle, onDelete, onRen
         <input
           value={sec.name}
           onChange={e => onRename(e.target.value)}
+          className="input-on-dark"
           style={{
             background: "transparent", border: "none", outline: "none",
             color: "#fff", fontSize: 14, fontWeight: 800, flex: 1,
