@@ -32,6 +32,7 @@ type AppUser = {
   role?: string;
   onCall?: boolean;
   showInDispatch?: boolean;
+  isProjectManager?: boolean;
   createdAt?: any;
 };
 
@@ -388,6 +389,16 @@ export default function UsersPage() {
     }
   }
 
+  async function toggleProjectManager(u: AppUser) {
+    if (!isOwner) return;
+    try {
+      await updateDoc(doc(db, "users", u.id), { isProjectManager: !u.isProjectManager });
+      await loadUsers();
+    } catch (e: any) {
+      toast(`Error updating project manager: ${e?.message}`, "error");
+    }
+  }
+
   async function changeRole(u: AppUser, newRole: string) {
     if (!isOwner || newRole === (u.role || "user")) return;
     const roleLabels: Record<string, string> = { owner: "Owner", admin: "Admin", manager: "Manager", user: "User" };
@@ -637,6 +648,19 @@ export default function UsersPage() {
                 title="Show this technician on the Job Board"
               >
                 {u.showInDispatch ? "✓ On Job Board" : "Add to Job Board"}
+              </button>
+            )}
+
+            {/* Project Manager toggle */}
+            {isOwner && (
+              <button
+                style={{ ...styles.actionBtn, ...(u.isProjectManager
+                  ? { borderColor: "#7c3aed", color: "#fff", background: "#7c3aed" }
+                  : { borderColor: "#7c3aed", color: "#7c3aed" }) }}
+                onClick={() => toggleProjectManager(u)}
+                title="Allow this user to be selected as a Project Manager on jobs"
+              >
+                {u.isProjectManager ? "✓ Project Manager" : "Set as PM"}
               </button>
             )}
 

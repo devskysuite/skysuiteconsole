@@ -53,6 +53,7 @@ async function reserveJobNumber(): Promise<string> {
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function CreateJobModal({ property, onClose, onCreated }: Props) {
   const [users, setUsers]           = useState<string[]>([]);
+  const [projectManagers, setProjectManagers] = useState<string[]>([]);
   const [contacts, setContacts]     = useState<{ id: string; name: string; role: string }[]>([]);
   const [pricebooks, setPricebooks] = useState<{ id: string; name: string; isDefault: boolean }[]>([]);
   const [dispatchTechs, setDispatchTechs] = useState<{ uid: string; name: string }[]>([]);
@@ -102,6 +103,12 @@ export default function CreateJobModal({ property, onClose, onCreated }: Props) 
         .filter(Boolean)
         .sort((a, b) => a.localeCompare(b));
       setUsers(names);
+      const pms = snap.docs
+        .filter(d => d.data().isProjectManager)
+        .map(d => d.data().displayName as string)
+        .filter(Boolean)
+        .sort((a, b) => a.localeCompare(b));
+      setProjectManagers(pms);
     }).catch(() => {});
 
     // When opened from customer level (no property pre-selected), load that customer's properties
@@ -480,7 +487,13 @@ export default function CreateJobModal({ property, onClose, onCreated }: Props) 
 
         {/* ── Row 6: People dropdowns ── */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: "20px 28px", marginTop: 20 }}>
-          <UserSelect k="projectManager"     label="Project Manager" />
+          <div>
+            <label style={lbl}><span>Project Manager</span></label>
+            <select style={sel()} {...bind("projectManager")}>
+              <option value="">Select...</option>
+              {projectManagers.map(u => <option key={u} value={u}>{u}</option>)}
+            </select>
+          </div>
           <UserSelect k="accountManager"     label="Account Manager" />
           <UserSelect k="soldBy"             label="Sold By" />
           <div>
