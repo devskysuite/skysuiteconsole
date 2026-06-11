@@ -22,10 +22,18 @@ body {
   min-height: 100vh;
 }
 
+/* Global input / textarea / select baseline — always readable */
+input, select, textarea {
+  color: #111827;
+  -webkit-text-fill-color: #111827;
+}
+
 /* Global input focus styles */
 input:focus, select:focus, textarea:focus {
   border-color: #1e7d3a !important;
   background: #fff !important;
+  color: #111827 !important;
+  -webkit-text-fill-color: #111827 !important;
   outline: none;
   box-shadow: 0 0 0 2px rgba(30, 125, 58, 0.15);
 }
@@ -47,9 +55,15 @@ input:focus, select:focus, textarea:focus {
 .global-search-input::placeholder {
   color: rgba(255, 255, 255, 0.45);
 }
+.global-search-input {
+  color: #fff !important;
+  -webkit-text-fill-color: #fff !important;
+}
 .global-search-input:focus {
   border-color: transparent !important;
   background: transparent !important;
+  color: #fff !important;
+  -webkit-text-fill-color: #fff !important;
   box-shadow: none !important;
 }
 

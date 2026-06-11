@@ -347,7 +347,7 @@ function OverridePanel({ p, onChange }: { p: PricingData; onChange: (k: string, 
         <input type="number" step="any"
           value={isPct ? +((p.settings as any)[key] * 100).toFixed(2) : (p.settings as any)[key]}
           onChange={e => onChange(key, isPct ? +e.target.value / 100 : +e.target.value)}
-          style={{ width: 72, padding: "4px 6px", border: "1px solid #334155", borderRadius: 5, fontSize: 12, background: "#1e293b", color: "#f1f5f9", WebkitTextFillColor: "#f1f5f9", textAlign: "right", outline: "none" }}
+          style={{ width: 72, padding: "4px 6px", border: "1px solid #475569", borderRadius: 5, fontSize: 12, background: "#f8fafc", color: "#0f172a", textAlign: "right", outline: "none" }}
         />
         {isPct && <span style={{ fontSize: 11, color: "#64748b" }}>%</span>}
       </div>
