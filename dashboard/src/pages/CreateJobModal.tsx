@@ -62,11 +62,12 @@ export default function CreateJobModal({ property, onClose, onCreated }: Props) 
   const [saving, setSaving]         = useState(false);
   const [errors, setErrors]         = useState<Record<string, boolean>>({});
   const [visitOpen, setVisitOpen]   = useState(false);
+  const [visitAdditionalTechs, setVisitAdditionalTechs] = useState<string[]>([]);
   const [visitForm, setVisitForm]   = useState({
     description: "", toDo: "", forms: "",
     requiredSkills: "", requiredCertifications: "",
     department: "", primaryTechUid: "",
-    additionalTechnicians: "", date: "", time: "", duration: "1",
+    date: "", time: "", duration: "1",
   });
 
   const [form, setForm] = useState({
@@ -255,7 +256,7 @@ export default function CreateJobModal({ property, onClose, onCreated }: Props) 
           toDo:                     visitForm.toDo,
           department:               dept,
           duration:                 visitDuration,
-          additionalTechnicians:    visitForm.additionalTechnicians ? visitForm.additionalTechnicians.split(",").map(s => s.trim()).filter(Boolean) : [],
+          additionalTechnicians:    visitAdditionalTechs,
           requiredSkills:           visitForm.requiredSkills ? visitForm.requiredSkills.split(",").map(s => s.trim()).filter(Boolean) : [],
           requiredCertifications:   visitForm.requiredCertifications ? visitForm.requiredCertifications.split(",").map(s => s.trim()).filter(Boolean) : [],
           forms:                    visitForm.forms ? visitForm.forms.split(",").map(s => s.trim()).filter(Boolean) : [],
@@ -264,10 +265,7 @@ export default function CreateJobModal({ property, onClose, onCreated }: Props) 
         });
 
         // Auto-create payroll entry for Visit #1 (primary + additional techs)
-        const additionalTechs = visitForm.additionalTechnicians
-          ? visitForm.additionalTechnicians.split(",").map((s: string) => s.trim()).filter(Boolean)
-          : [];
-        const allTechs = [selectedTech?.name || "", ...additionalTechs].filter(Boolean);
+        const allTechs = [selectedTech?.name || "", ...visitAdditionalTechs].filter(Boolean);
         try {
           for (const techName of allTechs) {
             await addDoc(collection(db, "payrollEntries"), {
@@ -625,7 +623,32 @@ export default function CreateJobModal({ property, onClose, onCreated }: Props) 
               {/* Additional Technicians */}
               <div style={{ marginBottom: 16 }}>
                 <label style={lbl}><span>Additional Technicians</span></label>
-                <input style={inp} placeholder="Select Additional Technicians (comma-separated)" value={visitForm.additionalTechnicians} onChange={e => setVisitForm(f => ({ ...f, additionalTechnicians: e.target.value }))} />
+                <select
+                  style={sel()}
+                  value=""
+                  onChange={e => {
+                    const name = e.target.value;
+                    if (name && !visitAdditionalTechs.includes(name))
+                      setVisitAdditionalTechs(prev => [...prev, name]);
+                  }}
+                >
+                  <option value="">— Add a technician —</option>
+                  {dispatchTechs
+                    .filter(t => t.uid !== visitForm.primaryTechUid)
+                    .map(t => (
+                      <option key={t.uid} value={t.name} disabled={visitAdditionalTechs.includes(t.name)}>{t.name}</option>
+                    ))}
+                </select>
+                {visitAdditionalTechs.length > 0 && (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
+                    {visitAdditionalTechs.map(name => (
+                      <div key={name} style={{ background: "#eff6ff", color: "#1d4ed8", border: "1px solid #bfdbfe", borderRadius: 99, padding: "3px 10px", fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 5 }}>
+                        {name}
+                        <span style={{ cursor: "pointer", fontSize: 15, lineHeight: 1 }} onClick={() => setVisitAdditionalTechs(prev => prev.filter(n => n !== name))}>×</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* Date / Time / Duration */}
