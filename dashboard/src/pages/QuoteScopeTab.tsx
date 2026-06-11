@@ -61,7 +61,9 @@ export default function QuoteScopeTab({ quoteId, pricing: raw }: { quoteId: stri
                 resize: "vertical",
                 boxSizing: "border-box",
                 outline: "none",
+                background: "#ffffff",
                 color: "#111827",
+                WebkitTextFillColor: "#111827",
               }}
               onFocus={e => { e.target.style.borderColor = "#1565c0"; }}
               onBlur={e => { e.target.style.borderColor = "#d1d5db"; }}
