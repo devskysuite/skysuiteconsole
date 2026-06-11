@@ -5,6 +5,7 @@ import { Link, useLocation } from "react-router-dom";
 import { auth, db } from "../firebase";
 import { useIsAdmin } from "../hooks/useIsAdmin";
 import { useRole, canApproveTimeOff } from "../hooks/useRole";
+import GlobalSearch from "./GlobalSearch";
 
 // ── Inline SVG icons ──────────────────────────────────────────────────────────
 function IconTag() {
@@ -289,6 +290,11 @@ export default function Nav() {
           onError={(e) => { (e.target as HTMLImageElement).src = "/skysuite_logo_white.png"; }}
         />
         {userName && <span className="nav-username" style={styles.userName}>{userName}</span>}
+      </div>
+
+      {/* Search (desktop only) */}
+      <div className="nav-search-wrapper">
+        <GlobalSearch />
       </div>
 
       {/* Hamburger */}

@@ -38,6 +38,21 @@ input:focus, select:focus, textarea:focus {
   border-radius: 12px;
 }
 
+/* Global search bar in nav */
+.nav-search-wrapper {
+  flex: 1;
+  max-width: 460px;
+  margin: 0 20px;
+}
+.global-search-input::placeholder {
+  color: rgba(255, 255, 255, 0.45);
+}
+.global-search-input:focus {
+  border-color: transparent !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
 /* Hamburger button - hidden on desktop */
 .hamburger-btn {
   display: none;
@@ -87,6 +102,9 @@ input:focus, select:focus, textarea:focus {
     display: flex;
   }
   .desktop-nav-links {
+    display: none !important;
+  }
+  .nav-search-wrapper {
     display: none !important;
   }
   .mobile-nav-panel {
