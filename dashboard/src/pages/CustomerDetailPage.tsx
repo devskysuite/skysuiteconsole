@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   addDoc, collection, deleteDoc, doc,
@@ -168,6 +168,7 @@ export default function CustomerDetailPage() {
   const [loading,        setLoading]        = useState(true);
   const [properties,     setProperties]     = useState<Property[]>([]);
   const [contacts,       setContacts]       = useState<Contact[]>([]);
+  const [propAuthContacts, setPropAuthContacts] = useState<(Contact & { propertyName: string; propertyId: string })[]>([]);
   const [notes,          setNotes]          = useState("");
   const [notesSaved,     setNotesSaved]     = useState(false);
   const [showNoteInput,  setShowNoteInput]  = useState(false);
@@ -241,6 +242,24 @@ export default function CustomerDetailPage() {
       setContacts(snap.docs.map(d => ({ id: d.id, ...d.data() } as Contact)));
     });
   }, [customerId]);
+
+  // Authorized contacts from all properties — cascade up to customer contacts tab
+  const propIds = useMemo(() => properties.map(p => p.id!).join(","), [properties]);
+  useEffect(() => {
+    if (!properties.length) { setPropAuthContacts([]); return; }
+    const byProp = new Map<string, (Contact & { propertyName: string; propertyId: string })[]>();
+    const unsubs = properties.map(p =>
+      onSnapshot(collection(db, "properties", p.id!, "contacts"), snap => {
+        byProp.set(p.id!, snap.docs
+          .map(d => ({ id: d.id, ...d.data() } as Contact))
+          .filter(c => c.authorized)
+          .map(c => ({ ...c, propertyName: p.name, propertyId: p.id! }))
+        );
+        setPropAuthContacts(Array.from(byProp.values()).flat());
+      })
+    );
+    return () => unsubs.forEach(u => u());
+  }, [propIds]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Notes
   useEffect(() => {
@@ -709,7 +728,7 @@ export default function CustomerDetailPage() {
                     <button onClick={() => setContactModal("new")} style={{ background:"#111827", color:"#fff", border:"none", borderRadius:6, padding:"8px 18px", fontSize:13, fontWeight:700, cursor:"pointer" }}>+ ADD</button>
                   )}
                 </div>
-                {contacts.length === 0 ? (
+                {contacts.length === 0 && propAuthContacts.length === 0 ? (
                   <div style={{ textAlign:"center", padding:"40px 0", color:"#9ca3af" }}>
                     <p style={{ fontSize:14 }}>No representatives yet.</p>
                     {isAdmin && <button onClick={() => setContactModal("new")} style={{ ...btnS("#1565c0"), fontSize:13, marginTop:8 }}>Add First Contact</button>}
@@ -765,11 +784,29 @@ export default function CustomerDetailPage() {
                               </td>
                             </tr>
                           ))}
+                          {propAuthContacts.map(c => (
+                            <tr key={c.propertyId + "-" + c.id} style={{ borderBottom:"1px solid #f3f4f6", background:"#fafbff" }}>
+                              <td style={{ ...td, fontWeight:600 }}>
+                                {c.name}
+                                <span style={{ marginLeft:6, fontSize:10, fontWeight:700, background:"#f0fdf4", color:"#166534", borderRadius:99, padding:"1px 7px", whiteSpace:"nowrap" as const }}>
+                                  {c.propertyName}
+                                </span>
+                              </td>
+                              <td style={td}>{c.role || "—"}</td>
+                              <td style={td}>{c.email ? <a href={`mailto:${c.email}`} style={{ color:"#1565c0", textDecoration:"none" }}>{c.email}</a> : "—"}</td>
+                              <td style={td}>{c.landline || "—"}</td>
+                              <td style={td}>{c.mobilePhone || c.phone || "—"}</td>
+                              <td style={td}>{c.preferSMS ? "Yes" : "No"}</td>
+                              <td style={td}>{c.bestContact || "—"}</td>
+                              <td style={td}>{c.notes ? (c.notes.length > 30 ? c.notes.slice(0,30)+"…" : c.notes) : "—"}</td>
+                              <td style={td} />
+                            </tr>
+                          ))}
                         </tbody>
                       </table>
                     </div>
                     <div style={{ display:"flex", justifyContent:"flex-end", marginTop:8, fontSize:12, color:"#6b7280" }}>
-                      1–{contacts.length} of {contacts.length} rows
+                      1–{contacts.length + propAuthContacts.length} of {contacts.length + propAuthContacts.length} rows
                     </div>
                   </>
                 )}
