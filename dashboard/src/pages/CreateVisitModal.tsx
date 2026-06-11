@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { addDoc, collection, getDocs, query, where } from "firebase/firestore";
 import { auth, db } from "../firebase";
 
@@ -55,6 +55,8 @@ export default function CreateVisitModal({ jobId, jobNumber, customerName, prope
   const [techs, setTechs] = useState<{ uid: string; name: string }[]>([]);
   const [saving, setSaving] = useState(false);
   const [multiple, setMultiple] = useState(false);
+  const [endDate, setEndDate] = useState("");
+  const [excludeWeekends, setExcludeWeekends] = useState(false);
   const [errors, setErrors] = useState<Record<string, boolean>>({});
 
   const [additionalTechs, setAdditionalTechs] = useState<string[]>([]);
@@ -70,6 +72,21 @@ export default function CreateVisitModal({ jobId, jobNumber, customerName, prope
     time: "",
     duration: "1",
   });
+
+  const visitDates = useMemo(() => {
+    if (!form.date) return [];
+    if (!multiple || !endDate || endDate < form.date) return [form.date];
+    const dates: string[] = [];
+    const cur = new Date(form.date + "T00:00:00");
+    const last = new Date(endDate + "T00:00:00");
+    while (cur <= last) {
+      const dow = cur.getDay();
+      if (!excludeWeekends || (dow !== 0 && dow !== 6))
+        dates.push(cur.toLocaleDateString("en-CA"));
+      cur.setDate(cur.getDate() + 1);
+    }
+    return dates;
+  }, [form.date, multiple, endDate, excludeWeekends]);
 
   useEffect(() => {
     getDocs(query(collection(db, "users"), where("showInDispatch", "==", true)))
@@ -110,16 +127,13 @@ export default function CreateVisitModal({ jobId, jobNumber, customerName, prope
     if (!form.department) errs.department = true;
     if (Object.keys(errs).length) { setErrors(errs); return; }
 
-    // Block duplicate job number on same day unless all existing visits are complete
-    if (form.date && jobNumber) {
-      const snap = await getDocs(query(
-        collection(db, "dispatchVisits"),
-        where("jobNumber", "==", jobNumber),
-        where("date", "==", form.date),
-      ));
-      const blocking = snap.docs.filter(d => d.data().status !== "complete");
-      if (blocking.length > 0) {
-        alert(`${jobNumber} already has a visit scheduled on this date. Mark the existing visit complete before adding another.`);
+    // Block if any target date already has an active visit for this job
+    if (jobNumber && visitDates.length > 0) {
+      const snap = await getDocs(query(collection(db, "dispatchVisits"), where("jobNumber", "==", jobNumber)));
+      const active = snap.docs.filter(d => !["complete", "canceled", "closed"].includes(d.data().status));
+      const conflictDate = visitDates.find(vd => active.some(d => d.data().date === vd));
+      if (conflictDate) {
+        alert(`${jobNumber} already has an open visit on ${conflictDate}. Mark it complete before adding another.`);
         return;
       }
     }
@@ -140,79 +154,56 @@ export default function CreateVisitModal({ jobId, jobNumber, customerName, prope
 
       const selectedTech = techs.find(t => t.uid === form.primaryTechUid);
       const title = form.description.trim() || `${customerName}${propertyName ? " – " + propertyName : ""}`;
-
       const duration = parseFloat(form.duration) || 1;
-      const visitRef = await addDoc(collection(db, "dispatchVisits"), {
-        // Dispatch board core fields
-        techUid:   form.primaryTechUid || "",
-        techName:  selectedTech?.name || "",
-        date:      form.date || "",
-        title,
-        jobNumber,
-        start:     form.time || "",
-        end:       endTime,
-        status:    "scheduled",
-        priority:  "normal",
-        flagged:   false,
-        notes:     form.toDo || "",
-        // Extended fields
-        jobId,
-        visitNumber,
-        description:              form.description,
-        toDo:                     form.toDo,
-        department:               form.department,
-        duration,
-        additionalTechnicians:    additionalTechs,
-        requiredSkills:           form.requiredSkills
-          ? form.requiredSkills.split(",").map(s => s.trim()).filter(Boolean)
-          : [],
-        requiredCertifications:   form.requiredCertifications
-          ? form.requiredCertifications.split(",").map(s => s.trim()).filter(Boolean)
-          : [],
-        forms:                    form.forms
-          ? form.forms.split(",").map(s => s.trim()).filter(Boolean)
-          : [],
-        createdAt:  now,
-        createdBy:  performer,
-      });
-
-      // Auto-create payroll entry for primary + additional techs
       const allTechs = [selectedTech?.name || "", ...additionalTechs].filter(Boolean);
-      try {
+
+      for (let i = 0; i < visitDates.length; i++) {
+        const vNum = visitNumber + i;
+        const visitRef = await addDoc(collection(db, "dispatchVisits"), {
+          techUid:   form.primaryTechUid || "",
+          techName:  selectedTech?.name || "",
+          date:      visitDates[i],
+          title,
+          jobNumber,
+          start:     form.time || "",
+          end:       endTime,
+          status:    "scheduled",
+          priority:  "normal",
+          flagged:   false,
+          notes:     form.toDo || "",
+          jobId,
+          visitNumber: vNum,
+          description:            form.description,
+          toDo:                   form.toDo,
+          department:             form.department,
+          duration,
+          additionalTechnicians:  additionalTechs,
+          requiredSkills:         form.requiredSkills ? form.requiredSkills.split(",").map(s => s.trim()).filter(Boolean) : [],
+          requiredCertifications: form.requiredCertifications ? form.requiredCertifications.split(",").map(s => s.trim()).filter(Boolean) : [],
+          forms:                  form.forms ? form.forms.split(",").map(s => s.trim()).filter(Boolean) : [],
+          createdAt: now,
+          createdBy: performer,
+        });
+
         for (const techName of allTechs) {
           await addDoc(collection(db, "payrollEntries"), {
-            employeeName:  techName,
-            employeeCode:  "",
-            date:          form.date || "",
-            department:    form.department,
-            event:         "Visit",
-            jobNumber,
-            phase:         "",
-            costCode:      "",
-            visitRef:      String(visitNumber),
-            visitId:       visitRef.id,
-            jobId,
-            eventStatus:   "Scheduled",
-            reviewStatus:  "UNSUBMITTED",
-            customer:      customerName,
-            property:      propertyName,
-            location:      "",
-            notes:         "",
-            rt:            0,
-            ot:            0,
-            dt:            0,
-            pto:           0,
-            laborRate:     "",
-            laborType:     "",
-            source:        "visit",
-            createdAt:     now,
+            employeeName: techName, employeeCode: "",
+            date: visitDates[i], department: form.department,
+            event: "Visit", jobNumber,
+            phase: "", costCode: "",
+            visitRef: String(vNum), visitId: visitRef.id, jobId,
+            eventStatus: "Scheduled", reviewStatus: "UNSUBMITTED",
+            customer: customerName, property: propertyName, location: "", notes: "",
+            rt: 0, ot: 0, dt: 0, pto: 0,
+            laborRate: "", laborType: "", source: "visit", createdAt: now,
           });
         }
-      } catch {}
+      }
 
       // Log to job history
+      const label = visitDates.length > 1 ? `Visits #${visitNumber}–#${visitNumber + visitDates.length - 1} Added` : `Visit #${visitNumber} Added`;
       await addDoc(collection(db, "jobs", jobId, "history"), {
-        action:      `Visit #${visitNumber} Added`,
+        action:      label,
         performedBy: performer,
         timestamp:   now,
       });
@@ -358,9 +349,9 @@ export default function CreateVisitModal({ jobId, jobNumber, customerName, prope
           </div>
 
           {/* Date / Time / Duration */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 160px", gap: 16, marginBottom: 24 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 160px", gap: 16, marginBottom: multiple ? 12 : 24 }}>
             <div>
-              <label style={lbl}>Date</label>
+              <label style={lbl}>{multiple ? "Start Date" : "Date"}</label>
               <input type="date" style={inp} {...bind("date")} />
             </div>
             <div>
@@ -380,6 +371,25 @@ export default function CreateVisitModal({ jobId, jobNumber, customerName, prope
             </div>
           </div>
 
+          {/* Multi-visit: End Date + Skip Weekends */}
+          {multiple && (
+            <div style={{ marginBottom: 16 }}>
+              <label style={lbl}>End Date</label>
+              <input type="date" style={inp} min={form.date || undefined} value={endDate} onChange={e => setEndDate(e.target.value)} />
+              {endDate && endDate >= (form.date || "") && (
+                <>
+                  <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8, fontSize: 13, fontWeight: 600, color: "#374151", cursor: "pointer" }}>
+                    <input type="checkbox" checked={excludeWeekends} onChange={e => setExcludeWeekends(e.target.checked)} />
+                    Skip weekends
+                  </label>
+                  <div style={{ marginTop: 8, background: visitDates.length === 0 ? "#fef2f2" : "#f0fdf4", border: `1px solid ${visitDates.length === 0 ? "#fca5a5" : "#bbf7d0"}`, borderRadius: 6, padding: "6px 12px", fontSize: 13, fontWeight: 600, color: visitDates.length === 0 ? "#dc2626" : "#166534" }}>
+                    {visitDates.length === 0 ? "No dates selected (all excluded)" : `${visitDates.length} visit${visitDates.length !== 1 ? "s" : ""} will be created`}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
           {/* Actions */}
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
             <button onClick={onClose} style={{ background: "none", border: "1px solid #d1d5db", borderRadius: 6, padding: "9px 20px", fontSize: 13, fontWeight: 600, cursor: "pointer", color: "#374151" }}>
@@ -390,7 +400,7 @@ export default function CreateVisitModal({ jobId, jobNumber, customerName, prope
               disabled={saving}
               style={{ background: "#16a34a", color: "#fff", border: "none", borderRadius: 6, padding: "9px 28px", fontSize: 13, fontWeight: 700, cursor: saving ? "not-allowed" : "pointer", opacity: saving ? 0.7 : 1 }}
             >
-              {saving ? "Saving…" : "Add Visit"}
+              {saving ? "Saving…" : visitDates.length > 1 ? `Add ${visitDates.length} Visits` : "Add Visit"}
             </button>
           </div>
         </div>
