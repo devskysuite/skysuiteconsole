@@ -120,6 +120,12 @@ export default function DispatchPage() {
   const [addOnCallBusy, setAddOnCallBusy]   = useState(false);
   const [deleteOnCallId, setDeleteOnCallId] = useState<string | null>(null);
 
+  // On-call action picker (chip click → choose Swap / Give Away / Delete)
+  const [onCallActionModal, setOnCallActionModal] = useState<{ date: string; assignment: OnCallAssignment } | null>(null);
+  const [giveAwayModal, setGiveAwayModal]         = useState<{ assignment: OnCallAssignment } | null>(null);
+  const [giveToUid, setGiveToUid]                 = useState("");
+  const [giveAwayBusy, setGiveAwayBusy]           = useState(false);
+
   // Vacation monthly CRUD modals
   const [addVacModal, setAddVacModal] = useState<string | null>(null); // start date
   const [addVacEnd, setAddVacEnd]     = useState("");
@@ -463,6 +469,26 @@ export default function DispatchPage() {
     setDeleteOnCallId(null);
   }
 
+  async function handleGiveAway() {
+    if (!giveAwayModal || !giveToUid) return;
+    const { assignment } = giveAwayModal;
+    const newPerson = allUsers.find(u => u.uid === giveToUid);
+    if (!newPerson) return;
+    setGiveAwayBusy(true);
+    try {
+      await updateDoc(doc(db, "onCallAssignments", assignment.id), {
+        uid: giveToUid, employeeName: newPerson.displayName,
+      });
+      await addDoc(collection(db, "onCallGiveaways"), {
+        fromUid: assignment.uid, fromName: assignment.employeeName,
+        toUid: giveToUid, toName: newPerson.displayName,
+        date: assignment.date, gaveAwayAt: serverTimestamp(),
+      });
+      setGiveAwayModal(null); setGiveToUid("");
+    } catch {}
+    setGiveAwayBusy(false);
+  }
+
   // Vacation entries from Outlook calMap — keyed by date with eventId for deletion
   const monthVacItems = useMemo(() => {
     const m: Record<string, { name: string; eventId: string }[]> = {};
@@ -715,21 +741,12 @@ export default function DispatchPage() {
             >
               <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 4, color: isToday ? "#fff" : overflow ? "#c0c8d4" : "#374151", background: isToday ? "#1565c0" : "transparent", borderRadius: isToday ? "50%" : 0, width: isToday ? 22 : "auto", height: isToday ? 22 : "auto", display: "flex", alignItems: "center", justifyContent: "center" }}>{dayNum}</div>
               {assignment && (
-                <div style={{ display: "flex", gap: 2, alignItems: "stretch" }}>
-                  <div
-                    style={{ ...chipBase, flex: 1, background: "#f5f3ff", color: "#6d28d9", border: "1px solid #ddd6fe", cursor: isAdmin ? "pointer" : "default" }}
-                    onClick={e => { e.stopPropagation(); if (isAdmin) openSwap(d); }}
-                    title={isAdmin ? "Click to swap" : undefined}
-                  >
-                    {assignment.employeeName}
-                  </div>
-                  {isAdmin && (
-                    <div
-                      style={{ background: "#f5f3ff", border: "1px solid #ddd6fe", borderRadius: 4, padding: "2px 6px", fontSize: 13, color: "#6d28d9", cursor: "pointer", display: "flex", alignItems: "center" }}
-                      onClick={e => { e.stopPropagation(); setDeleteOnCallId(assignment.id); }}
-                      title="Remove assignment"
-                    >✕</div>
-                  )}
+                <div
+                  style={{ ...chipBase, background: "#f5f3ff", color: "#6d28d9", border: "1px solid #ddd6fe", cursor: isAdmin ? "pointer" : "default" }}
+                  onClick={e => { e.stopPropagation(); if (isAdmin) setOnCallActionModal({ date: d, assignment }); }}
+                  title={isAdmin ? "Click for options" : undefined}
+                >
+                  {assignment.employeeName}
                 </div>
               )}
               {outlookName && (
@@ -885,6 +902,66 @@ export default function DispatchPage() {
               <button onClick={() => setAddOnCallModal(null)} style={s.cancelBtn}>Cancel</button>
               <button onClick={handleAddOnCall} disabled={addOnCallBusy || !addOnCallUid} style={{ ...s.saveBtn, opacity: (addOnCallBusy || !addOnCallUid) ? 0.5 : 1 }}>
                 {addOnCallBusy ? "Saving…" : "Assign"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── On-Call Action Picker ── */}
+      {onCallActionModal && (
+        <div style={s.backdrop} onClick={() => setOnCallActionModal(null)}>
+          <div style={{ ...s.modal, maxWidth: 340 }} onClick={e => e.stopPropagation()}>
+            <h2 style={{ fontSize: 16, fontWeight: 800, color: "#0d2e5e", marginBottom: 4 }}>On-Call Options</h2>
+            <p style={{ fontSize: 13, color: "#6b7280", marginBottom: 20 }}>
+              {new Date(onCallActionModal.date + "T00:00:00").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}
+              {" — "}<strong style={{ color: "#111827" }}>{onCallActionModal.assignment.employeeName}</strong>
+            </p>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <button
+                style={{ background: "#1565c0", color: "#fff", border: "none", borderRadius: 8, padding: "11px 0", fontSize: 14, fontWeight: 700, cursor: "pointer" }}
+                onClick={() => { const a = onCallActionModal; setOnCallActionModal(null); openSwap(a.date); }}
+              >↔ Swap</button>
+              <button
+                style={{ background: "#7c3aed", color: "#fff", border: "none", borderRadius: 8, padding: "11px 0", fontSize: 14, fontWeight: 700, cursor: "pointer" }}
+                onClick={() => { setGiveAwayModal({ assignment: onCallActionModal.assignment }); setGiveToUid(""); setOnCallActionModal(null); }}
+              >🎁 Give Away</button>
+              <button
+                style={{ background: "transparent", color: "#dc2626", border: "1px solid #fca5a5", borderRadius: 8, padding: "11px 0", fontSize: 14, fontWeight: 700, cursor: "pointer" }}
+                onClick={() => { setDeleteOnCallId(onCallActionModal.assignment.id); setOnCallActionModal(null); }}
+              >✕ Delete</button>
+            </div>
+            <div style={{ marginTop: 14, textAlign: "right" }}>
+              <button onClick={() => setOnCallActionModal(null)} style={s.cancelBtn}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Give Away Modal ── */}
+      {giveAwayModal && (
+        <div style={s.backdrop} onClick={() => { setGiveAwayModal(null); setGiveToUid(""); }}>
+          <div style={s.modal} onClick={e => e.stopPropagation()}>
+            <h2 style={{ fontSize: 17, fontWeight: 800, color: "#0d2e5e", marginBottom: 4 }}>Give Away On-Call Day</h2>
+            <p style={{ fontSize: 13, color: "#6b7280", marginBottom: 16 }}>
+              {new Date(giveAwayModal.assignment.date + "T00:00:00").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}
+              {" — "}<strong style={{ color: "#111827" }}>{giveAwayModal.assignment.employeeName}</strong> gives this day away
+            </p>
+            <label style={s.lbl}>Give to</label>
+            <select style={s.inp} value={giveToUid} onChange={e => setGiveToUid(e.target.value)}>
+              <option value="">Select employee…</option>
+              {allUsers.filter(u => u.uid !== giveAwayModal.assignment.uid).map(u => (
+                <option key={u.uid} value={u.uid}>{u.displayName}</option>
+              ))}
+            </select>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
+              <button onClick={() => { setGiveAwayModal(null); setGiveToUid(""); }} style={s.cancelBtn}>Cancel</button>
+              <button
+                onClick={handleGiveAway}
+                disabled={giveAwayBusy || !giveToUid}
+                style={{ ...s.saveBtn, background: "#7c3aed", opacity: (giveAwayBusy || !giveToUid) ? 0.5 : 1 }}
+              >
+                {giveAwayBusy ? "Saving…" : "Give Away"}
               </button>
             </div>
           </div>

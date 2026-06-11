@@ -751,6 +751,9 @@ export default function OnCallManagerPage({ adminMode = false }: { adminMode?: b
           {/* Vacation Request Notifications */}
           <TimeOffNotifySettings />
 
+          {/* Give-Away Tracker */}
+          <GiveAwayTracker db={db} />
+
           {/* Conflict Alerts */}
           <OnCallAlertsPanel db={db}/>
 
@@ -1531,6 +1534,89 @@ function OnCallRoster({ db, allUsers, onSaved }: { db: any; allUsers: UserInfo[]
         <span style={{ fontSize: 12, color: "#6b7280" }}>{roster.length} selected</span>
         {saved && <span style={{ fontSize: 12, color: "#059669", fontWeight: 600 }}>✅ Saved!</span>}
       </div>
+    </div>
+  );
+}
+
+// ── Give-Away Tracker ──────────────────────────────────────────────────────
+type GiveAway = { id: string; fromUid: string; fromName: string; toUid: string; toName: string; date: string; gaveAwayAt: any };
+
+function GiveAwayTracker({ db }: { db: any }) {
+  const [rows, setRows] = useState<GiveAway[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 365);
+    const cutoffStr = cutoff.toISOString().split("T")[0];
+    getDocs(query(collection(db, "onCallGiveaways"), where("date", ">=", cutoffStr), orderBy("date", "desc")))
+      .then(snap => {
+        setRows(snap.docs.map(d => ({ id: d.id, ...d.data() } as GiveAway)));
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, []);
+
+  const counts: Record<string, { name: string; count: number }> = {};
+  rows.forEach(r => {
+    if (!counts[r.fromUid]) counts[r.fromUid] = { name: r.fromName, count: 0 };
+    counts[r.fromUid].count++;
+  });
+  const sortedCounts = Object.values(counts).sort((a, b) => b.count - a.count);
+
+  return (
+    <div style={{ background: "white", borderRadius: 12, padding: 20, boxShadow: "0 1px 4px rgba(0,0,0,0.07)", marginBottom: 16 }}>
+      <h2 style={{ fontSize: 15, fontWeight: 700, color: "#0d2e5e", marginBottom: 4 }}>🎁 On-Call Give-Away Tracker</h2>
+      <p style={{ fontSize: 12, color: "#6b7280", marginBottom: 14 }}>Rolling 365-day count of how many on-call days each person has given away.</p>
+      {loading ? (
+        <p style={{ fontSize: 13, color: "#9ca3af" }}>Loading…</p>
+      ) : sortedCounts.length === 0 ? (
+        <p style={{ fontSize: 13, color: "#9ca3af" }}>No give-aways recorded yet.</p>
+      ) : (
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead>
+            <tr>
+              <th style={{ textAlign: "left", fontSize: 12, fontWeight: 700, color: "#888", textTransform: "uppercase", paddingBottom: 8, borderBottom: "1px solid #eee" }}>Employee</th>
+              <th style={{ textAlign: "right", fontSize: 12, fontWeight: 700, color: "#888", textTransform: "uppercase", paddingBottom: 8, borderBottom: "1px solid #eee" }}>Give-Aways (365 days)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sortedCounts.map(({ name, count }) => (
+              <tr key={name} style={{ borderBottom: "1px solid #f5f5f5" }}>
+                <td style={{ padding: "10px 0", fontSize: 14, fontWeight: 600 }}>{name}</td>
+                <td style={{ padding: "10px 0", fontSize: 14, textAlign: "right" }}>
+                  <span style={{ background: count >= 3 ? "#fee2e2" : count >= 2 ? "#fef9c3" : "#f0fdf4", color: count >= 3 ? "#991b1b" : count >= 2 ? "#92400e" : "#166534", fontWeight: 700, borderRadius: 6, padding: "2px 10px" }}>
+                    {count}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      {rows.length > 0 && (
+        <details style={{ marginTop: 16 }}>
+          <summary style={{ fontSize: 12, color: "#6b7280", cursor: "pointer", fontWeight: 600 }}>Show log ({rows.length} entries)</summary>
+          <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 10 }}>
+            <thead>
+              <tr>
+                <th style={{ textAlign: "left", fontSize: 11, color: "#888", paddingBottom: 6, borderBottom: "1px solid #eee" }}>Date</th>
+                <th style={{ textAlign: "left", fontSize: 11, color: "#888", paddingBottom: 6, borderBottom: "1px solid #eee" }}>From</th>
+                <th style={{ textAlign: "left", fontSize: 11, color: "#888", paddingBottom: 6, borderBottom: "1px solid #eee" }}>To</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(r => (
+                <tr key={r.id} style={{ borderBottom: "1px solid #f5f5f5" }}>
+                  <td style={{ padding: "7px 0", fontSize: 12 }}>{new Date(r.date + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</td>
+                  <td style={{ padding: "7px 0", fontSize: 12, fontWeight: 600 }}>{r.fromName}</td>
+                  <td style={{ padding: "7px 0", fontSize: 12, color: "#6b7280" }}>{r.toName}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </details>
+      )}
     </div>
   );
 }
