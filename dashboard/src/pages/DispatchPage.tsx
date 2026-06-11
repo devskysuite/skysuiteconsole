@@ -102,6 +102,9 @@ export default function DispatchPage() {
   const [swapOfferDate, setSwapOfferDate] = useState("");
   const [swapReason, setSwapReason]       = useState("");
   const [swapping, setSwapping]           = useState(false);
+  const [swapOlToken, setSwapOlToken]     = useState("");
+  const [swapTargetEvents, setSwapTargetEvents] = useState<{ date: string; eventId: string }[]>([]);
+  const [swapTargetLoading, setSwapTargetLoading] = useState(false);
 
   // Top-level view: job board vs monthly on-call vs monthly vacation
   const [boardView, setBoardView] = useState<"board" | "oncall" | "vacation">("board");
@@ -248,6 +251,44 @@ export default function DispatchPage() {
       setAllUsers(list);
     }).catch(() => {});
   }, []);
+
+  // Load Outlook token when non-admin opens swap modal
+  useEffect(() => {
+    if (!swapModal || isAdmin) return;
+    getOutlookToken().then(t => { if (t && t !== "disconnected") setSwapOlToken(t as string); });
+  }, [swapModal, isAdmin]);
+
+  // Fetch target's future on-call days from Outlook (non-admin swap)
+  useEffect(() => {
+    if (!swapOlToken || !swapToUid || isAdmin) { setSwapTargetEvents([]); return; }
+    const user = allUsers.find(u => u.uid === swapToUid);
+    if (!user) return;
+    const firstName = user.displayName.split(" ")[0].toLowerCase();
+    const OL_CAL_ID = "AAMkADgyOGUwMDUyLTNiZjMtNGQzNi1hNTgwLTQ2M2IzYzE2YmQ5MgBGAAAAAACGxuDePTlOQawDDU8UfW0gBwBxt6lSDH0kQY0tk4wDjNk8AAAAAAEGAABxt6lSDH0kQY0tk4wDjNk8AAALmQObAAA=";
+    const today = new Date().toISOString().slice(0, 10);
+    const endD = new Date(); endD.setMonth(endD.getMonth() + 12);
+    const endStr = endD.toISOString().slice(0, 10);
+    setSwapTargetLoading(true);
+    setSwapTargetEvents([]);
+    (async () => {
+      const evs: { date: string; eventId: string }[] = [];
+      let url = `https://graph.microsoft.com/v1.0/me/calendars/${encodeURIComponent(OL_CAL_ID)}/calendarView?startDateTime=${today}T00:00:00&endDateTime=${endStr}T00:00:00&$top=999&$select=id,subject,start`;
+      while (url) {
+        const data = await fetch(url, { headers: { Authorization: `Bearer ${swapOlToken}` } }).then(r => r.json());
+        for (const e of (data.value || [])) {
+          const s = (e.subject || "").toLowerCase();
+          if (!(s.includes("on call") || s.includes("oncall")) || s.includes("vacation")) continue;
+          const name = (e.subject || "").replace(/(on call|oncall)/gi, "").trim().split(" ")[0].toLowerCase();
+          if (name !== firstName) continue;
+          const date = e.start?.date || e.start?.dateTime?.slice(0, 10) || "";
+          if (date) evs.push({ date, eventId: e.id });
+        }
+        url = data["@odata.nextLink"] || "";
+      }
+      setSwapTargetEvents(evs);
+      setSwapTargetLoading(false);
+    })().catch(() => setSwapTargetLoading(false));
+  }, [swapOlToken, swapToUid, isAdmin, allUsers]);
 
   // Approved vacation listener — lazy, starts on first visit to vacation view
   useEffect(() => {
@@ -594,6 +635,7 @@ export default function DispatchPage() {
 
   function closeSwap() {
     setSwapModal(null); setSwapToUid(""); setSwapOfferDate(""); setSwapReason("");
+    setSwapOlToken(""); setSwapTargetEvents([]); setSwapTargetLoading(false);
   }
 
   async function submitSwap() {
@@ -628,18 +670,21 @@ export default function DispatchPage() {
           }
         }
       } else {
-        let targetAssignmentId = "";
-        if (swapOfferDate) {
-          const match = assignments.find(a => a.date === swapOfferDate && a.uid === swapToUid);
-          if (match) targetAssignmentId = match.id;
-        }
+        // Non-admin: create a swap request (matches OnCallManagerPage schema)
+        const targetEvent = swapTargetEvents.find(e => e.date === swapOfferDate);
         await addDoc(collection(db, "onCallSwapRequests"), {
-          date: assignment.date, assignmentId: assignment.id,
-          requesterUid: swapToUid, requesterName: newPerson.displayName,
-          targetUid: assignment.uid, targetName: assignment.employeeName,
-          targetDate: swapOfferDate || "", targetAssignmentId,
-          reason: swapReason.trim(), status: "PENDING",
-          createdAt: serverTimestamp(), resolvedAt: null,
+          requesterUid: auth.currentUser?.uid || assignment.uid,
+          requesterName: assignment.employeeName,
+          targetUid: swapToUid,
+          targetName: newPerson.displayName,
+          myDate: assignment.date,
+          myEventId: "",  // looked up at approval time
+          theirDate: swapOfferDate || "",
+          theirEventId: targetEvent?.eventId || "",
+          reason: swapReason.trim(),
+          status: "PENDING",
+          createdAt: serverTimestamp(),
+          resolvedAt: null,
         });
       }
       closeSwap();
@@ -758,25 +803,43 @@ export default function DispatchPage() {
               title={canAdd ? "Click to assign on call" : undefined}
             >
               <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 4, color: isToday ? "#fff" : overflow ? "#c0c8d4" : "#374151", background: isToday ? "#1565c0" : "transparent", borderRadius: isToday ? "50%" : 0, width: isToday ? 22 : "auto", height: isToday ? 22 : "auto", display: "flex", alignItems: "center", justifyContent: "center" }}>{dayNum}</div>
-              {dayAssignments.map(assignment => (
-                <div
-                  key={assignment.id}
-                  style={{ ...chipBase, background: isToday ? "#7c3aed" : "#f5f3ff", color: isToday ? "#fff" : "#6d28d9", border: isToday ? "2px solid #6d28d9" : "1px solid #ddd6fe", boxShadow: isToday ? "0 0 0 3px #c4b5fd" : undefined, cursor: isAdmin ? "pointer" : "default" }}
-                  onClick={e => { e.stopPropagation(); if (isAdmin) setOnCallActionModal({ date: d, assignment }); }}
-                  title={isAdmin ? "Click for options" : undefined}
-                >
-                  {assignment.employeeName}{isToday ? " · TODAY" : ""}
-                </div>
-              ))}
-              {outlookName && (
-                <div
-                  style={{ ...chipBase, background: isToday ? "#7c3aed" : "#f5f3ff", color: isToday ? "#fff" : "#8b5cf6", border: isToday ? "2px solid #6d28d9" : "1px solid #ddd6fe", boxShadow: isToday ? "0 0 0 3px #c4b5fd" : undefined, opacity: isToday ? 1 : 0.65, cursor: isAdmin ? "pointer" : "default" }}
-                  onClick={e => { e.stopPropagation(); if (isAdmin) setOnCallActionModal({ date: d, assignment: { id: "", date: d, uid: "", employeeName: outlookName } }); }}
-                  title={isAdmin ? "Click for options" : "Outlook only"}
-                >
-                  {outlookName}{isToday ? " · TODAY" : ""}
-                </div>
-              )}
+              {dayAssignments.map(assignment => {
+                const isMyChip = assignment.uid === auth.currentUser?.uid;
+                const clickable = isAdmin || isMyChip;
+                return (
+                  <div
+                    key={assignment.id}
+                    style={{ ...chipBase, background: isToday ? "#7c3aed" : "#f5f3ff", color: isToday ? "#fff" : "#6d28d9", border: isToday ? "2px solid #6d28d9" : "1px solid #ddd6fe", boxShadow: isToday ? "0 0 0 3px #c4b5fd" : undefined, cursor: clickable ? "pointer" : "default" }}
+                    onClick={e => {
+                      e.stopPropagation();
+                      if (isAdmin) setOnCallActionModal({ date: d, assignment });
+                      else if (isMyChip) { setSwapModal({ assignment }); setSwapToUid(""); setSwapOfferDate(""); setSwapReason(""); }
+                    }}
+                    title={isAdmin ? "Click for options" : isMyChip ? "Click to request swap" : undefined}
+                  >
+                    {assignment.employeeName}{isToday ? " · TODAY" : ""}
+                  </div>
+                );
+              })}
+              {outlookName && (() => {
+                const myFirst = auth.currentUser?.displayName?.split(" ")[0] || "";
+                const isMyChip = myFirst && outlookName.toLowerCase() === myFirst.toLowerCase();
+                const clickable = isAdmin || isMyChip;
+                const virtualAssignment = { id: "", date: d, uid: "", employeeName: outlookName };
+                return (
+                  <div
+                    style={{ ...chipBase, background: isToday ? "#7c3aed" : "#f5f3ff", color: isToday ? "#fff" : "#8b5cf6", border: isToday ? "2px solid #6d28d9" : "1px solid #ddd6fe", boxShadow: isToday ? "0 0 0 3px #c4b5fd" : undefined, opacity: isToday ? 1 : 0.65, cursor: clickable ? "pointer" : "default" }}
+                    onClick={e => {
+                      e.stopPropagation();
+                      if (isAdmin) setOnCallActionModal({ date: d, assignment: virtualAssignment });
+                      else if (isMyChip) { setSwapModal({ assignment: virtualAssignment }); setSwapToUid(""); setSwapOfferDate(""); setSwapReason(""); }
+                    }}
+                    title={isAdmin ? "Click for options" : isMyChip ? "Click to request swap" : "Outlook only"}
+                  >
+                    {outlookName}{isToday ? " · TODAY" : ""}
+                  </div>
+                );
+              })()}
             </div>
           );
         }
@@ -1081,16 +1144,30 @@ export default function DispatchPage() {
               ))}
             </select>
 
-            {swapToUid && (
+            {swapToUid && isAdmin && (
               <>
                 <label style={s.lbl}>Give them a day in exchange <span style={{ fontWeight: 400, color: "#9ca3af" }}>(optional)</span></label>
-                <input
-                  type="date"
-                  style={s.inp}
-                  value={swapOfferDate}
-                  onChange={e => setSwapOfferDate(e.target.value)}
-                />
+                <input type="date" style={s.inp} value={swapOfferDate} onChange={e => setSwapOfferDate(e.target.value)} />
                 <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 3, marginBottom: 6 }}>Leave blank to hand off the day without a trade back</div>
+              </>
+            )}
+            {swapToUid && !isAdmin && (
+              <>
+                <label style={s.lbl}>
+                  Their on-call day to trade
+                  {swapTargetLoading && <span style={{ fontWeight: 400, color: "#9ca3af" }}> (loading…)</span>}
+                </label>
+                <select style={s.inp} value={swapOfferDate} onChange={e => setSwapOfferDate(e.target.value)}>
+                  <option value="">— Select a date —</option>
+                  {swapTargetEvents.map(ev => (
+                    <option key={ev.date} value={ev.date}>
+                      {new Date(ev.date + "T00:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
+                    </option>
+                  ))}
+                </select>
+                {!swapTargetLoading && swapTargetEvents.length === 0 && swapToUid && (
+                  <div style={{ fontSize: 11, color: "#ef4444", marginTop: 3 }}>No future on-call days found for this person</div>
+                )}
               </>
             )}
 
@@ -1110,8 +1187,8 @@ export default function DispatchPage() {
               <button onClick={closeSwap} style={s.cancelBtn}>Cancel</button>
               <button
                 onClick={submitSwap}
-                disabled={swapping || !swapToUid}
-                style={{ ...s.saveBtn, opacity: (swapping || !swapToUid) ? 0.5 : 1 }}
+                disabled={swapping || !swapToUid || (!isAdmin && !swapOfferDate)}
+                style={{ ...s.saveBtn, opacity: (swapping || !swapToUid || (!isAdmin && !swapOfferDate)) ? 0.5 : 1 }}
               >
                 {swapping ? "Saving…" : isAdmin ? "Swap Now" : "Send Request"}
               </button>

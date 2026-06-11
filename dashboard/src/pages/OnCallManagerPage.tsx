@@ -485,15 +485,29 @@ export default function OnCallManagerPage({ adminMode = false }: { adminMode?: b
     setSwapModal(null); setSwapReason(""); setSwapTargetName(""); setSwapTargetUid(""); setSwapTheirDate(""); setSwapSubmitting(false);
   }
 
-  async function resolveSwap(swap:SwapReq, accept:boolean) {
-    if(accept&&accessToken) {
+  async function findOnCallEventId(date: string, firstName: string): Promise<string> {
+    if (!accessToken) return "";
+    try {
+      const nextDay = new Date(date + "T00:00:00Z"); nextDay.setUTCDate(nextDay.getUTCDate() + 1);
+      const end = nextDay.toISOString().slice(0, 10);
+      const d = await graphFetch(accessToken, `/me/calendars/${CAL_ID}/calendarView?startDateTime=${date}T00:00:00&endDateTime=${end}T00:00:00&$top=50&$select=id,subject,start`);
+      const match = (d.value || []).find((e: any) => {
+        const s = (e.subject || "").toLowerCase();
+        return (s.includes("on call") || s.includes("oncall")) && !s.includes("vacation") && getName(e.subject).toLowerCase() === firstName.toLowerCase();
+      });
+      return match?.id || "";
+    } catch { return ""; }
+  }
+
+  async function resolveSwap(swap: SwapReq, accept: boolean) {
+    if (accept && accessToken) {
       await backupCalendar(`swap:${swap.requesterName}↔${swap.targetName}:${swap.myDate}`);
-      // Update both calendar events
-      await graphFetch(accessToken,`/me/events/${swap.myEventId}`,"PATCH",{subject:`${swap.targetName.split(" ")[0]} On Call`}).catch(()=>{});
-      await graphFetch(accessToken,`/me/events/${swap.theirEventId}`,"PATCH",{subject:`${swap.requesterName.split(" ")[0]} On Call`}).catch(()=>{});
+      const myEventId   = swap.myEventId   || await findOnCallEventId(swap.myDate,   swap.requesterName.split(" ")[0]);
+      const theirEventId = swap.theirEventId || await findOnCallEventId(swap.theirDate, swap.targetName.split(" ")[0]);
+      if (myEventId)    await graphFetch(accessToken, `/me/events/${myEventId}`,    "PATCH", { subject: `${swap.targetName.split(" ")[0]} On Call` }).catch(() => {});
+      if (theirEventId) await graphFetch(accessToken, `/me/events/${theirEventId}`, "PATCH", { subject: `${swap.requesterName.split(" ")[0]} On Call` }).catch(() => {});
     }
-    await updateDoc(doc(db,"onCallSwapRequests",swap.id),{ status:accept?"ACCEPTED":"DECLINED", resolvedAt:serverTimestamp() });
-    if(accept) setEvents(prev=>prev.map(e=>{ if(e.id===swap.myEventId) return {...e,subject:`${swap.targetName.split(" ")[0]} On Call`}; if(e.id===swap.theirEventId) return {...e,subject:`${swap.requesterName.split(" ")[0]} On Call`}; return e; }));
+    await updateDoc(doc(db, "onCallSwapRequests", swap.id), { status: accept ? "ACCEPTED" : "DECLINED", resolvedAt: serverTimestamp() });
   }
 
   async function runRotation(action:"preview"|"push"|"rebalance", rebalanceFrom?:string) {
@@ -666,7 +680,7 @@ export default function OnCallManagerPage({ adminMode = false }: { adminMode?: b
       {/* Tabs */}
       <div style={{display:"flex",gap:4,marginBottom:20,borderBottom:"2px solid #e5e7eb"}}>
         <TabBtn label="Calendar" active={tab==="calendar"} onClick={()=>switchTab("calendar")}/>
-        {adminMode&&<TabBtn label={`Swaps${pendingCount>0?` (${pendingCount})`:""}`} active={tab==="swaps"} onClick={()=>switchTab("swaps")}/>}
+        {(adminMode||pendingCount>0)&&<TabBtn label={`Swaps${pendingCount>0?` (${pendingCount})`:""}`} active={tab==="swaps"} onClick={()=>switchTab("swaps")}/>}
         {adminMode&&roleAtLeast(role||"user",statVisMinRole)&&<TabBtn label="Stat Holidays" active={tab==="stats"} onClick={()=>switchTab("stats")}/>}
         {adminMode&&isAdmin&&<TabBtn label="Setup" active={tab==="setup"} onClick={()=>switchTab("setup")}/>}
       </div>
