@@ -5,6 +5,7 @@ import { db, auth } from "../firebase";
 import { useIsAdmin } from "../hooks/useIsAdmin";
 import QuotePricingTab, { DEFAULT_PRICING, PricingData } from "./QuotePricingTab";
 import QuoteSummaryTab from "./QuoteSummaryTab";
+import QuoteOverviewTab from "./QuoteOverviewTab";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 const DEPARTMENTS = ["Automation and Controls","Electrical","Panel Build","Programming","Bucket Truck","Service"];
@@ -60,7 +61,7 @@ interface Quote {
   emailsBounced?: number;
 }
 
-const ALL_TABS = ["Info", "Pricing", "Summary", "Scope of Work", "Recommendations", "Forms & Attachments", "Email History", "Activity"] as const;
+const ALL_TABS = ["Info", "Overview", "Pricing", "Summary", "Scope of Work", "Recommendations", "Forms & Attachments", "Email History", "Activity"] as const;
 type Tab = typeof ALL_TABS[number];
 
 // ── Styles ─────────────────────────────────────────────────────────────────────
@@ -422,6 +423,17 @@ export default function QuoteDetailPage() {
         </div>
       )}
 
+      {tab === "Overview" && (
+        <div style={{ padding:"0 24px 24px" }}>
+          <QuoteOverviewTab
+            quoteId={quoteId!}
+            pricing={(quote as any).pricing
+              ? { ...DEFAULT_PRICING, ...(quote as any).pricing, settings: { ...DEFAULT_PRICING.settings, ...((quote as any).pricing?.settings || {}) } }
+              : DEFAULT_PRICING}
+          />
+        </div>
+      )}
+
       {tab === "Pricing" && (
         <div style={{ padding:24 }}>
           <QuotePricingTab
@@ -443,7 +455,7 @@ export default function QuoteDetailPage() {
         </div>
       )}
 
-      {tab !== "Info" && tab !== "Pricing" && tab !== "Summary" && (
+      {tab !== "Info" && tab !== "Overview" && tab !== "Pricing" && tab !== "Summary" && (
         <div style={{ margin:24, background:"#fff", borderRadius:12, border:"1px solid #e5e7eb", padding:"60px 24px", textAlign:"center", color:"#9ca3af", fontSize:14 }}>
           {tab} — coming soon
         </div>
