@@ -641,28 +641,25 @@ export default function DispatchPage() {
     setSwapping(true);
     try {
       if (isAdmin) {
-        if (assignment.id) {
-          await updateDoc(doc(db, "onCallAssignments", assignment.id), {
-            uid: swapToUid, employeeName: newPerson.displayName,
-          });
-        } else {
+        // Delete all stale assignments for assignment.date, then write one clean one
+        await Promise.all(
+          assignments.filter(a => a.date === assignment.date && a.id)
+            .map(a => deleteDoc(doc(db, "onCallAssignments", a.id)))
+        );
+        await addDoc(collection(db, "onCallAssignments"), {
+          date: assignment.date, uid: swapToUid, employeeName: newPerson.displayName,
+          assignedByUid: auth.currentUser?.uid || "", createdAt: serverTimestamp(),
+        });
+        if (swapOfferDate) {
+          // Delete all stale assignments for swapOfferDate, then write one clean one
+          await Promise.all(
+            assignments.filter(a => a.date === swapOfferDate && a.id)
+              .map(a => deleteDoc(doc(db, "onCallAssignments", a.id)))
+          );
           await addDoc(collection(db, "onCallAssignments"), {
-            date: assignment.date, uid: swapToUid, employeeName: newPerson.displayName,
+            date: swapOfferDate, uid: assignment.uid, employeeName: assignment.employeeName,
             assignedByUid: auth.currentUser?.uid || "", createdAt: serverTimestamp(),
           });
-        }
-        if (swapOfferDate) {
-          const existing = assignments.find(a => a.date === swapOfferDate && a.uid === swapToUid);
-          if (existing) {
-            await updateDoc(doc(db, "onCallAssignments", existing.id), {
-              uid: assignment.uid, employeeName: assignment.employeeName,
-            });
-          } else {
-            await addDoc(collection(db, "onCallAssignments"), {
-              date: swapOfferDate, uid: assignment.uid, employeeName: assignment.employeeName,
-              assignedByUid: auth.currentUser?.uid || "", createdAt: serverTimestamp(),
-            });
-          }
         }
         // Update Outlook calendar events server-side
         try {
