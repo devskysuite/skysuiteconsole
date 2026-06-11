@@ -641,21 +641,17 @@ export default function DispatchPage() {
     setSwapping(true);
     try {
       if (isAdmin) {
-        // Delete all stale assignments for assignment.date, then write one clean one
-        await Promise.all(
-          assignments.filter(a => a.date === assignment.date && a.id)
-            .map(a => deleteDoc(doc(db, "onCallAssignments", a.id)))
-        );
+        // Replace assignment.date — live query ensures no stale duplicates remain
+        const existingSnap = await getDocs(query(collection(db, "onCallAssignments"), where("date", "==", assignment.date)));
+        await Promise.all(existingSnap.docs.map(d => deleteDoc(doc(db, "onCallAssignments", d.id))));
         await addDoc(collection(db, "onCallAssignments"), {
           date: assignment.date, uid: swapToUid, employeeName: newPerson.displayName,
           assignedByUid: auth.currentUser?.uid || "", createdAt: serverTimestamp(),
         });
         if (swapOfferDate) {
-          // Delete all stale assignments for swapOfferDate, then write one clean one
-          await Promise.all(
-            assignments.filter(a => a.date === swapOfferDate && a.id)
-              .map(a => deleteDoc(doc(db, "onCallAssignments", a.id)))
-          );
+          // Replace swapOfferDate — same live query approach
+          const offerSnap = await getDocs(query(collection(db, "onCallAssignments"), where("date", "==", swapOfferDate)));
+          await Promise.all(offerSnap.docs.map(d => deleteDoc(doc(db, "onCallAssignments", d.id))));
           await addDoc(collection(db, "onCallAssignments"), {
             date: swapOfferDate, uid: assignment.uid, employeeName: assignment.employeeName,
             assignedByUid: auth.currentUser?.uid || "", createdAt: serverTimestamp(),
