@@ -363,6 +363,13 @@ export default function JobDetailPage() {
     if (!jobId || !job) return;
     if (!window.confirm(`Delete job ${job.jobNumber}? This cannot be undone.`)) return;
     try {
+      // Delete all visits and their payroll entries
+      const visitSnap = await getDocs(query(collection(db, "dispatchVisits"), where("jobId", "==", jobId)));
+      for (const vDoc of visitSnap.docs) {
+        const paySnap = await getDocs(query(collection(db, "payrollEntries"), where("visitId", "==", vDoc.id)));
+        for (const p of paySnap.docs) await deleteDoc(doc(db, "payrollEntries", p.id));
+        await deleteDoc(doc(db, "dispatchVisits", vDoc.id));
+      }
       await deleteDoc(doc(db, "jobs", jobId));
       navigate(-1);
     } catch (e) { console.error(e); }
