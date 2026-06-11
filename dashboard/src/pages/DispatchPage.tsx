@@ -143,9 +143,17 @@ export default function DispatchPage() {
   useEffect(() => {
     if (boardView === "board") return;
     const [y, m] = monthAnchor.split("-").map(Number);
-    const start = `${monthAnchor}-01`;
-    const nextMo = new Date(y, m, 1);
-    const end = fmtYMD(nextMo);
+    // Expand range to cover full calendar grid (prev/next month overflow days)
+    const firstDay = new Date(y, m-1, 1);
+    const firstDow = firstDay.getDay(); // 0=Sun
+    const gridStartD = new Date(y, m-1, 1 - firstDow);
+    const lastDay = new Date(y, m, 0); // last day of month
+    const lastDow = lastDay.getDay();
+    const trailingDays = lastDow === 6 ? 0 : 6 - lastDow;
+    const gridEndD = new Date(y, m, 0);
+    gridEndD.setDate(gridEndD.getDate() + trailingDays + 1); // exclusive
+    const start = fmtYMD(gridStartD);
+    const end   = fmtYMD(gridEndD);
     let cancelled = false;
     setMonthCalMap({});
     getOutlookToken().then(async token => {
@@ -514,8 +522,10 @@ export default function DispatchPage() {
 
       {/* ── Monthly On-Call / Vacation calendar ── */}
       {boardView !== "board" && (() => {
+        const [yr, mo] = monthAnchor.split("-").map(Number);
         const mDays = calMonthDays(monthAnchor);
         const firstDow = new Date(mDays[0] + "T00:00:00").getDay(); // 0=Sun
+        const lastDow  = new Date(mDays[mDays.length-1] + "T00:00:00").getDay();
         const todayYMD = todayStr();
         const isOncall = boardView === "oncall";
         const accentBg  = isOncall ? "#f5f3ff" : "#fff7ed";
@@ -523,51 +533,63 @@ export default function DispatchPage() {
         const accentBdr = isOncall ? "#ddd6fe" : "#fed7aa";
         const emptyMsg  = isOncall ? "No one on call this month" : "No approved vacation this month";
 
+        // Prev month overflow days (trailing into grid row 1)
+        const prevDays: string[] = [];
+        for (let i = firstDow; i > 0; i--) {
+          prevDays.push(fmtYMD(new Date(yr, mo-1, 1 - i)));
+        }
+        // Next month overflow days (leading into last grid row)
+        const trailingCount = lastDow === 6 ? 0 : 6 - lastDow;
+        const nextDays: string[] = [];
+        for (let i = 1; i <= trailingCount; i++) {
+          nextDays.push(fmtYMD(new Date(yr, mo, i)));
+        }
+
+        function DayCell({ d, overflow }: { d: string; overflow?: boolean }) {
+          const isToday = d === todayYMD;
+          const names: string[] = isOncall
+            ? (monthSummary.oncall[d] ? [monthSummary.oncall[d]] : [])
+            : (monthSummary.vacations[d] || []);
+          const dayNum = parseInt(d.slice(8));
+          return (
+            <div style={{ background: overflow ? "#f9fafb" : "#fff", minHeight: 90, padding: "6px 8px" }}>
+              <div style={{
+                fontSize: 12, fontWeight: 700, marginBottom: 4,
+                color: isToday ? "#fff" : overflow ? "#c0c8d4" : "#374151",
+                background: isToday ? "#1565c0" : "transparent",
+                borderRadius: isToday ? "50%" : 0,
+                width: isToday ? 22 : "auto", height: isToday ? 22 : "auto",
+                display: "flex", alignItems: "center", justifyContent: "center",
+              }}>{dayNum}</div>
+              {names.map((name, i) => (
+                <div key={i} style={{
+                  background: overflow ? "#f3f4f6" : accentBg,
+                  color: overflow ? "#9ca3af" : accentFg,
+                  border: `1px solid ${overflow ? "#e5e7eb" : accentBdr}`,
+                  borderRadius: 4, padding: "2px 6px", fontSize: 11, fontWeight: 700,
+                  marginBottom: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const,
+                }}>{name}</div>
+              ))}
+            </div>
+          );
+        }
+
         return (
           <div style={{ padding: "16px 18px" }}>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 1, background: "#e5e7eb", border: "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden" }}>
-              {/* Day headers */}
               {["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(d => (
                 <div key={d} style={{ background: "#f8fafc", padding: "8px 4px", textAlign: "center", fontSize: 11, fontWeight: 800, color: "#6b7280", textTransform: "uppercase" }}>{d}</div>
               ))}
-              {/* Leading empty cells */}
-              {Array.from({ length: firstDow }, (_, i) => (
-                <div key={"e"+i} style={{ background: "#fafafa", minHeight: 90 }} />
-              ))}
-              {/* Day cells */}
-              {mDays.map(d => {
-                const isToday = d === todayYMD;
-                const names: string[] = isOncall
-                  ? (monthSummary.oncall[d] ? [monthSummary.oncall[d]] : [])
-                  : (monthSummary.vacations[d] || []);
-                const dayNum = parseInt(d.slice(8));
-                return (
-                  <div key={d} style={{ background: "#fff", minHeight: 90, padding: "6px 8px", position: "relative" }}>
-                    <div style={{
-                      fontSize: 12, fontWeight: 700, marginBottom: 4,
-                      color: isToday ? "#fff" : "#374151",
-                      background: isToday ? "#1565c0" : "transparent",
-                      borderRadius: isToday ? "50%" : 0,
-                      width: isToday ? 22 : "auto", height: isToday ? 22 : "auto",
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                    }}>{dayNum}</div>
-                    {names.map((name, i) => (
-                      <div key={i} style={{ background: accentBg, color: accentFg, border: `1px solid ${accentBdr}`, borderRadius: 4, padding: "2px 6px", fontSize: 11, fontWeight: 700, marginBottom: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>
-                        {name}
-                      </div>
-                    ))}
-                  </div>
-                );
-              })}
+              {prevDays.map(d => <DayCell key={d} d={d} overflow />)}
+              {mDays.map(d => <DayCell key={d} d={d} />)}
+              {nextDays.map(d => <DayCell key={d} d={d} overflow />)}
             </div>
-            {/* Empty state — only show once calMap has loaded (non-empty object means fetch completed) */}
             {Object.keys(monthCalMap).length > 0 && mDays.every(d => isOncall ? !monthSummary.oncall[d] : !monthSummary.vacations[d]?.length) && (
               <div style={{ textAlign: "center", color: "#9ca3af", padding: "32px 0", fontSize: 14 }}>{emptyMsg}</div>
             )}
             {Object.keys(monthCalMap).length === 0 && (
               <div style={{ textAlign: "center", color: "#9ca3af", padding: "32px 0", fontSize: 14 }}>Loading from Outlook…</div>
             )}
-            {/* Legend */}
             <div style={{ display: "flex", gap: 12, marginTop: 14, alignItems: "center", fontSize: 12, color: "#6b7280" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
                 <div style={{ width: 12, height: 12, borderRadius: 2, background: accentBg, border: `1px solid ${accentBdr}` }} />
