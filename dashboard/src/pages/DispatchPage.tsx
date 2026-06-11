@@ -367,8 +367,9 @@ export default function DispatchPage() {
     return () => { cancelled = true; };
   }, [days[0], days[days.length - 1]]);
 
-  // Index visits by techUid|date
+  // Index visits by techUid|date (primary + additional techs)
   const byCell = useMemo(() => {
+    const nameToUid = new Map(techs.map(t => [t.name.toLowerCase(), t.uid]));
     const m: Record<string, Visit[]> = {};
     for (const v of visits) {
       if (v.status === "canceled" && activeStatus !== "canceled") continue;
@@ -376,6 +377,14 @@ export default function DispatchPage() {
       if (activeStatus !== "all" && v.status !== activeStatus) continue;
       const k = `${v.techUid}|${v.date}`;
       (m[k] ||= []).push(v);
+      // Also show under each additional tech's column
+      for (const name of (v as any).additionalTechnicians || []) {
+        const uid = nameToUid.get(name.toLowerCase());
+        if (uid && uid !== v.techUid) {
+          const ak = `${uid}|${v.date}`;
+          (m[ak] ||= []).push(v);
+        }
+      }
     }
     for (const k in m) m[k].sort((a, b) => {
       const ta = a.start || "99:99", tb = b.start || "99:99";
@@ -383,7 +392,7 @@ export default function DispatchPage() {
       return (a.visitNumber || 0) - (b.visitNumber || 0);
     });
     return m;
-  }, [visits, flaggedOnly, activeStatus]);
+  }, [visits, techs, flaggedOnly, activeStatus]);
 
   const weekSummary = useMemo(() => {
     const vacations: Record<string, string[]> = {};
