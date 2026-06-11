@@ -104,10 +104,55 @@ function SummaryBar({ s }: { s: ReturnType<typeof calcSummary> }) {
   );
 }
 
+// ── Rate override panel ────────────────────────────────────────────────────────
+function OverridePanel({ p, onChange }: { p: PricingData; onChange: (k: string, v: number) => void }) {
+  const f = (label: string, key: string, isPct?: boolean) => (
+    <div style={{ display:"flex", flexDirection:"column", gap:3 }}>
+      <span style={{ fontSize:10, fontWeight:700, color:"#94a3b8", textTransform:"uppercase", letterSpacing:0.4 }}>{label}</span>
+      <div style={{ display:"flex", alignItems:"center", gap:3 }}>
+        {!isPct && <span style={{ fontSize:11, color:"#64748b" }}>$</span>}
+        <input
+          type="number" step="any"
+          value={isPct ? +((p.settings as any)[key] * 100).toFixed(2) : (p.settings as any)[key]}
+          onChange={e => onChange(key, isPct ? +e.target.value / 100 : +e.target.value)}
+          style={{ width:70, padding:"4px 6px", border:"1px solid #334155", borderRadius:5, fontSize:12, background:"#1e293b", color:"#f1f5f9", textAlign:"right", outline:"none" }}
+        />
+        {isPct && <span style={{ fontSize:11, color:"#64748b" }}>%</span>}
+      </div>
+    </div>
+  );
+  return (
+    <div style={{ background:"#0f172a", padding:"12px 16px", display:"flex", flexWrap:"wrap", gap:20, alignItems:"flex-start", borderBottom:"1px solid #1e293b" }}>
+      <div>
+        <div style={{ fontSize:10, fontWeight:800, color:"#38bdf8", textTransform:"uppercase", letterSpacing:0.6, marginBottom:8 }}>Labour Rates</div>
+        <div style={{ display:"flex", gap:16, flexWrap:"wrap" }}>
+          {f("Elec $/hr",       "electricianRate")}
+          {f("Prog $/hr",       "programmerRate")}
+          {f("Travel $/hr",     "travelRate")}
+          {f("Mileage $/km",    "mileageRate")}
+          {f("Elec Int. $/hr",  "electricianInternalRate")}
+          {f("Prog Int. $/hr",  "programmerInternalRate")}
+        </div>
+      </div>
+      <div style={{ width:1, background:"#1e293b", alignSelf:"stretch" }} />
+      <div>
+        <div style={{ fontSize:10, fontWeight:800, color:"#38bdf8", textTransform:"uppercase", letterSpacing:0.6, marginBottom:8 }}>Markups</div>
+        <div style={{ display:"flex", gap:16, flexWrap:"wrap" }}>
+          {f("Material",    "materialMarkup",    true)}
+          {f("Other Costs", "otherCostsMarkup",  true)}
+          {f("Overhead",    "overheadRate",       true)}
+          {f("Tax Rate",    "taxRate",            true)}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Main Component ─────────────────────────────────────────────────────────────
 export default function QuoteOverviewTab({ quoteId, pricing: raw }: { quoteId: string; pricing: PricingData }) {
   const [p, setP] = useState<PricingData>(() => initPricing(raw));
   const [saving, setSaving] = useState(false);
+  const [overrideOpen, setOverrideOpen] = useState(false);
 
   const save = useCallback(async (data: PricingData) => {
     setSaving(true);
@@ -115,6 +160,9 @@ export default function QuoteOverviewTab({ quoteId, pricing: raw }: { quoteId: s
   }, [quoteId]);
 
   function upd(next: PricingData) { setP(next); save(next); }
+  function updS(key: string, val: number) {
+    upd({ ...p, settings: { ...p.settings, [key]: val } });
+  }
 
   // Materials
   function addMat() { upd({ ...p, materials: [...p.materials, blankMat()] }); }
@@ -154,8 +202,18 @@ export default function QuoteOverviewTab({ quoteId, pricing: raw }: { quoteId: s
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 160px)", overflow: "hidden" }}>
-      {/* Saving indicator */}
-      {saving && <div style={{ position: "absolute", top: 8, right: 16, fontSize: 11, color: "#9ca3af", zIndex: 20 }}>Saving…</div>}
+      {/* Override toggle bar */}
+      <div style={{ background:"#0f172a", padding:"6px 14px", display:"flex", alignItems:"center", justifyContent:"space-between", flexShrink:0 }}>
+        <button
+          onClick={() => setOverrideOpen(x => !x)}
+          style={{ background:"none", border:"1px solid #334155", borderRadius:6, padding:"4px 14px", fontSize:12, fontWeight:700, color:"#38bdf8", cursor:"pointer", display:"flex", alignItems:"center", gap:6 }}
+        >
+          <span style={{ fontSize:14, lineHeight:1 }}>{overrideOpen ? "▲" : "▼"}</span>
+          Override Rates &amp; Markups for This Quote
+        </button>
+        {saving && <span style={{ fontSize:11, color:"#64748b" }}>Saving…</span>}
+      </div>
+      {overrideOpen && <OverridePanel p={p} onChange={updS} />}
 
       {/* Scrollable content */}
       <div style={{ flex: 1, overflowY: "auto", overflowX: "auto" }}>
