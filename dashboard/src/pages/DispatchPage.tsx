@@ -793,58 +793,54 @@ export default function DispatchPage() {
         const nextDays: string[] = [];
         for (let i = 1; i <= trailingCount; i++) nextDays.push(fmtYMD(new Date(yr, mo, i)));
 
+        const MO_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
         const chipBase: React.CSSProperties = { borderRadius: 4, padding: "3px 8px", fontSize: 11, fontWeight: 700, marginBottom: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const };
+
+        function dateLabel(d: string, overflow?: boolean) {
+          const day = parseInt(d.slice(8));
+          if (!overflow) return String(day);
+          return `${MO_SHORT[parseInt(d.slice(5, 7)) - 1]} ${day}`;
+        }
 
         function OnCallDayCell({ d, overflow }: { d: string; overflow?: boolean }) {
           const isToday = d === todayYMD;
           const dayAssignments = !overflow ? (assignmentByDate[d] || []) : [];
           const outlookName = !overflow && dayAssignments.length === 0 ? monthSummary.oncall[d] : undefined;
-          const dayNum = parseInt(d.slice(8));
-          const canAdd = !overflow && isAdmin && dayAssignments.length === 0;
+          const hasFs = dayAssignments.length > 0;
+          const hasOl = !!outlookName;
+          const isOnCall = hasFs || hasOl;
+          const activeAssignment = hasFs
+            ? dayAssignments[0]
+            : hasOl ? { id: "", date: d, uid: "", employeeName: outlookName! } : null;
+          const myFirst = auth.currentUser?.displayName?.split(" ")[0]?.toLowerCase() || "";
+          const isMyDay = hasFs
+            ? dayAssignments[0].uid === auth.currentUser?.uid
+            : hasOl && myFirst && outlookName!.toLowerCase().startsWith(myFirst);
+          const canAdd = !overflow && isAdmin && !isOnCall;
+
+          let bg = overflow ? "#f9fafb" : "#fff";
+          if (!overflow && isOnCall) bg = isToday ? "#7c3aed" : hasFs ? "#ede9fe" : "#f5f3ff";
+
+          function handleClick() {
+            if (overflow) return;
+            if (isOnCall && activeAssignment) {
+              if (isAdmin) { setOnCallActionModal({ date: d, assignment: activeAssignment }); }
+              else if (isMyDay) { setSwapModal({ assignment: activeAssignment }); setSwapToUid(""); setSwapOfferDate(""); setSwapReason(""); }
+            } else if (canAdd) { setAddOnCallModal(d); setAddOnCallUid(""); }
+          }
+
+          const lbl = dateLabel(d, overflow);
+          const numColor = isToday && isOnCall ? "#fff" : isToday ? "#fff" : overflow ? "#9ca3af" : isOnCall ? "#6d28d9" : "#374151";
           return (
             <div
-              style={{ background: overflow ? "#f9fafb" : "#fff", minHeight: 90, padding: "6px 8px", cursor: canAdd ? "pointer" : "default" }}
-              onClick={() => { if (canAdd) { setAddOnCallModal(d); setAddOnCallUid(""); } }}
-              title={canAdd ? "Click to assign on call" : undefined}
+              style={{ background: bg, minHeight: 120, padding: "8px 10px", cursor: (!overflow && (isOnCall ? (isAdmin || isMyDay) : canAdd)) ? "pointer" : "default", boxSizing: "border-box" as const }}
+              onClick={handleClick}
+              title={isAdmin && isOnCall ? "Click for options" : isAdmin && canAdd ? "Click to assign" : isMyDay ? "Click to request swap" : undefined}
             >
-              <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 4, color: isToday ? "#fff" : overflow ? "#c0c8d4" : "#374151", background: isToday ? "#1565c0" : "transparent", borderRadius: isToday ? "50%" : 0, width: isToday ? 22 : "auto", height: isToday ? 22 : "auto", display: "flex", alignItems: "center", justifyContent: "center" }}>{dayNum}</div>
-              {dayAssignments.map(assignment => {
-                const isMyChip = assignment.uid === auth.currentUser?.uid;
-                const clickable = isAdmin || isMyChip;
-                return (
-                  <div
-                    key={assignment.id}
-                    style={{ ...chipBase, background: isToday ? "#7c3aed" : "#f5f3ff", color: isToday ? "#fff" : "#6d28d9", border: isToday ? "2px solid #6d28d9" : "1px solid #ddd6fe", boxShadow: isToday ? "0 0 0 3px #c4b5fd" : undefined, cursor: clickable ? "pointer" : "default" }}
-                    onClick={e => {
-                      e.stopPropagation();
-                      if (isAdmin) setOnCallActionModal({ date: d, assignment });
-                      else if (isMyChip) { setSwapModal({ assignment }); setSwapToUid(""); setSwapOfferDate(""); setSwapReason(""); }
-                    }}
-                    title={isAdmin ? "Click for options" : isMyChip ? "Click to request swap" : undefined}
-                  >
-                    {assignment.employeeName}{isToday ? " · TODAY" : ""}
-                  </div>
-                );
-              })}
-              {outlookName && (() => {
-                const myFirst = auth.currentUser?.displayName?.split(" ")[0] || "";
-                const isMyChip = myFirst && outlookName.toLowerCase().startsWith(myFirst.toLowerCase());
-                const clickable = isAdmin || isMyChip;
-                const virtualAssignment = { id: "", date: d, uid: "", employeeName: outlookName };
-                return (
-                  <div
-                    style={{ ...chipBase, background: isToday ? "#7c3aed" : "#f5f3ff", color: isToday ? "#fff" : "#8b5cf6", border: isToday ? "2px solid #6d28d9" : "1px solid #ddd6fe", boxShadow: isToday ? "0 0 0 3px #c4b5fd" : undefined, opacity: isToday ? 1 : 0.65, cursor: clickable ? "pointer" : "default" }}
-                    onClick={e => {
-                      e.stopPropagation();
-                      if (isAdmin) setOnCallActionModal({ date: d, assignment: virtualAssignment });
-                      else if (isMyChip) { setSwapModal({ assignment: virtualAssignment }); setSwapToUid(""); setSwapOfferDate(""); setSwapReason(""); }
-                    }}
-                    title={isAdmin ? "Click for options" : isMyChip ? "Click to request swap" : "Outlook only"}
-                  >
-                    {outlookName}{isToday ? " · TODAY" : ""}
-                  </div>
-                );
-              })()}
+              <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                <div style={{ fontSize: overflow ? 11 : 13, fontWeight: isOnCall ? 800 : 500, color: numColor, background: isToday ? (isOnCall ? "rgba(255,255,255,0.25)" : "#1565c0") : "transparent", borderRadius: isToday ? 99 : 4, padding: isToday ? "2px 7px" : "0 2px", lineHeight: "20px" }}>{lbl}</div>
+                {isOnCall && !overflow && <div style={{ width: 7, height: 7, borderRadius: "50%", background: isToday ? "#fff" : hasFs ? "#7c3aed" : "#a78bfa", flexShrink: 0 }} />}
+              </div>
             </div>
           );
         }
@@ -853,27 +849,23 @@ export default function DispatchPage() {
           const isToday = d === todayYMD;
           const outlookVacs = !overflow ? (monthVacItems[d] || []) : [];
           const fsVacs = !overflow ? (vacByDate[d] || []) : [];
-          const dayNum = parseInt(d.slice(8));
           const canAdd = !overflow && isAdmin;
+          const lbl = dateLabel(d, overflow);
           return (
             <div
-              style={{ background: overflow ? "#f9fafb" : "#fff", minHeight: 90, padding: "6px 8px", cursor: canAdd ? "pointer" : "default" }}
+              style={{ background: overflow ? "#f9fafb" : "#fff", minHeight: 120, padding: "8px 10px", cursor: canAdd ? "pointer" : "default", boxSizing: "border-box" as const }}
               onClick={() => { if (canAdd) { setAddVacModal(d); setAddVacEnd(d); setAddVacName(""); setAddVacUid(""); } }}
               title={canAdd ? "Click to add vacation" : undefined}
             >
-              <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 4, color: isToday ? "#fff" : overflow ? "#c0c8d4" : "#374151", background: isToday ? "#1565c0" : "transparent", borderRadius: isToday ? "50%" : 0, width: isToday ? 22 : "auto", height: isToday ? 22 : "auto", display: "flex", alignItems: "center", justifyContent: "center" }}>{dayNum}</div>
+              <div style={{ fontSize: overflow ? 11 : 13, fontWeight: 500, marginBottom: 4, color: isToday ? "#fff" : overflow ? "#9ca3af" : "#374151", background: isToday ? "#1565c0" : "transparent", borderRadius: isToday ? 99 : 4, padding: isToday ? "2px 7px" : "0 2px", lineHeight: "20px", display: "inline-block" }}>{lbl}</div>
               {outlookVacs.map((v, i) => (
-                <div
-                  key={"o" + i}
-                  style={{ ...chipBase, background: "#fff7ed", color: "#c2410c", border: "1px solid #fed7aa", cursor: isAdmin ? "pointer" : "default" }}
+                <div key={"o" + i} style={{ ...chipBase, background: "#fff7ed", color: "#c2410c", border: "1px solid #fed7aa", cursor: isAdmin ? "pointer" : "default" }}
                   onClick={e => { e.stopPropagation(); if (isAdmin) setDeleteVacId(v.eventId); }}
                   title={isAdmin ? "Click to delete" : undefined}
                 >{v.name}</div>
               ))}
               {fsVacs.map((v, i) => (
-                <div
-                  key={"f" + i}
-                  style={{ ...chipBase, background: "#fff7ed", color: "#c2410c", border: "1px solid #fed7aa", cursor: isAdmin ? "pointer" : "default" }}
+                <div key={"f" + i} style={{ ...chipBase, background: "#fff7ed", color: "#c2410c", border: "1px solid #fed7aa", cursor: isAdmin ? "pointer" : "default" }}
                   onClick={e => { e.stopPropagation(); if (isAdmin) setDeleteVacId(v.id); }}
                   title={isAdmin ? "Click to delete" : undefined}
                 >{v.name}</div>
@@ -883,22 +875,14 @@ export default function DispatchPage() {
         }
 
         return (
-          <div style={{ padding: "16px 18px" }}>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 1, background: "#e5e7eb", border: "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden" }}>
+          <div style={{ border: "1px solid #e5e7eb", borderTop: "none" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 1, background: "#e5e7eb" }}>
               {["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(h => (
-                <div key={h} style={{ background: "#f8fafc", padding: "8px 4px", textAlign: "center", fontSize: 11, fontWeight: 800, color: "#6b7280", textTransform: "uppercase" as const }}>{h}</div>
+                <div key={h} style={{ background: "#f1f5f9", padding: "10px 4px", textAlign: "center", fontSize: 11, fontWeight: 800, color: "#6b7280", textTransform: "uppercase" as const, letterSpacing: "0.05em" }}>{h}</div>
               ))}
               {prevDays.map(d => isOncall ? <OnCallDayCell key={d} d={d} overflow /> : <VacDayCell key={d} d={d} overflow />)}
               {mDays.map(d    => isOncall ? <OnCallDayCell key={d} d={d} />         : <VacDayCell key={d} d={d} />)}
               {nextDays.map(d => isOncall ? <OnCallDayCell key={d} d={d} overflow /> : <VacDayCell key={d} d={d} overflow />)}
-            </div>
-            <div style={{ display: "flex", gap: 16, marginTop: 12, alignItems: "center", fontSize: 12, color: "#6b7280", flexWrap: "wrap" }}>
-              {isOncall ? (<>
-                <div style={{ display: "flex", alignItems: "center", gap: 5 }}><div style={{ width: 12, height: 12, borderRadius: 2, background: "#f5f3ff", border: "1px solid #ddd6fe" }} /> On call (Firestore)</div>
-                <div style={{ display: "flex", alignItems: "center", gap: 5 }}><div style={{ width: 12, height: 12, borderRadius: 2, background: "#f5f3ff", border: "1px solid #ddd6fe", opacity: 0.5 }} /> Outlook only (read-only)</div>
-              </>) : (<>
-                <div style={{ display: "flex", alignItems: "center", gap: 5 }}><div style={{ width: 12, height: 12, borderRadius: 2, background: "#fff7ed", border: "1px solid #fed7aa" }} /> Vacation (Outlook — add / delete)</div>
-              </>)}
             </div>
           </div>
         );
