@@ -1334,26 +1334,40 @@ function VisitModal({ init, onClose }: { init: { techUid: string; techName: stri
       start, end, priority, flagged, notes: notes.trim(),
       additionalTechnicians: additionalTechs,
     };
+    const payrollBase = (name: string, visitDate: string, vn: number | undefined, visitId: string) => ({
+      employeeName: name, employeeCode: "",
+      date: visitDate, department: department.trim(),
+      event: "Visit", jobNumber: jobNumber.trim(),
+      phase: "", costCode: "",
+      visitRef: vn != null ? String(vn) : "",
+      visitId, jobId: jobId || "",
+      eventStatus: "Scheduled", reviewStatus: "UNSUBMITTED",
+      customer: title.trim(), property: "", location: "", notes: "",
+      rt: 0, ot: 0, dt: 0, pto: 0,
+      laborRate: "", laborType: "",
+      source: "visit", createdAt: serverTimestamp(),
+    });
     try {
       if (v) {
         await updateDoc(doc(db, "dispatchVisits", v.id), { ...base, date });
+        // Sync payroll for additional techs
+        const oldExtras: string[] = (v as any).additionalTechnicians || [];
+        const added = additionalTechs.filter(n => !oldExtras.includes(n));
+        const removed = oldExtras.filter(n => !additionalTechs.includes(n));
+        for (const name of removed) {
+          const snap = await getDocs(query(collection(db, "payrollEntries"), where("visitId", "==", v.id), where("employeeName", "==", name)));
+          for (const d of snap.docs) await deleteDoc(doc(db, "payrollEntries", d.id));
+        }
+        for (const name of added) {
+          await addDoc(collection(db, "payrollEntries"), payrollBase(name, date, v.visitNumber, v.id));
+        }
       } else {
         for (let i = 0; i < visitDates.length; i++) {
           const vn = nextVisitNumber !== undefined ? nextVisitNumber + i : undefined;
           const visitRef = await addDoc(collection(db, "dispatchVisits"), { ...base, date: visitDates[i], visitNumber: vn, status: "scheduled", createdAt: serverTimestamp(), createdBy: auth.currentUser?.uid || "" });
-          await addDoc(collection(db, "payrollEntries"), {
-            employeeName: init.techName, employeeCode: "",
-            date: visitDates[i], department: "",
-            event: "Visit", jobNumber: jobNumber.trim(),
-            phase: "", costCode: "",
-            visitRef: vn != null ? String(vn) : "",
-            visitId: visitRef.id, jobId: jobId || "",
-            eventStatus: "Scheduled", reviewStatus: "UNSUBMITTED",
-            customer: title.trim(), property: "", location: "", notes: "",
-            rt: 0, ot: 0, dt: 0, pto: 0,
-            laborRate: "", laborType: "",
-            source: "visit", createdAt: serverTimestamp(),
-          });
+          for (const name of [init.techName, ...additionalTechs]) {
+            await addDoc(collection(db, "payrollEntries"), payrollBase(name, visitDates[i], vn, visitRef.id));
+          }
         }
       }
       onClose();
