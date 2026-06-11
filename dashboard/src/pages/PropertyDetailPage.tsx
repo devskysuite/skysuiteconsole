@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { addDoc, collection, deleteDoc, doc, getDoc, onSnapshot, query, updateDoc, where } from "firebase/firestore";
+import { addDoc, collection, deleteDoc, doc, getDocs, getDoc, limit, onSnapshot, query, updateDoc, where } from "firebase/firestore";
 import { db } from "../firebase";
 import { useIsAdmin } from "../hooks/useIsAdmin";
 import CreateJobModal from "./CreateJobModal";
@@ -219,12 +219,29 @@ export default function PropertyDetailPage() {
   }, [propertyId]);
 
   useEffect(() => {
-    if (!property?.customerId) return;
-    return onSnapshot(
-      collection(db, "customers", property.customerId, "contacts"),
-      snap => setCustomerContacts(snap.docs.map(d => ({ id: d.id, ...d.data() } as Contact)))
-    );
-  }, [property?.customerId]);
+    if (!property) return;
+    let unsub: (() => void) | undefined;
+
+    async function setup() {
+      let cid = property!.customerId;
+      if (!cid && property!.customerName) {
+        const snap = await getDocs(query(
+          collection(db, "customers"),
+          where("customerName", "==", property!.customerName),
+          limit(1)
+        ));
+        if (!snap.empty) cid = snap.docs[0].id;
+      }
+      if (!cid) return;
+      unsub = onSnapshot(
+        collection(db, "customers", cid, "contacts"),
+        s => setCustomerContacts(s.docs.map(d => ({ id: d.id, ...d.data() } as Contact)))
+      );
+    }
+
+    setup();
+    return () => unsub?.();
+  }, [property?.customerId, property?.customerName]);
 
   useEffect(() => {
     if (!propertyId) return;

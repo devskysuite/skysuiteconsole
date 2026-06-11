@@ -231,7 +231,18 @@ function PropertyModal({ title, initial, onSave, onClose }:
   };
   const [form, setForm] = useState<Omit<Property, "id">>({ ...blank, ...initial });
   const [saving, setSaving] = useState(false);
+  const [customers, setCustomers] = useState<{ id: string; name: string }[]>([]);
   const set = (k: keyof typeof form) => (v: string | number) => setForm(f => ({ ...f, [k]: v }));
+
+  useEffect(() => {
+    getDocs(collection(db, "customers")).then(snap => {
+      const list = snap.docs
+        .map(d => ({ id: d.id, name: (d.data().customerName || d.data().name || "") as string }))
+        .filter(c => c.name)
+        .sort((a, b) => a.name.localeCompare(b.name));
+      setCustomers(list);
+    });
+  }, []);
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={onClose}>
       <div onClick={e => e.stopPropagation()} style={{ background: "#fff", borderRadius: 16, padding: 28, width: "100%", maxWidth: 620, maxHeight: "90vh", overflowY: "auto", boxShadow: "0 8px 40px rgba(0,0,0,0.2)" }}>
@@ -249,7 +260,19 @@ function PropertyModal({ title, initial, onSave, onClose }:
               {["Industrial","Commercial","Institutional","Property Manager","Construction","Other"].map(t => <option key={t}>{t}</option>)}
             </select>
           </div>
-          <div style={{ gridColumn: "1/-1" }}><label style={lbl}>Customer</label><input style={inp} value={form.customerName} onChange={e => set("customerName")(e.target.value)} placeholder="Customer name" /></div>
+          <div style={{ gridColumn: "1/-1" }}><label style={lbl}>Customer</label>
+            <select style={inp} value={form.customerId || ""} onChange={e => {
+              const selected = customers.find(c => c.id === e.target.value);
+              setForm(f => ({ ...f, customerId: selected?.id || "", customerName: selected?.name || "" }));
+            }}>
+              <option value="">— Select customer —</option>
+              {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              {/* Show current name even if not yet in the list (legacy data) */}
+              {form.customerName && !customers.find(c => c.id === form.customerId) && (
+                <option value="" disabled>{form.customerName} (not linked)</option>
+              )}
+            </select>
+          </div>
           <div style={{ gridColumn: "1/-1" }}><label style={lbl}>Property Address</label><textarea style={{ ...inp, resize: "vertical", minHeight: 56, fontFamily: "inherit" }} value={form.propertyAddress} onChange={e => set("propertyAddress")(e.target.value)} /></div>
           <div style={{ gridColumn: "1/-1" }}><label style={lbl}>Billing Address</label><textarea style={{ ...inp, resize: "vertical", minHeight: 48, fontFamily: "inherit" }} value={form.billingAddress} onChange={e => set("billingAddress")(e.target.value)} /></div>
           <div><label style={lbl}>Account Number</label><input style={inp} value={form.accountNumber} onChange={e => set("accountNumber")(e.target.value)} /></div>
