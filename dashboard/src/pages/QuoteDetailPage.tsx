@@ -3,6 +3,8 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { collection, doc, getDocs, onSnapshot, updateDoc } from "firebase/firestore";
 import { db, auth } from "../firebase";
 import { useIsAdmin } from "../hooks/useIsAdmin";
+import QuotePricingTab, { DEFAULT_PRICING, PricingData } from "./QuotePricingTab";
+import QuoteSummaryTab from "./QuoteSummaryTab";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 const DEPARTMENTS = ["Automation and Controls","Electrical","Panel Build","Programming","Bucket Truck","Service"];
@@ -58,7 +60,7 @@ interface Quote {
   emailsBounced?: number;
 }
 
-const ALL_TABS = ["Info", "Scope of Work", "Pricing", "Recommendations", "Forms & Attachments", "Email History", "Activity"] as const;
+const ALL_TABS = ["Info", "Pricing", "Summary", "Scope of Work", "Recommendations", "Forms & Attachments", "Email History", "Activity"] as const;
 type Tab = typeof ALL_TABS[number];
 
 // ── Styles ─────────────────────────────────────────────────────────────────────
@@ -420,7 +422,28 @@ export default function QuoteDetailPage() {
         </div>
       )}
 
-      {tab !== "Info" && (
+      {tab === "Pricing" && (
+        <div style={{ padding:24 }}>
+          <QuotePricingTab
+            quoteId={quoteId!}
+            pricing={(quote as any).pricing
+              ? { ...DEFAULT_PRICING, ...(quote as any).pricing }
+              : DEFAULT_PRICING}
+          />
+        </div>
+      )}
+
+      {tab === "Summary" && (
+        <div style={{ padding:24 }}>
+          <QuoteSummaryTab
+            pricing={(quote as any).pricing
+              ? { ...DEFAULT_PRICING, ...(quote as any).pricing }
+              : DEFAULT_PRICING}
+          />
+        </div>
+      )}
+
+      {tab !== "Info" && tab !== "Pricing" && tab !== "Summary" && (
         <div style={{ margin:24, background:"#fff", borderRadius:12, border:"1px solid #e5e7eb", padding:"60px 24px", textAlign:"center", color:"#9ca3af", fontSize:14 }}>
           {tab} — coming soon
         </div>

@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
+import { collection, doc, getDoc, onSnapshot, setDoc } from "firebase/firestore";
 import { db } from "../firebase";
 import { Link } from "react-router-dom";
+import { useIsAdmin } from "../hooks/useIsAdmin";
 
 const STATUS_COLORS: Record<string, { bg: string; color: string }> = {
   "Draft":            { bg:"#f3f4f6", color:"#374151" },
@@ -13,9 +14,12 @@ const STATUS_COLORS: Record<string, { bg: string; color: string }> = {
 };
 
 export default function OperationsQuotesPage() {
+  const isAdmin = useIsAdmin();
   const [quotes, setQuotes]   = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch]   = useState("");
+  const [counterModal, setCounterModal] = useState(false);
+  const [counterVal, setCounterVal] = useState("");
 
   useEffect(() => {
     return onSnapshot(
@@ -30,6 +34,19 @@ export default function OperationsQuotesPage() {
       () => setLoading(false)
     );
   }, []);
+
+  async function openCounterModal() {
+    const snap = await getDoc(doc(db, "counters", "quotes"));
+    setCounterVal(String(snap.exists() ? snap.data().next : 1));
+    setCounterModal(true);
+  }
+
+  async function saveCounter() {
+    const n = parseInt(counterVal);
+    if (isNaN(n) || n < 1) return;
+    await setDoc(doc(db, "counters", "quotes"), { next: n }, { merge: true });
+    setCounterModal(false);
+  }
 
   const filtered = quotes.filter(q => {
     if (!search) return true;
@@ -54,12 +71,19 @@ export default function OperationsQuotesPage() {
           <span style={{ fontSize:16, fontWeight:800, color:"#111827" }}>Quotes</span>
           <span style={{ fontSize:12, color:"#9ca3af", marginLeft:10 }}>{filtered.length} of {quotes.length}</span>
         </div>
-        <input
-          style={{ border:"1px solid #d1d5db", borderRadius:7, padding:"6px 12px", fontSize:13, outline:"none", width:300 }}
-          placeholder="Search quote #, customer, property, status…"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-        />
+        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+          <input
+            style={{ border:"1px solid #d1d5db", borderRadius:7, padding:"6px 12px", fontSize:13, outline:"none", width:300 }}
+            placeholder="Search quote #, customer, property, status…"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+          />
+          {isAdmin && (
+            <button onClick={openCounterModal} style={{ background:"#f3f4f6", color:"#374151", border:"1px solid #d1d5db", borderRadius:7, padding:"6px 14px", fontSize:12, fontWeight:600, cursor:"pointer", whiteSpace:"nowrap" }}>
+              Set Quote # Start
+            </button>
+          )}
+        </div>
       </div>
 
       <div style={{ flex:1, overflow:"auto" }}>
@@ -101,6 +125,27 @@ export default function OperationsQuotesPage() {
           </tbody>
         </table>
       </div>
+
+      {counterModal && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.4)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000 }}>
+          <div style={{ background:"#fff", borderRadius:12, padding:28, width:340, boxShadow:"0 20px 60px rgba(0,0,0,0.2)" }}>
+            <div style={{ fontSize:15, fontWeight:700, color:"#111827", marginBottom:6 }}>Set Quote # Start</div>
+            <p style={{ fontSize:13, color:"#6b7280", marginBottom:16 }}>The next quote created will use this number. Use this to import old quotes before resuming normal numbering.</p>
+            <label style={{ fontSize:12, fontWeight:600, color:"#374151", display:"block", marginBottom:6 }}>Next Quote Number</label>
+            <input
+              type="number"
+              min={1}
+              style={{ width:"100%", border:"1px solid #d1d5db", borderRadius:7, padding:"8px 12px", fontSize:14, outline:"none", boxSizing:"border-box" }}
+              value={counterVal}
+              onChange={e => setCounterVal(e.target.value)}
+            />
+            <div style={{ display:"flex", gap:10, justifyContent:"flex-end", marginTop:18 }}>
+              <button onClick={() => setCounterModal(false)} style={{ background:"#f3f4f6", color:"#374151", border:"1px solid #d1d5db", borderRadius:7, padding:"8px 16px", fontSize:13, fontWeight:600, cursor:"pointer" }}>Cancel</button>
+              <button onClick={saveCounter} style={{ background:"#1565c0", color:"#fff", border:"none", borderRadius:7, padding:"8px 16px", fontSize:13, fontWeight:600, cursor:"pointer" }}>Save</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
