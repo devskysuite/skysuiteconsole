@@ -848,7 +848,7 @@ export default function PODetailPage() {
                   </tbody>
                 </table>
               </div>
-              <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+              <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap", alignItems: "center" }}>
                 <AddBillRow poId={po.id} vendor={po.vendor} />
                 <button
                   onClick={() => setShowImport(true)}
@@ -862,6 +862,17 @@ export default function PODetailPage() {
                 >
                   📦 IMPORT PACKING SLIP
                 </button>
+                {bills.length > 0 && (
+                  <button
+                    onClick={async () => {
+                      if (!confirm(`Clear all ${bills.length} bill${bills.length !== 1 ? "s" : ""}? This cannot be undone.`)) return;
+                      await updateDoc(doc(db, "purchaseOrders", po.id), { bills: [] });
+                    }}
+                    style={{ display: "flex", alignItems: "center", gap: 6, background: "#fff5f5", border: "1px solid #fca5a5", borderRadius: 7, padding: "7px 14px", fontSize: 12, fontWeight: 700, color: "#dc2626", cursor: "pointer", marginLeft: "auto" }}
+                  >
+                    🗑 CLEAR ALL BILLS
+                  </button>
+                )}
               </div>
             </>
           )}
