@@ -504,6 +504,19 @@ export default function ImportBillModal({
                 <div><span style={labelS}>Grand Total</span><input style={{ ...inp, background: "#f9fafb", fontWeight: 700 }} value={fmtC(invoice.grandTotal)} readOnly /></div>
               </div>
 
+              {/* No lines warning */}
+              {editLines.length === 0 && (
+                <div style={{ margin: "0 0 14px 0", padding: "12px 14px", background: "#fffbeb", border: "1px solid #fcd34d", borderRadius: 8, display: "flex", alignItems: "flex-start", gap: 10 }}>
+                  <span style={{ fontSize: 16 }}>⚠️</span>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: 13, color: "#92400e" }}>No line items detected</div>
+                    <div style={{ fontSize: 12, color: "#78350f", marginTop: 3 }}>
+                      The parser couldn't extract line items from this PDF. The invoice header details above were still read — you can still save this as a bill record, or check that the PDF is a machine-readable invoice (not a scanned image).
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Summary badge */}
               {editLines.length > 0 && (
                 <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
