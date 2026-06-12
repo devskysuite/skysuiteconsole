@@ -125,7 +125,8 @@ function parseInvoice(lines: string[]): ParsedInvoice {
     const line = lines[li];
     const next = lines[li + 1] || "";
     if (/sub[\s\-]?total|subtotal/i.test(line) && !/grand/i.test(line)) {
-      const amt = getLastAmt(line) ?? getLastAmt(next);
+      const prev = lines[li - 1] || "";
+      const amt = getLastAmt(line) ?? getLastAmt(next) ?? getLastAmt(prev);
       if (amt !== null) result.subtotal = amt;
       continue;
     }
@@ -145,7 +146,30 @@ function parseInvoice(lines: string[]): ParsedInvoice {
   }
   const UOMS = /^(EA|EACH|PC|PCS|LB|FT|M|L|KG|BOX|RL|BAG|HR|SET|PR|CS|GAL|TON|YD|ROLL|CAN|PAIR)$/i;
   const skipP = /^(ship|bill|invoice|date|p\.?o|purchase|customer|sub|total|hst|gst|tax|page|line|qty|description|unit|amount|price|receipt)/i;
-  for (const line of lines) {
+  const isGerrieLine = (s: string) => /^\d+\.\d+\s+[A-Z]/i.test(s);
+  const isSummaryLine = (s: string) => /^(sub[\s\-]?total|hst|gst|pst|qst|tax|total|freight|shipping|pack\s*slip|please\s*remit)/i.test(s);
+  for (let li = 0; li < lines.length; li++) {
+    const line = lines[li];
+    // Gerrie format: {lineNo} {partNo} {qty} {UOM} {unitPrice} {UOM} NET {total}
+    // e.g. "1.000 SYL20906 40 EA 4.8150 EA NET 192.60"
+    const gm = line.match(/^\d+\.\d+\s+([A-Z0-9][A-Z0-9\-\/]*)\s+(\d+(?:\.\d+)?)\s+([A-Z]{1,6})\s+(\.?\d[\d.]*)\s+[A-Z]{1,6}\s+NET\s+([\d,]+\.\d+)/i);
+    if (gm) {
+      const [, partNo, qtyStr, uom, upStr, totStr] = gm;
+      const qty = parseFloat(qtyStr);
+      const unitPrice = parseFloat(upStr);
+      const total = parseFloat(totStr.replace(/,/g, ""));
+      // Description: scan next 1-3 continuation lines, prefer one with spaces (human-readable)
+      const picks: string[] = [];
+      for (let j = li + 1; j < Math.min(li + 4, lines.length); j++) {
+        const l = lines[j].trim();
+        if (!l || isGerrieLine(l) || isSummaryLine(l)) break;
+        picks.push(l);
+      }
+      const description = picks.find(p => p.includes(" ")) || picks[0] || "";
+      result.lines.push({ partNo, description, qty, uom: uom.toUpperCase(), unitPrice, total, taxable: true, mode: "new", matchedItemId: null });
+      continue;
+    }
+    // Generic format: {description} {qty} {UOM} {unitPrice} {total}
     if (skipP.test(line)) continue;
     const m = line.match(/^(.+?)\s+(\d+(?:\.\d+)?)\s+([A-Z]{1,6})\s+(\d[\d,]*\.\d+)\s+(\d[\d,]*\.\d+)\s*$/i);
     if (!m) continue;
