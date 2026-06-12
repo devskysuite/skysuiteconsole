@@ -82,17 +82,18 @@ function parseOrderDetails(lines: string[]): ParsedOrder {
     if (gm) result.total = parseFloat(gm[1].replace(/,/g, ""));
   }
 
-  // Items: detect by $X.XX / EA pattern
-  // Gerrie Order Details line: "Product Name $X.XX / EA QtyOrdered BackQty ShipQty $Subtotal"
-  // OR separate lines: values-only line "$X.XX / EA 3 0 3 $802.90"
+  // Items: detect by $X.XX / EA QtyOrdered BackorderQty ShipQty pattern
+  // Gerrie columns: Price / EA | QTY Ordered | QTY Backordered | QTY Shipping | Subtotal
+  // We capture QTY Ordered only — invoice qty is used as received, ship qty ignored.
   for (let li = 0; li < lines.length; li++) {
     const line = lines[li];
 
-    const priceM = line.match(/\$([\d,]+\.\d{2})\s*\/\s*EA\s+(\d+)/i);
+    // Require all four numeric columns after / EA so we don't false-match other lines
+    const priceM = line.match(/\$([\d,]+\.\d{2})\s*\/\s*EA\s+(\d+)\s+\d+\s+\d+/i);
     if (!priceM) continue;
 
     const unitPrice = parseFloat(priceM[1].replace(/,/g, ""));
-    const qty = parseInt(priceM[2], 10);
+    const qty = parseInt(priceM[2], 10); // QTY Ordered — ship qty intentionally ignored
     if (qty === 0) continue;
 
     // Last dollar amount on line = item subtotal
