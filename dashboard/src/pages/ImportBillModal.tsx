@@ -270,12 +270,13 @@ async function getNextBillNumber(): Promise<string> {
 async function saveImport(targetPoId: string, invoice: ParsedInvoice, editLines: InvoiceLine[], file: File) {
   const billNumber = await getNextBillNumber();
 
-  // PDF upload is best-effort — bill is saved even if storage fails
+  // PDF upload is best-effort — bill is saved even if storage fails or times out
   let pdfUrl = "";
   try {
     const sRef = storageRef(storage, `bills/${billNumber}.pdf`);
-    await uploadBytes(sRef, file, { contentType: "application/pdf" });
-    pdfUrl = await getDownloadURL(sRef);
+    const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error("upload timeout")), 8000));
+    const upload = uploadBytes(sRef, file, { contentType: "application/pdf" }).then(snap => getDownloadURL(snap.ref));
+    pdfUrl = await Promise.race([upload, timeout]);
   } catch (e) {
     console.warn("PDF upload failed — saving bill without attachment:", e);
   }
