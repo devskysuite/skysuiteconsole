@@ -65,11 +65,24 @@ function parseInvoice(lines: string[]): ParsedInvoice {
   const full = lines.join("\n");
   const invMatch = full.match(/invoice\s*(?:no\.?|number|#)?\s*:?\s*(\d{5,})/i);
   if (invMatch) result.invoiceNumber = invMatch[1];
-  const custPoMatch = full.match(/customer\s+p\.?o\.?\s+no\.?\s*[:\s]+([0-9A-Z-]+)/i);
-  if (custPoMatch) result.poNumber = custPoMatch[1];
-  else {
-    const poMatch = full.match(/(?:purchase\s+order|p\.?o\.?)\s*(?:no\.?|number|#)?\s*:?\s*([0-9-]+)/i);
-    if (poMatch) result.poNumber = poMatch[1];
+  // PO number must start with a digit to avoid grabbing column headers like "ORDERED"
+  // Also scan the line AFTER the label in case the value is on the next row
+  const custPoInline = full.match(/customer\s+p\.?o\.?\s+no\.?\s*[:\s]+(\d[\dA-Z-]*)/i);
+  if (custPoInline) {
+    result.poNumber = custPoInline[1];
+  } else {
+    // label and value may be on separate lines — find the label line index and peek next
+    const labelIdx = lines.findIndex(l => /customer\s+p\.?o\.?\s+no/i.test(l));
+    if (labelIdx >= 0) {
+      for (let k = labelIdx + 1; k <= labelIdx + 3 && k < lines.length; k++) {
+        const m = lines[k].match(/(\d[\dA-Z-]{3,})/i);
+        if (m) { result.poNumber = m[1]; break; }
+      }
+    }
+    if (!result.poNumber) {
+      const poMatch = full.match(/(?:purchase\s+order|p\.?o\.?)\s*(?:no\.?|number|#)?\s*:?\s*(\d[\d-]*)/i);
+      if (poMatch) result.poNumber = poMatch[1];
+    }
   }
   const dateMatch = full.match(/(?:invoice\s+)?date\s*:?\s*(\d{1,4}[\/\-]\d{1,2}[\/\-]\d{2,4})/i);
   if (dateMatch) {
