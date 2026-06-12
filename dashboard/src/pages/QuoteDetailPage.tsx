@@ -443,6 +443,7 @@ export default function QuoteDetailPage() {
         <div style={{ padding:24 }}>
           <QuoteSummaryTab
             pricing={migratePricing((quote as any).pricing)}
+            customerId={quote.customerId}
           />
         </div>
       )}
