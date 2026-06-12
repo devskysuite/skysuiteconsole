@@ -1642,7 +1642,10 @@ function NewPaymentModal({ customerId, customerName, billingCustomer, invoices, 
 // ── Edit Customer modal ───────────────────────────────────────────────────────
 function EditCustomerModal({ customer, onSave, onClose }:
   { customer: Customer; onSave: (d: Partial<Customer>) => Promise<void>; onClose: () => void }) {
-  const [form, setForm] = useState({ ...customer });
+  const [form, setForm] = useState({
+    ...customer,
+    taxCode: customer.taxCode || "HST ON (13%)",
+  });
   const [saving, setSaving] = useState(false);
   const set = (k: keyof Customer) => (v: string | number) => setForm(f => ({ ...f, [k]: v }));
   return (
@@ -1663,7 +1666,6 @@ function EditCustomerModal({ customer, onSave, onClose }:
               <option>Active</option><option>Inactive</option>
             </select>
           </div>
-          <div><label style={lbl}># Properties</label><input style={inp} type="number" min={0} value={form.numberOfProperties} onChange={e => set("numberOfProperties")(parseInt(e.target.value)||0)} /></div>
           <div><label style={lbl}>Email</label><input style={inp} type="email" value={form.email} onChange={e => set("email")(e.target.value)} /></div>
           <div><label style={lbl}>Phone</label><input style={inp} type="tel" value={form.phone} onChange={e => set("phone")(e.target.value)} /></div>
           <div><label style={lbl}>Payment Terms</label><input style={inp} value={form.paymentTerms || ""} onChange={e => set("paymentTerms")(e.target.value)} placeholder="e.g. Net 30" /></div>
@@ -1674,11 +1676,14 @@ function EditCustomerModal({ customer, onSave, onClose }:
             </select>
           </div>
           <div><label style={lbl}>Tax Code</label>
-            <select style={inp} value={form.taxCode || "HST ON (13%)"} onChange={e => set("taxCode")(e.target.value)}>
+            <select style={inp} value={form.taxCode} onChange={e => set("taxCode")(e.target.value)}>
               <option value="HST ON (13%)">HST ON (13%)</option>
               <option value="None (0%)">None (0%)</option>
             </select>
           </div>
+          <div><label style={lbl}>Tax Exempt ID</label><input style={inp} value={form.taxExemptId || ""} onChange={e => set("taxExemptId")(e.target.value)} placeholder="e.g. 123456789" /></div>
+          <div><label style={lbl}>Pricebook</label><input style={inp} value={form.pricebook || ""} onChange={e => set("pricebook")(e.target.value)} /></div>
+          <div><label style={lbl}>Credit Limit</label><input style={inp} type="number" min={0} value={form.creditLimit || ""} onChange={e => set("creditLimit")(parseFloat(e.target.value)||0)} placeholder="0.00" /></div>
           <div style={{ gridColumn: "1/-1" }}><label style={lbl}>Billing Address</label><textarea style={{ ...inp, resize: "vertical", minHeight: 56, fontFamily: "inherit" }} value={form.billingAddress} onChange={e => set("billingAddress")(e.target.value)} /></div>
           <div style={{ gridColumn: "1/-1" }}><label style={lbl}>Business Address</label><textarea style={{ ...inp, resize: "vertical", minHeight: 48, fontFamily: "inherit" }} value={form.businessAddress} onChange={e => set("businessAddress")(e.target.value)} /></div>
         </div>
