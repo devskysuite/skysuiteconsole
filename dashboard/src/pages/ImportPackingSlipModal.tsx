@@ -166,7 +166,13 @@ async function savePackingSlip(poId: string, items: SlipItem[]) {
   }
 
   const subtotal = existing.reduce((s: number, i: any) => s + (i.totalCost || 0), 0);
-  await updateDoc(doc(db, "purchaseOrders", poId), { items: existing, subtotal });
+  const allFulfilled = existing.length > 0 && existing.every((i: any) => i.fulfillmentStatus === "Fulfilled");
+  const curStatus = poSnap.data()?.status || "Open";
+  const updates: Record<string, any> = { items: existing, subtotal };
+  if (!["Cancelled", "Draft"].includes(curStatus)) {
+    updates.status = existing.length === 0 ? "Open" : allFulfilled ? "Fulfilled" : "Waiting on Material";
+  }
+  await updateDoc(doc(db, "purchaseOrders", poId), updates);
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
