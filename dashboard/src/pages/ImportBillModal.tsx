@@ -84,7 +84,7 @@ function parseInvoice(lines: string[]): ParsedInvoice {
       if (poMatch) result.poNumber = poMatch[1];
     }
   }
-  // Date: try inline first, then look at lines following a date-label
+  // Date extraction — 3-pass escalating search
   function normalizeDate(raw: string): string {
     const parts = raw.split(/[\/\-]/);
     if (parts.length !== 3) return raw;
@@ -92,15 +92,24 @@ function parseInvoice(lines: string[]): ParsedInvoice {
     if (parts[2].length === 4) return `${parts[2]}-${parts[1].padStart(2,"0")}-${parts[0].padStart(2,"0")}`;
     return raw;
   }
-  const dateInline = full.match(/(?:invoice\s+)?date\s*:?\s*(\d{1,4}[\/\-]\d{1,2}[\/\-]\d{2,4})/i);
-  if (dateInline) {
-    result.date = normalizeDate(dateInline[1]);
+  const dateRe = /\b(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4}|\d{4}[\/\-]\d{2}[\/\-]\d{2})\b/;
+  // Pass 1: labeled inline — "Order Date: 06/05/2024" or "Date 06/05/2024"
+  const dateLabeled = full.match(/(?:order\s+date|invoice\s+date|date)\s*[:\s]+(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4}|\d{4}[\/\-]\d{2}[\/\-]\d{2})/i);
+  if (dateLabeled) {
+    result.date = normalizeDate(dateLabeled[1]);
   } else {
-    // date label and value may be on separate lines
-    const dateLabelIdx = lines.findIndex(l => /\bdate\b/i.test(l) && !/description|update|candidate/i.test(l));
-    if (dateLabelIdx >= 0) {
-      for (let k = dateLabelIdx; k <= dateLabelIdx + 3 && k < lines.length; k++) {
-        const m = lines[k].match(/(\d{1,4}[\/\-]\d{1,2}[\/\-]\d{2,4})/);
+    // Pass 2: lines after a "date" label (column-header layout)
+    const labelIdx = lines.findIndex(l => /\bdate\b/i.test(l));
+    if (labelIdx >= 0) {
+      for (let k = labelIdx + 1; k <= labelIdx + 5 && k < lines.length; k++) {
+        const m = lines[k].match(dateRe);
+        if (m) { result.date = normalizeDate(m[1]); break; }
+      }
+    }
+    // Pass 3: just find the first 4-digit-year date anywhere in the document
+    if (!result.date) {
+      for (const line of lines) {
+        const m = line.match(dateRe);
         if (m) { result.date = normalizeDate(m[1]); break; }
       }
     }
