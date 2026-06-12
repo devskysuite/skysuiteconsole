@@ -334,9 +334,9 @@ export default function QuoteScopeTab({ quoteId, pricing: raw, customerId }: { q
         const taxAmt = subtotal * taxRate;
         const grandTotal = subtotal + taxAmt;
         const row = (label: string, value: string, bold?: boolean, topBorder?: string): React.ReactNode => (
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderTop: topBorder || "1px solid #f3f4f6" }}>
+          <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 24, padding: "8px 0", borderTop: topBorder || "1px solid #f3f4f6" }}>
             <span style={{ fontSize: 13, fontWeight: bold ? 800 : 500, color: bold ? "#0d2e5e" : "#374151" }}>{label}</span>
-            <span style={{ fontSize: 13, fontWeight: bold ? 900 : 600, color: bold ? "#0d2e5e" : "#111827" }}>{value}</span>
+            <span style={{ fontSize: bold ? 15 : 13, fontWeight: bold ? 900 : 600, color: bold ? "#0d2e5e" : "#111827", minWidth: 120, textAlign: "right" }}>{value}</span>
           </div>
         );
         return (

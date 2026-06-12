@@ -37,9 +37,6 @@ interface PrintOptions {
   showLabourPricing: boolean;
   showLabourQty: boolean;
   showLabourTotal: boolean;
-  timeTypeRegular: boolean;
-  timeTypeOvertime: boolean;
-  timeTypeDouble: boolean;
   showOtherCosts: boolean;
   showTravel: boolean;
   showSummaryTable: boolean;
@@ -58,9 +55,6 @@ const DEFAULT_OPTIONS: PrintOptions = {
   showLabourPricing: true,
   showLabourQty: true,
   showLabourTotal: true,
-  timeTypeRegular: true,
-  timeTypeOvertime: true,
-  timeTypeDouble: true,
   showOtherCosts: true,
   showTravel: true,
   showSummaryTable: true,
@@ -106,101 +100,85 @@ function GroupLabel({ label }: { label: string }) {
   return <div style={{ fontSize: 11, fontWeight: 700, color: "#475569", textTransform: "uppercase", letterSpacing: 0.5, marginTop: 14, marginBottom: 4 }}>{label}</div>;
 }
 
+function LabourGroup({ label, lines, role, s, opts, totalSell }: {
+  label: string;
+  lines: ReturnType<typeof calcSectionTotals>["elecLines"];
+  role: "elec" | "prog";
+  s: PricingData["settings"];
+  opts: PrintOptions;
+  totalSell: number;
+}) {
+  const TIME_TYPES = ["Regular Time", "1.5x Overtime", "Double Time"] as const;
+  const groups = TIME_TYPES.map(tt => {
+    const matched = lines.filter(l => l.timeType === tt && (l.hours || 0) > 0);
+    const hours = matched.reduce((a, l) => a + (l.hours || 0), 0);
+    const sell  = matched.reduce((a, l) => a + l.sell, 0);
+    return { tt, hours, sell, rate: labourRate(s, role, tt) };
+  }).filter(g => g.hours > 0);
+
+  if (!groups.length && !totalSell) return null;
+  const showLines = opts.showItemizedLabour && groups.length > 0;
+  const showTotal = opts.showLabourTotal && totalSell > 0;
+  if (!showLines && !showTotal) return null;
+
+  return (
+    <div>
+      <GroupLabel label={label} />
+      {showLines && (<>
+        <div style={HDR}>
+          <span style={{ ...HDR_LABEL, flex: 1 }}>Time Type</span>
+          {opts.showLabourQty     && <span style={{ ...HDR_LABEL, ...COL_SM }}>Hours</span>}
+          {opts.showLabourPricing && <span style={{ ...HDR_LABEL, ...COL_SM }}>Rate</span>}
+          {opts.showLabourPricing && <span style={{ ...HDR_LABEL, ...COL_AMT }}>Subtotal</span>}
+        </div>
+        {groups.map(g => (
+          <div key={g.tt} style={ROW}>
+            <span style={COL_DESC}>{g.tt}</span>
+            {opts.showLabourQty     && <span style={COL_SM}>{g.hours} hrs</span>}
+            {opts.showLabourPricing && <span style={COL_SM}>{fmt$(g.rate)}/hr</span>}
+            {opts.showLabourPricing && <span style={COL_AMT}>{fmt$(g.sell)}</span>}
+          </div>
+        ))}
+      </>)}
+      {showTotal && (
+        <div style={SUB_ROW}>
+          <span style={{ fontSize: 12, fontWeight: 700, color: "#374151", marginRight: 8 }}>{label} Total</span>
+          <span style={{ ...COL_AMT, width: "auto" }}>{fmt$(totalSell)}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SectionRows({ sec, pricing, opts }: { sec: QuoteSection; pricing: PricingData; opts: PrintOptions }) {
   const s = pricing.settings;
-  const { elecLines, progLines } = calcSectionTotals(sec, s);
-
-  const allowedTypes = new Set([
-    opts.timeTypeRegular  && "Regular Time",
-    opts.timeTypeOvertime && "1.5x Overtime",
-    opts.timeTypeDouble   && "Double Time",
-  ].filter(Boolean) as string[]);
+  const { elecLines, progLines, elecSell, progSell, matSell } = calcSectionTotals(sec, s);
 
   const mats  = sec.materials.filter(m => (m.qty || 0) > 0 || m.description.trim() || m.partNumber.trim());
-  const elec  = elecLines.filter(l => ((l.hours || 0) > 0 || l.description.trim()) && allowedTypes.has(l.timeType));
-  const prog  = progLines.filter(l => ((l.hours || 0) > 0 || l.description.trim()) && allowedTypes.has(l.timeType));
+  const elec  = elecLines.filter(l => (l.hours || 0) > 0);
+  const prog  = progLines.filter(l => (l.hours || 0) > 0);
   const other = sec.otherCosts.filter(o => (o.cost || 0) > 0);
   const hasTrav = (sec.travel.days || 0) > 0 || (sec.travel.kmPerDay || 0) > 0;
 
-  const elecSellTotal = elec.reduce((a, l) => a + l.sell, 0);
-  const progSellTotal = prog.reduce((a, l) => a + l.sell, 0);
-  const matSellTotal  = mats.reduce((a, m) => a + (m.qty || 0) * (m.unitPrice || 0) * (1 + s.materialMarkup), 0);
+  const matSellTotal = matSell;
 
-  const showElec     = opts.showItemizedLabour    && elec.length > 0;
-  const showElecTot  = opts.showLabourTotal        && elecSellTotal > 0;
-  const showProg     = opts.showItemizedLabour    && prog.length > 0;
-  const showProgTot  = opts.showLabourTotal        && progSellTotal > 0;
-  const showMat      = opts.showItemizedMaterials && mats.length > 0;
-  const showMatTot   = opts.showMaterialsTotal     && matSellTotal > 0;
-  const showOth      = opts.showOtherCosts         && other.length > 0;
-  const showTrav     = opts.showTravel             && hasTrav;
+  const showMat  = opts.showItemizedMaterials && mats.length > 0;
+  const showMatTot = opts.showMaterialsTotal && matSellTotal > 0;
+  const showOth  = opts.showOtherCosts && other.length > 0;
+  const showTrav = opts.showTravel && hasTrav;
+  const hasElec  = (opts.showItemizedLabour && elec.length > 0) || (opts.showLabourTotal && elecSell > 0);
+  const hasProg  = (opts.showItemizedLabour && prog.length > 0) || (opts.showLabourTotal && progSell > 0);
 
-  if (!showElec && !showElecTot && !showProg && !showProgTot && !showMat && !showMatTot && !showOth && !showTrav) return null;
+  if (!hasElec && !hasProg && !showMat && !showMatTot && !showOth && !showTrav) return null;
 
   return (
     <div style={{ marginTop: 12 }}>
 
-      {/* Electrician Labour */}
-      {(showElec || showElecTot) && (
-        <div>
-          <GroupLabel label="Labour — Electrician" />
-          {showElec && (<>
-            <div style={HDR}>
-              <span style={{ ...HDR_LABEL, flex: 1 }}>Description</span>
-              <span style={{ ...HDR_LABEL, width: 100 }}>Time Type</span>
-              {opts.showLabourQty     && <span style={{ ...HDR_LABEL, ...COL_SM }}>Hours</span>}
-              {opts.showLabourPricing && <span style={{ ...HDR_LABEL, ...COL_SM }}>Unit Price</span>}
-              {opts.showLabourPricing && <span style={{ ...HDR_LABEL, ...COL_AMT }}>Subtotal</span>}
-            </div>
-            {elec.map(l => (
-              <div key={l.id} style={ROW}>
-                <span style={COL_DESC}>{l.description || "—"}</span>
-                <span style={{ width: 100, fontSize: 12, color: "#6b7280", flexShrink: 0 }}>{l.timeType}</span>
-                {opts.showLabourQty     && <span style={COL_SM}>{l.hours || 0} hrs</span>}
-                {opts.showLabourPricing && <span style={COL_SM}>{fmt$(labourRate(s, "elec", l.timeType))}</span>}
-                {opts.showLabourPricing && <span style={COL_AMT}>{fmt$(l.sell)}</span>}
-              </div>
-            ))}
-          </>)}
-          {showElecTot && (
-            <div style={SUB_ROW}>
-              <span style={{ fontSize: 12, fontWeight: 700, color: "#374151", marginRight: 8 }}>Electrician Labour Total</span>
-              <span style={{ ...COL_AMT, width: "auto" }}>{fmt$(elecSellTotal)}</span>
-            </div>
-          )}
-        </div>
-      )}
+      {/* Electrician Labour — grouped by time type */}
+      <LabourGroup label="Labour — Electrician" lines={elec} role="elec" s={s} opts={opts} totalSell={elecSell} />
 
-      {/* Programming Labour */}
-      {(showProg || showProgTot) && (
-        <div>
-          <GroupLabel label="Labour — Programming" />
-          {showProg && (<>
-            <div style={HDR}>
-              <span style={{ ...HDR_LABEL, flex: 1 }}>Description</span>
-              <span style={{ ...HDR_LABEL, width: 100 }}>Time Type</span>
-              {opts.showLabourQty     && <span style={{ ...HDR_LABEL, ...COL_SM }}>Hours</span>}
-              {opts.showLabourPricing && <span style={{ ...HDR_LABEL, ...COL_SM }}>Unit Price</span>}
-              {opts.showLabourPricing && <span style={{ ...HDR_LABEL, ...COL_AMT }}>Subtotal</span>}
-            </div>
-            {prog.map(l => (
-              <div key={l.id} style={ROW}>
-                <span style={COL_DESC}>{l.description || "—"}</span>
-                <span style={{ width: 100, fontSize: 12, color: "#6b7280", flexShrink: 0 }}>{l.timeType}</span>
-                {opts.showLabourQty     && <span style={COL_SM}>{l.hours || 0} hrs</span>}
-                {opts.showLabourPricing && <span style={COL_SM}>{fmt$(labourRate(s, "prog", l.timeType))}</span>}
-                {opts.showLabourPricing && <span style={COL_AMT}>{fmt$(l.sell)}</span>}
-              </div>
-            ))}
-          </>)}
-          {showProgTot && (
-            <div style={SUB_ROW}>
-              <span style={{ fontSize: 12, fontWeight: 700, color: "#374151", marginRight: 8 }}>Programming Labour Total</span>
-              <span style={{ ...COL_AMT, width: "auto" }}>{fmt$(progSellTotal)}</span>
-            </div>
-          )}
-        </div>
-      )}
+      {/* Programming Labour — grouped by time type */}
+      <LabourGroup label="Labour — Programming" lines={prog} role="prog" s={s} opts={opts} totalSell={progSell} />
 
       {/* Materials */}
       {(showMat || showMatTot) && (
@@ -354,12 +332,9 @@ export default function QuotePrintPage() {
               </OptGroup>
               <OptGroup title="Labour">
                 <Toggle label="Show Total"      checked={opts.showLabourTotal}    onChange={set("showLabourTotal")} />
-                <Toggle label="Show Itemized"   checked={opts.showItemizedLabour} onChange={set("showItemizedLabour")} />
+                <Toggle label="Show Lines"      checked={opts.showItemizedLabour} onChange={set("showItemizedLabour")} />
                 <Toggle label="Pricing"         checked={opts.showLabourPricing}  onChange={set("showLabourPricing")}  indent disabled={!opts.showItemizedLabour} />
                 <Toggle label="Hours"           checked={opts.showLabourQty}      onChange={set("showLabourQty")}      indent disabled={!opts.showItemizedLabour} />
-                <Toggle label="Regular Time"    checked={opts.timeTypeRegular}    onChange={set("timeTypeRegular")}    indent disabled={!opts.showItemizedLabour} />
-                <Toggle label="1.5x Overtime"   checked={opts.timeTypeOvertime}   onChange={set("timeTypeOvertime")}   indent disabled={!opts.showItemizedLabour} />
-                <Toggle label="Double Time"     checked={opts.timeTypeDouble}     onChange={set("timeTypeDouble")}     indent disabled={!opts.showItemizedLabour} />
               </OptGroup>
               <OptGroup title="Materials">
                 <Toggle label="Show Total"          checked={opts.showMaterialsTotal}    onChange={set("showMaterialsTotal")} />

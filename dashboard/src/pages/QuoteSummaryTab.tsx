@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { doc, getDoc } from "firebase/firestore";
 import { db } from "../firebase";
-import { calcSummary, PricingData } from "./QuotePricingTab";
+import { calcSectionTotals, calcSummary, PricingData } from "./QuotePricingTab";
 
 function fmt$(n: number) { return "$" + (n || 0).toLocaleString("en-CA", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 function fmtPct(n: number) { return (n * 100).toFixed(2) + "%"; }
@@ -41,15 +41,26 @@ export default function QuoteSummaryTab({ pricing, customerId }: { pricing: Pric
         <div style={{ padding:"10px 16px", borderBottom:"1px solid #e5e7eb", background:"#f9fafb" }}>
           <span style={{ fontSize:13, fontWeight:700, color:"#374151", textTransform:"uppercase", letterSpacing:0.5 }}>Quote Totals</span>
         </div>
-        <div style={{ padding:"20px 24px", maxWidth:360, marginLeft:"auto" }}>
+        <div style={{ padding:"20px 24px", display:"flex", flexDirection:"column", alignItems:"flex-end" }}>
+          {/* Per-section lines */}
+          {(pricing.sections || []).map((sec, i) => {
+            const { sectionSell } = calcSectionTotals(sec, pricing.settings);
+            return (
+              <div key={sec.id} style={{ display:"flex", alignItems:"center", padding:"6px 0", width:"100%", justifyContent:"space-between", borderTop:"1px solid #f3f4f6" }}>
+                <span style={{ fontSize:13, fontWeight:500, color:"#6b7280" }}>{sec.name || `Section ${i + 1}`}</span>
+                <span style={{ fontSize:13, fontWeight:600, color:"#374151", minWidth:120, textAlign:"right" }}>{fmt$(sectionSell)}</span>
+              </div>
+            );
+          })}
+          {/* Subtotal / Tax / Grand Total */}
           {[
-            { label:"Taxable Subtotal", value:fmt$(s.totalSell), bold:false, border:"none" as const },
-            { label:`Tax${taxRate > 0 ? ` (${(taxRate * 100).toFixed(0)}%)` : " — Exempt"}`, value:fmt$(taxAmt), bold:false, border:"none" as const },
+            { label:"Taxable Subtotal", value:fmt$(s.totalSell), bold:false, border:"2px solid #e5e7eb" as const },
+            { label:`Tax${taxRate > 0 ? ` (${(taxRate * 100).toFixed(0)}%)` : " — Exempt"}`, value:fmt$(taxAmt), bold:false, border:"1px solid #f3f4f6" as const },
             { label:"Grand Total", value:fmt$(grandTotal), bold:true, border:"2px solid #0d2e5e" as const },
           ].map(({ label, value, bold, border }) => (
-            <div key={label} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"8px 0", borderTop:border !== "none" ? border : "1px solid #f3f4f6" }}>
+            <div key={label} style={{ display:"flex", alignItems:"center", gap:24, padding:"8px 0", width:"100%", justifyContent:"flex-end", borderTop:border }}>
               <span style={{ fontSize:13, fontWeight: bold ? 800 : 600, color: bold ? "#0d2e5e" : "#374151" }}>{label}</span>
-              <span style={{ fontSize: bold ? 15 : 13, fontWeight: bold ? 900 : 600, color: bold ? "#0d2e5e" : "#374151" }}>{value}</span>
+              <span style={{ fontSize: bold ? 15 : 13, fontWeight: bold ? 900 : 600, color: bold ? "#0d2e5e" : "#374151", minWidth:120, textAlign:"right" }}>{value}</span>
             </div>
           ))}
         </div>

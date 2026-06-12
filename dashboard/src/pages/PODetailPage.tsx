@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { arrayUnion, collection, doc, getDoc, getDocs, onSnapshot, query, updateDoc, where } from "firebase/firestore";
 import { auth, db } from "../firebase";
 import { Link, useParams } from "react-router-dom";
+import ImportBillModal from "./ImportBillModal";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 interface POItem {
@@ -415,6 +416,7 @@ export default function PODetailPage() {
   const [vendors, setVendors]     = useState<string[]>([]);
   const [employees, setEmployees] = useState<string[]>([]);
   const [editingItem, setEditingItem] = useState<POItem | null>(null);
+  const [showImport, setShowImport] = useState(false);
   const firstEditField = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -503,6 +505,14 @@ export default function PODetailPage() {
           jobNumber={po.jobNumber}
           departments={DEPARTMENTS}
           onClose={() => setEditingItem(null)}
+        />
+      )}
+      {showImport && (
+        <ImportBillModal
+          poId={po.id}
+          poNumber={po.poNumber}
+          vendor={po.vendor}
+          onClose={() => setShowImport(false)}
         />
       )}
 
@@ -821,7 +831,15 @@ export default function PODetailPage() {
                   </tbody>
                 </table>
               </div>
-              <AddBillRow poId={po.id} vendor={po.vendor} />
+              <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                <AddBillRow poId={po.id} vendor={po.vendor} />
+                <button
+                  onClick={() => setShowImport(true)}
+                  style={{ display: "flex", alignItems: "center", gap: 6, background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 7, padding: "7px 14px", fontSize: 12, fontWeight: 700, color: "#1565c0", cursor: "pointer" }}
+                >
+                  📄 IMPORT INVOICE PDF
+                </button>
+              </div>
             </>
           )}
         </div>

@@ -490,6 +490,7 @@ export default function QuoteOverviewTab({ quoteId, pricing: raw }: { quoteId: s
   const [saving, setSaving] = useState(false);
   const [overrideOpen, setOverrideOpen] = useState(false);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [toast, setToast] = useState<string | null>(null);
 
   const save = useCallback(async (data: PricingData) => {
     setSaving(true);
@@ -517,8 +518,9 @@ export default function QuoteOverviewTab({ quoteId, pricing: raw }: { quoteId: s
     const newSec = padSection(blankSection(`Section ${p.sections.length + 1}`));
     const next = { ...p, sections: [...p.sections, newSec] };
     upd(next);
-    // Auto-expand new section
     setCollapsed(prev => { const s = new Set(prev); s.delete(newSec.id); return s; });
+    setToast(`Section ${next.sections.length} created`);
+    setTimeout(() => setToast(null), 3000);
   }
 
   function deleteSection(id: string) {
@@ -604,6 +606,21 @@ export default function QuoteOverviewTab({ quoteId, pricing: raw }: { quoteId: s
 
       {/* Sticky bottom summary bar */}
       <SummaryBar p={p} />
+
+      {/* Toast */}
+      {toast && (
+        <div style={{
+          position: "fixed", bottom: 32, left: "50%", transform: "translateX(-50%)",
+          background: "#0d2e5e", color: "#fff", borderRadius: 10,
+          padding: "12px 24px", fontSize: 14, fontWeight: 700,
+          boxShadow: "0 4px 20px rgba(0,0,0,0.25)", zIndex: 9999,
+          display: "flex", alignItems: "center", gap: 10,
+          animation: "fadeInUp 0.2s ease",
+        }}>
+          <span style={{ fontSize: 18 }}>✓</span>
+          {toast}
+        </div>
+      )}
     </div>
   );
 }
