@@ -787,24 +787,26 @@ export default function PODetailPage() {
                     <th style={thStyle}>Date Issued</th>
                     <th style={thStyle}>Created By</th>
                     <th style={{ ...thStyle, textAlign: "right" }}>Total</th>
+                    <th style={thStyle}>PDF</th>
                   </tr>
                 </thead>
                 <tbody>
                   {bills.filter(b => b.receiptNumber).length === 0 && (
-                    <tr><td colSpan={6} style={{ padding: "32px 12px", textAlign: "center", color: "#9ca3af", fontSize: 13 }}>No receipts yet.</td></tr>
+                    <tr><td colSpan={7} style={{ padding: "32px 12px", textAlign: "center", color: "#9ca3af", fontSize: 13 }}>No receipts yet.</td></tr>
                   )}
                   {bills.filter(b => b.receiptNumber).map((b, i) => (
                     <tr key={b.id || i}>
                       <td style={{ ...tdStyle, fontWeight: 600 }}>{b.receiptNumber || "—"}</td>
-                      <td style={tdStyle}>
-                        {b.pdfUrl ? (
-                          <a href={b.pdfUrl} target="_blank" rel="noopener noreferrer" style={{ color: "#1565c0", textDecoration: "none", fontWeight: 700 }}>{b.billNumber || "—"}</a>
-                        ) : (b.billNumber || "—")}
-                      </td>
+                      <td style={{ ...tdStyle, fontWeight: 600 }}>{b.billNumber || "—"}</td>
                       <td style={tdStyle}>{b.vendor || "—"}</td>
                       <td style={tdStyle}>{fmtDate(b.dateIssued)}</td>
                       <td style={tdStyle}>{b.createdBy || "—"}</td>
                       <td style={{ ...tdStyle, textAlign: "right", fontWeight: 700 }}>{fmtC(b.total)}</td>
+                      <td style={tdStyle}>
+                        {b.pdfUrl
+                          ? <a href={b.pdfUrl} target="_blank" rel="noopener noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 6, padding: "3px 10px", fontSize: 12, fontWeight: 700, color: "#1565c0", textDecoration: "none", cursor: "pointer" }}>📄 View</a>
+                          : <span style={{ color: "#d1d5db", fontSize: 12 }}>—</span>}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -825,29 +827,31 @@ export default function PODetailPage() {
                       <th style={thStyle}>Date Issued</th>
                       <th style={thStyle}>Created By</th>
                       <th style={{ ...thStyle, textAlign: "right" }}>Total</th>
+                      <th style={thStyle}>PDF</th>
                     </tr>
                   </thead>
                   <tbody>
                     {bills.length === 0 && (
-                      <tr><td colSpan={6} style={{ padding: "32px 12px", textAlign: "center", color: "#9ca3af", fontSize: 13 }}>No bills yet.</td></tr>
+                      <tr><td colSpan={7} style={{ padding: "32px 12px", textAlign: "center", color: "#9ca3af", fontSize: 13 }}>No bills yet.</td></tr>
                     )}
                     {bills.map((b, i) => (
                       <tr key={b.id || i}>
-                        <td style={{ ...tdStyle, fontWeight: 600 }}>
-                          {b.pdfUrl ? (
-                            <a href={b.pdfUrl} target="_blank" rel="noopener noreferrer" style={{ color: "#1565c0", textDecoration: "none", fontWeight: 700 }}>{b.billNumber || "—"}</a>
-                          ) : (b.billNumber || "—")}
-                        </td>
+                        <td style={{ ...tdStyle, fontWeight: 600 }}>{b.billNumber || "—"}</td>
                         <td style={tdStyle}>{b.receiptNumber || "—"}</td>
                         <td style={tdStyle}>{b.vendor || "—"}</td>
                         <td style={tdStyle}>{fmtDate(b.dateIssued)}</td>
                         <td style={tdStyle}>{b.createdBy || "—"}</td>
                         <td style={{ ...tdStyle, textAlign: "right", fontWeight: 700 }}>{fmtC(b.total)}</td>
+                        <td style={tdStyle}>
+                          {b.pdfUrl
+                            ? <a href={b.pdfUrl} target="_blank" rel="noopener noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 6, padding: "3px 10px", fontSize: 12, fontWeight: 700, color: "#1565c0", textDecoration: "none", cursor: "pointer" }}>📄 View</a>
+                            : <span style={{ color: "#d1d5db", fontSize: 12 }}>—</span>}
+                        </td>
                       </tr>
                     ))}
                     {bills.length > 0 && (
                       <tr style={{ background: "#f9fafb", borderTop: "2px solid #e5e7eb" }}>
-                        <td colSpan={5} style={{ padding: "10px 12px", fontWeight: 800, fontSize: 13 }}>Total</td>
+                        <td colSpan={6} style={{ padding: "10px 12px", fontWeight: 800, fontSize: 13 }}>Total</td>
                         <td style={{ padding: "10px 12px", textAlign: "right", fontWeight: 800, fontSize: 14 }}>{fmtC(bills.reduce((s, b) => s + (b.total || 0), 0))}</td>
                       </tr>
                     )}
