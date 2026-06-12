@@ -339,6 +339,32 @@ export default function QuoteScopeTab({ quoteId, pricing: raw }: { quoteId: stri
         </div>
       )}
 
+      {/* Totals summary */}
+      {p.sections.length > 0 && (() => {
+        const subtotal = p.sections.reduce((sum, sec) => sum + calcSectionTotals(sec, p.settings).sectionSell, 0);
+        const taxRate = p.settings.taxRate ?? 0.265;
+        const taxAmt = subtotal * taxRate;
+        const grandTotal = subtotal + taxAmt;
+        const row = (label: string, value: string, bold?: boolean, topBorder?: string): React.ReactNode => (
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderTop: topBorder || "1px solid #f3f4f6" }}>
+            <span style={{ fontSize: 13, fontWeight: bold ? 800 : 500, color: bold ? "#0d2e5e" : "#374151" }}>{label}</span>
+            <span style={{ fontSize: 13, fontWeight: bold ? 900 : 600, color: bold ? "#0d2e5e" : "#111827" }}>{value}</span>
+          </div>
+        );
+        return (
+          <div style={{ background: "#fff", borderRadius: 12, border: "1px solid #e5e7eb", padding: "4px 20px 4px" }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase" as const, letterSpacing: 0.5, padding: "12px 0 4px" }}>Quote Summary</div>
+            {p.sections.map(sec => {
+              const { sectionSell } = calcSectionTotals(sec, p.settings);
+              return row(sec.name || "Unnamed Section", fmt$(sectionSell));
+            })}
+            {row("Taxable Subtotal", fmt$(subtotal), false, "2px solid #e5e7eb")}
+            {row(`HST / Tax (${(taxRate * 100).toFixed(1)}%)`, fmt$(taxAmt))}
+            {row("Grand Total", fmt$(grandTotal), true, "2px solid #0d2e5e")}
+          </div>
+        );
+      })()}
+
       {/* Save Preset Modal */}
       {savePresetModal && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center" }}>
