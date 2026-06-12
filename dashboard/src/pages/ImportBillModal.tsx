@@ -320,9 +320,12 @@ async function saveImport(targetPoId: string, invoice: ParsedInvoice, editLines:
   const newSubtotal = allItems.reduce((s, i) => s + (i.totalCost || 0), 0);
   const newTaxAmt = allItems.filter(i => i.taxable).reduce((s, i) => s + (i.totalCost || 0), 0) * poTaxPct;
   const allFulfilled = allItems.length > 0 && allItems.every(i => i.fulfillmentStatus === "Fulfilled");
+  const curStatus = poData?.status || "Open";
 
   const updates: Record<string, any> = { bills: arrayUnion(bill), items: allItems, subtotal: newSubtotal, taxAmount: newTaxAmt, total: newSubtotal + newTaxAmt };
-  if (allFulfilled) updates.status = "Fulfilled";
+  if (!["Cancelled", "Draft"].includes(curStatus)) {
+    updates.status = allItems.length === 0 ? "Open" : allFulfilled ? "Fulfilled" : "Waiting on Material";
+  }
   await updateDoc(doc(db, "purchaseOrders", targetPoId), updates);
 }
 

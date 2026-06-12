@@ -126,8 +126,11 @@ function EditItemModal({
       const poTaxPct = ({ "GST (5%)": 0.05, "HST ON (13%)": 0.13, "HST BC (12%)": 0.12, "PST (7%)": 0.07 } as Record<string,number>)[poSnap.data()?.taxRate || ""] ?? 0;
       const newTaxAmt = updated.filter(i => i.taxable).reduce((s, i) => s + (i.totalCost || 0), 0) * poTaxPct;
       const allFulfilled = updated.length > 0 && updated.every(i => i.fulfillmentStatus === "Fulfilled");
+      const curStatus = poSnap.data()?.status || "Open";
       const updates: Record<string, unknown> = { items: updated, subtotal: newSubtotal, taxAmount: newTaxAmt, total: newSubtotal + newTaxAmt };
-      if (allFulfilled) updates.status = "Fulfilled";
+      if (!["Cancelled", "Draft"].includes(curStatus)) {
+        updates.status = updated.length === 0 ? "Open" : allFulfilled ? "Fulfilled" : "Waiting on Material";
+      }
       await updateDoc(doc(db, "purchaseOrders", poId), updates);
       onClose();
     } catch (e) { console.error(e); alert("Failed to save item."); }
@@ -300,11 +303,14 @@ function AddItemRow({ poId, jobNumber }: { poId: string; jobNumber: string }) {
       const poTaxPct = ({ "GST (5%)": 0.05, "HST ON (13%)": 0.13, "HST BC (12%)": 0.12, "PST (7%)": 0.07 } as Record<string,number>)[poData?.taxRate || ""] ?? 0;
       const newTaxAmt = allItems.filter(i => i.taxable).reduce((s, i) => s + (i.totalCost || 0), 0) * poTaxPct;
       const allFulfilled = allItems.length > 0 && allItems.every(i => i.fulfillmentStatus === "Fulfilled");
+      const curStatus2 = poData?.status || "Open";
       const updates: Record<string, unknown> = {
         items: allItems, subtotal: newSubtotal, taxAmount: newTaxAmt, total: newSubtotal + newTaxAmt,
         createdBy: auth.currentUser?.displayName || auth.currentUser?.email || "Unknown",
       };
-      if (allFulfilled) updates.status = "Fulfilled";
+      if (!["Cancelled", "Draft"].includes(curStatus2)) {
+        updates.status = allItems.length === 0 ? "Open" : allFulfilled ? "Fulfilled" : "Waiting on Material";
+      }
       await updateDoc(doc(db, "purchaseOrders", poId), updates);
       setF(blank);
       setOpen(false);
