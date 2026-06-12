@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
-import { doc, onSnapshot } from "firebase/firestore";
+import { doc, getDoc, onSnapshot } from "firebase/firestore";
 import { db } from "../firebase";
 import { calcSectionTotals, calcSummary, labourRate, migratePricing, PricingData, QuoteSection } from "./QuotePricingTab";
 
@@ -10,6 +10,7 @@ const fmt$ = (n: number) =>
 interface Quote {
   quoteNumber: string;
   title: string;
+  customerId?: string;
   customerName?: string;
   propertyName?: string;
   propertyAddress?: string;
@@ -121,103 +122,116 @@ function SectionRows({ sec, pricing, opts }: { sec: QuoteSection; pricing: Prici
   const other = sec.otherCosts.filter(o => (o.cost || 0) > 0);
   const hasTrav = (sec.travel.days || 0) > 0 || (sec.travel.kmPerDay || 0) > 0;
 
-  const showElec = opts.showItemizedLabour && elec.length > 0;
-  const showProg = opts.showItemizedLabour && prog.length > 0;
-  const showMat  = opts.showItemizedMaterials && mats.length > 0;
-  const showOth  = opts.showOtherCosts && other.length > 0;
-  const showTrav = opts.showTravel && hasTrav;
+  const elecSellTotal = elec.reduce((a, l) => a + l.sell, 0);
+  const progSellTotal = prog.reduce((a, l) => a + l.sell, 0);
+  const matSellTotal  = mats.reduce((a, m) => a + (m.qty || 0) * (m.unitPrice || 0) * (1 + s.materialMarkup), 0);
 
-  if (!showElec && !showProg && !showMat && !showOth && !showTrav) return null;
+  const showElec     = opts.showItemizedLabour    && elec.length > 0;
+  const showElecTot  = opts.showLabourTotal        && elecSellTotal > 0;
+  const showProg     = opts.showItemizedLabour    && prog.length > 0;
+  const showProgTot  = opts.showLabourTotal        && progSellTotal > 0;
+  const showMat      = opts.showItemizedMaterials && mats.length > 0;
+  const showMatTot   = opts.showMaterialsTotal     && matSellTotal > 0;
+  const showOth      = opts.showOtherCosts         && other.length > 0;
+  const showTrav     = opts.showTravel             && hasTrav;
+
+  if (!showElec && !showElecTot && !showProg && !showProgTot && !showMat && !showMatTot && !showOth && !showTrav) return null;
 
   return (
     <div style={{ marginTop: 12 }}>
 
       {/* Electrician Labour */}
-      {showElec && (
+      {(showElec || showElecTot) && (
         <div>
           <GroupLabel label="Labour — Electrician" />
-          <div style={HDR}>
-            <span style={{ ...HDR_LABEL, flex: 1 }}>Description</span>
-            <span style={{ ...HDR_LABEL, width: 100 }}>Time Type</span>
-            {opts.showLabourQty     && <span style={{ ...HDR_LABEL, ...COL_SM }}>Hours</span>}
-            {opts.showLabourPricing && <span style={{ ...HDR_LABEL, ...COL_SM }}>Unit Price</span>}
-            {opts.showLabourPricing && <span style={{ ...HDR_LABEL, ...COL_AMT }}>Subtotal</span>}
-          </div>
-          {elec.map(l => (
-            <div key={l.id} style={ROW}>
-              <span style={COL_DESC}>{l.description || "—"}</span>
-              <span style={{ width: 100, fontSize: 12, color: "#6b7280", flexShrink: 0 }}>{l.timeType}</span>
-              {opts.showLabourQty     && <span style={COL_SM}>{l.hours || 0} hrs</span>}
-              {opts.showLabourPricing && <span style={COL_SM}>{fmt$(labourRate(s, "elec", l.timeType))}</span>}
-              {opts.showLabourPricing && <span style={COL_AMT}>{fmt$(l.sell)}</span>}
+          {showElec && (<>
+            <div style={HDR}>
+              <span style={{ ...HDR_LABEL, flex: 1 }}>Description</span>
+              <span style={{ ...HDR_LABEL, width: 100 }}>Time Type</span>
+              {opts.showLabourQty     && <span style={{ ...HDR_LABEL, ...COL_SM }}>Hours</span>}
+              {opts.showLabourPricing && <span style={{ ...HDR_LABEL, ...COL_SM }}>Unit Price</span>}
+              {opts.showLabourPricing && <span style={{ ...HDR_LABEL, ...COL_AMT }}>Subtotal</span>}
             </div>
-          ))}
-          {opts.showLabourTotal && opts.showLabourPricing && (
+            {elec.map(l => (
+              <div key={l.id} style={ROW}>
+                <span style={COL_DESC}>{l.description || "—"}</span>
+                <span style={{ width: 100, fontSize: 12, color: "#6b7280", flexShrink: 0 }}>{l.timeType}</span>
+                {opts.showLabourQty     && <span style={COL_SM}>{l.hours || 0} hrs</span>}
+                {opts.showLabourPricing && <span style={COL_SM}>{fmt$(labourRate(s, "elec", l.timeType))}</span>}
+                {opts.showLabourPricing && <span style={COL_AMT}>{fmt$(l.sell)}</span>}
+              </div>
+            ))}
+          </>)}
+          {showElecTot && (
             <div style={SUB_ROW}>
               <span style={{ fontSize: 12, fontWeight: 700, color: "#374151", marginRight: 8 }}>Electrician Labour Total</span>
-              <span style={{ ...COL_AMT, width: "auto" }}>{fmt$(elec.reduce((a, l) => a + l.sell, 0))}</span>
+              <span style={{ ...COL_AMT, width: "auto" }}>{fmt$(elecSellTotal)}</span>
             </div>
           )}
         </div>
       )}
 
       {/* Programming Labour */}
-      {showProg && (
+      {(showProg || showProgTot) && (
         <div>
           <GroupLabel label="Labour — Programming" />
-          <div style={HDR}>
-            <span style={{ ...HDR_LABEL, flex: 1 }}>Description</span>
-            <span style={{ ...HDR_LABEL, width: 100 }}>Time Type</span>
-            {opts.showLabourQty     && <span style={{ ...HDR_LABEL, ...COL_SM }}>Hours</span>}
-            {opts.showLabourPricing && <span style={{ ...HDR_LABEL, ...COL_SM }}>Unit Price</span>}
-            {opts.showLabourPricing && <span style={{ ...HDR_LABEL, ...COL_AMT }}>Subtotal</span>}
-          </div>
-          {prog.map(l => (
-            <div key={l.id} style={ROW}>
-              <span style={COL_DESC}>{l.description || "—"}</span>
-              <span style={{ width: 100, fontSize: 12, color: "#6b7280", flexShrink: 0 }}>{l.timeType}</span>
-              {opts.showLabourQty     && <span style={COL_SM}>{l.hours || 0} hrs</span>}
-              {opts.showLabourPricing && <span style={COL_SM}>{fmt$(labourRate(s, "prog", l.timeType))}</span>}
-              {opts.showLabourPricing && <span style={COL_AMT}>{fmt$(l.sell)}</span>}
+          {showProg && (<>
+            <div style={HDR}>
+              <span style={{ ...HDR_LABEL, flex: 1 }}>Description</span>
+              <span style={{ ...HDR_LABEL, width: 100 }}>Time Type</span>
+              {opts.showLabourQty     && <span style={{ ...HDR_LABEL, ...COL_SM }}>Hours</span>}
+              {opts.showLabourPricing && <span style={{ ...HDR_LABEL, ...COL_SM }}>Unit Price</span>}
+              {opts.showLabourPricing && <span style={{ ...HDR_LABEL, ...COL_AMT }}>Subtotal</span>}
             </div>
-          ))}
-          {opts.showLabourTotal && opts.showLabourPricing && (
+            {prog.map(l => (
+              <div key={l.id} style={ROW}>
+                <span style={COL_DESC}>{l.description || "—"}</span>
+                <span style={{ width: 100, fontSize: 12, color: "#6b7280", flexShrink: 0 }}>{l.timeType}</span>
+                {opts.showLabourQty     && <span style={COL_SM}>{l.hours || 0} hrs</span>}
+                {opts.showLabourPricing && <span style={COL_SM}>{fmt$(labourRate(s, "prog", l.timeType))}</span>}
+                {opts.showLabourPricing && <span style={COL_AMT}>{fmt$(l.sell)}</span>}
+              </div>
+            ))}
+          </>)}
+          {showProgTot && (
             <div style={SUB_ROW}>
               <span style={{ fontSize: 12, fontWeight: 700, color: "#374151", marginRight: 8 }}>Programming Labour Total</span>
-              <span style={{ ...COL_AMT, width: "auto" }}>{fmt$(prog.reduce((a, l) => a + l.sell, 0))}</span>
+              <span style={{ ...COL_AMT, width: "auto" }}>{fmt$(progSellTotal)}</span>
             </div>
           )}
         </div>
       )}
 
       {/* Materials */}
-      {showMat && (
+      {(showMat || showMatTot) && (
         <div>
           <GroupLabel label="Materials" />
-          <div style={HDR}>
-            <span style={{ ...HDR_LABEL, flex: 1 }}>Description</span>
-            <span style={{ ...HDR_LABEL, width: 140 }}>Part # / Manufacturer</span>
-            {opts.showMaterialQty    && <span style={{ ...HDR_LABEL, ...COL_SM }}>Qty</span>}
-            {opts.showMaterialPricing && <span style={{ ...HDR_LABEL, ...COL_SM }}>Unit Price</span>}
-            {opts.showMaterialPricing && <span style={{ ...HDR_LABEL, ...COL_AMT }}>Subtotal</span>}
-          </div>
-          {mats.map(m => {
-            const unitSell = (m.unitPrice || 0) * (1 + s.materialMarkup);
-            const sell = (m.qty || 0) * unitSell;
-            return (
-              <div key={m.id} style={ROW}>
-                <span style={COL_DESC}>{m.description || "—"}</span>
-                <span style={{ width: 140, fontSize: 12, color: "#6b7280", flexShrink: 0 }}>{[m.partNumber, m.manufacturer].filter(Boolean).join(" · ") || "—"}</span>
-                {opts.showMaterialQty     && <span style={COL_SM}>{m.qty || 0} {m.unit || "ea"}</span>}
-                {opts.showMaterialPricing && <span style={COL_SM}>{fmt$(unitSell)}</span>}
-                {opts.showMaterialPricing && <span style={COL_AMT}>{fmt$(sell)}</span>}
-              </div>
-            );
-          })}
-          {opts.showMaterialsTotal && opts.showMaterialPricing && (
+          {showMat && (<>
+            <div style={HDR}>
+              <span style={{ ...HDR_LABEL, flex: 1 }}>Description</span>
+              <span style={{ ...HDR_LABEL, width: 140 }}>Part # / Manufacturer</span>
+              {opts.showMaterialQty     && <span style={{ ...HDR_LABEL, ...COL_SM }}>Qty</span>}
+              {opts.showMaterialPricing && <span style={{ ...HDR_LABEL, ...COL_SM }}>Unit Price</span>}
+              {opts.showMaterialPricing && <span style={{ ...HDR_LABEL, ...COL_AMT }}>Subtotal</span>}
+            </div>
+            {mats.map(m => {
+              const unitSell = (m.unitPrice || 0) * (1 + s.materialMarkup);
+              const sell = (m.qty || 0) * unitSell;
+              return (
+                <div key={m.id} style={ROW}>
+                  <span style={COL_DESC}>{m.description || "—"}</span>
+                  <span style={{ width: 140, fontSize: 12, color: "#6b7280", flexShrink: 0 }}>{[m.partNumber, m.manufacturer].filter(Boolean).join(" · ") || "—"}</span>
+                  {opts.showMaterialQty     && <span style={COL_SM}>{m.qty || 0} {m.unit || "ea"}</span>}
+                  {opts.showMaterialPricing && <span style={COL_SM}>{fmt$(unitSell)}</span>}
+                  {opts.showMaterialPricing && <span style={COL_AMT}>{fmt$(sell)}</span>}
+                </div>
+              );
+            })}
+          </>)}
+          {showMatTot && (
             <div style={SUB_ROW}>
               <span style={{ fontSize: 12, fontWeight: 700, color: "#374151", marginRight: 8 }}>Materials Total</span>
-              <span style={{ ...COL_AMT, width: "auto" }}>{fmt$(mats.reduce((a, m) => a + (m.qty||0)*(m.unitPrice||0)*(1+s.materialMarkup), 0))}</span>
+              <span style={{ ...COL_AMT, width: "auto" }}>{fmt$(matSellTotal)}</span>
             </div>
           )}
         </div>
@@ -270,16 +284,30 @@ function SectionRows({ sec, pricing, opts }: { sec: QuoteSection; pricing: Prici
 // ── Main page ──────────────────────────────────────────────────────────────────
 export default function QuotePrintPage() {
   const { quoteId } = useParams<{ quoteId: string }>();
-  const [quote, setQuote]     = useState<Quote | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [opts, setOpts]       = useState<PrintOptions>(DEFAULT_OPTIONS);
-  const [optOpen, setOptOpen] = useState(true);
+  const [quote, setQuote]           = useState<Quote | null>(null);
+  const [loading, setLoading]       = useState(true);
+  const [opts, setOpts]             = useState<PrintOptions>(DEFAULT_OPTIONS);
+  const [optOpen, setOptOpen]       = useState(true);
+  const [customerTaxRate, setCustomerTaxRate] = useState<number>(0);
 
   useEffect(() => {
     if (!quoteId) return;
     return onSnapshot(
       doc(db, "quotes", quoteId),
-      snap => { if (snap.exists()) setQuote(snap.data() as Quote); setLoading(false); },
+      snap => {
+        if (snap.exists()) {
+          const data = snap.data() as Quote;
+          setQuote(data);
+          if (data.customerId) {
+            getDoc(doc(db, "customers", data.customerId)).then(cSnap => {
+              const taxCode: string = (cSnap.data()?.taxCode as string) || "";
+              const match = taxCode.match(/\((\d+(?:\.\d+)?)%\)/);
+              if (match) setCustomerTaxRate(parseFloat(match[1]) / 100);
+            }).catch(() => {});
+          }
+        }
+        setLoading(false);
+      },
       () => setLoading(false)
     );
   }, [quoteId]);
@@ -344,8 +372,7 @@ export default function QuotePrintPage() {
                 <Toggle label="Travel"      checked={opts.showTravel}     onChange={set("showTravel")} />
               </OptGroup>
               <OptGroup title="Totals">
-                <Toggle label="Summary Table" checked={opts.showSummaryTable} onChange={set("showSummaryTable")} />
-                <Toggle label="Grand Total"   checked={opts.showGrandTotal}   onChange={set("showGrandTotal")} />
+                <Toggle label="Subtotal / Tax / Total" checked={opts.showGrandTotal} onChange={set("showGrandTotal")} />
               </OptGroup>
             </div>
           </div>
@@ -415,39 +442,25 @@ export default function QuotePrintPage() {
             );
           })}
 
-          {/* Summary */}
-          {opts.showSummaryTable && (
-            <div style={{ marginTop: 8, marginBottom: 24 }}>
-              <div style={{ fontSize: 11, fontWeight: 800, color: "#0d2e5e", marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.5 }}>Summary</div>
-              <div style={{ border: "1px solid #e2e8f0" }}>
-                <div style={{ display: "flex", background: "#f1f5f9", padding: "7px 12px", borderBottom: "1px solid #e2e8f0" }}>
-                  <span style={{ flex: 1, fontSize: 11, fontWeight: 700, color: "#374151" }}>Section</span>
-                  <span style={{ width: 100, textAlign: "right" as const, fontSize: 11, fontWeight: 700, color: "#374151" }}>Materials</span>
-                  <span style={{ width: 100, textAlign: "right" as const, fontSize: 11, fontWeight: 700, color: "#374151" }}>Labour</span>
-                  <span style={{ width: 100, textAlign: "right" as const, fontSize: 11, fontWeight: 700, color: "#374151" }}>Other</span>
-                  <span style={{ width: 110, textAlign: "right" as const, fontSize: 11, fontWeight: 700, color: "#374151" }}>Section Total</span>
-                </div>
-                {sectionTotals.map(({ sec, t }, i) => (
-                  <div key={sec.id} style={{ display: "flex", padding: "7px 12px", background: i % 2 === 0 ? "#fff" : "#fafafa", borderBottom: "1px solid #f1f5f9" }}>
-                    <span style={{ flex: 1, fontSize: 12, color: "#374151" }}>{sec.name}</span>
-                    <span style={{ width: 100, textAlign: "right" as const, fontSize: 12, color: "#374151" }}>{t.matSell > 0 ? fmt$(t.matSell) : "—"}</span>
-                    <span style={{ width: 100, textAlign: "right" as const, fontSize: 12, color: "#374151" }}>{(t.elecSell+t.progSell+t.travelSell)>0 ? fmt$(t.elecSell+t.progSell+t.travelSell) : "—"}</span>
-                    <span style={{ width: 100, textAlign: "right" as const, fontSize: 12, color: "#374151" }}>{t.otherSell>0?fmt$(t.otherSell):"—"}</span>
-                    <span style={{ width: 110, textAlign: "right" as const, fontSize: 12, fontWeight: 700, color: "#0d2e5e" }}>{t.sectionSell>0?fmt$(t.sectionSell):"—"}</span>
-                  </div>
-                ))}
-                {opts.showGrandTotal && (
-                  <div style={{ display: "flex", padding: "10px 12px", background: "#0d2e5e" }}>
-                    <span style={{ flex: 1, fontSize: 13, fontWeight: 800, color: "#fff" }}>TOTAL</span>
-                    <span style={{ width: 100, textAlign: "right" as const, fontSize: 12, fontWeight: 700, color: "#fff" }}>{summary.matSell>0?fmt$(summary.matSell):"—"}</span>
-                    <span style={{ width: 100, textAlign: "right" as const, fontSize: 12, fontWeight: 700, color: "#fff" }}>{(summary.elecSell+summary.progSell+summary.travelSell)>0?fmt$(summary.elecSell+summary.progSell+summary.travelSell):"—"}</span>
-                    <span style={{ width: 100, textAlign: "right" as const, fontSize: 12, fontWeight: 700, color: "#fff" }}>{summary.otherSell>0?fmt$(summary.otherSell):"—"}</span>
-                    <span style={{ width: 110, textAlign: "right" as const, fontSize: 15, fontWeight: 900, color: "#fff" }}>{fmt$(summary.totalSell)}</span>
-                  </div>
-                )}
+          {/* Totals */}
+          {opts.showGrandTotal && (() => {
+            const subtotal = summary.totalSell;
+            const taxAmt   = subtotal * customerTaxRate;
+            const grandTotal = subtotal + taxAmt;
+            const totRow = (label: string, value: string, bold?: boolean, topBorder?: string) => (
+              <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderTop: topBorder || "1px solid #f3f4f6" }}>
+                <span style={{ fontSize: 13, fontWeight: bold ? 800 : 500, color: bold ? "#0d2e5e" : "#374151" }}>{label}</span>
+                <span style={{ fontSize: 13, fontWeight: bold ? 900 : 600, color: bold ? "#0d2e5e" : "#111827" }}>{value}</span>
               </div>
-            </div>
-          )}
+            );
+            return (
+              <div style={{ marginTop: 16, marginBottom: 24, maxWidth: 340, marginLeft: "auto" }}>
+                {totRow("Taxable Subtotal", fmt$(subtotal), false, "none")}
+                {totRow(`Tax${customerTaxRate > 0 ? ` (${(customerTaxRate * 100).toFixed(0)}%)` : " — Exempt"}`, fmt$(taxAmt))}
+                {totRow("Grand Total", fmt$(grandTotal), true, "2px solid #0d2e5e")}
+              </div>
+            );
+          })()}
 
           {/* Terms */}
           <div style={{ paddingTop: 14, borderTop: "1px solid #e5e7eb", fontSize: 11, color: "#9ca3af", lineHeight: 1.7 }}>
