@@ -82,60 +82,70 @@ function parseOrderDetails(lines: string[]): ParsedOrder {
     if (gm) result.total = parseFloat(gm[1].replace(/,/g, ""));
   }
 
-  // Items: detect by $X.XX / EA QtyOrdered BackorderQty ShipQty pattern
-  // Gerrie columns: Price / EA | QTY Ordered | QTY Backordered | QTY Shipping | Subtotal
-  // We capture QTY Ordered only — invoice qty is used as received, ship qty ignored.
+  // Items: web-printed PDFs from Gerrie put each cell on its own line.
+  // Strategy: find every "Item #" marker, then scan a context window around it
+  // to locate price ($X.XX / EA), QTY Ordered, and description.
+  // We capture QTY Ordered only — ship qty intentionally ignored.
   for (let li = 0; li < lines.length; li++) {
     const line = lines[li];
+    if (!/item\s*#/i.test(line)) continue;
 
-    // Require all four numeric columns after / EA so we don't false-match other lines
-    const priceM = line.match(/\$([\d,]+\.\d{2})\s*\/\s*EA\s+(\d+)\s+\d+\s+\d+/i);
-    if (!priceM) continue;
-
-    const unitPrice = parseFloat(priceM[1].replace(/,/g, ""));
-    const qty = parseInt(priceM[2], 10); // QTY Ordered — ship qty intentionally ignored
-    if (qty === 0) continue;
-
-    // Last dollar amount on line = item subtotal
-    const allAmts = [...line.matchAll(/\$([\d,]+\.\d{2})/g)];
-    const total = allAmts.length > 1
-      ? parseFloat(allAmts[allAmts.length - 1][1].replace(/,/g, ""))
-      : Math.round(unitPrice * qty * 100) / 100;
-
-    // Description prefix (text before the price on same line)
-    const pricePos = line.indexOf("$" + priceM[1]);
-    const descFromLine = pricePos > 0 ? line.slice(0, pricePos).trim() : "";
-
-    // Part # from nearest "Item #" line (search li-3 to li+4)
+    // Part # — same line ("Item # 1734-OA4") or next line
     let partNo = "";
-    for (let j = li - 3; j <= li + 4; j++) {
-      if (j < 0 || j >= lines.length) continue;
-      if (!/item\s*#/i.test(lines[j])) continue;
-      // Value on same line after "Item #"
-      const slM = lines[j].match(/item\s*#:?\s+(\S+)/i);
-      if (slM) { partNo = slM[1]; break; }
-      // Value on next line (first token)
-      const nxt = (lines[j + 1] || "").trim();
-      if (nxt) { partNo = nxt.split(/\s+/)[0]; break; }
+    const slM = line.match(/item\s*#:?\s+(\S+)/i);
+    if (slM) {
+      partNo = slM[1];
+    } else {
+      const nxt = (lines[li + 1] || "").trim();
+      if (nxt && !/^(mfr|price|qty|status|promised|required)/i.test(nxt)) {
+        partNo = nxt.split(/\s+/)[0];
+      }
+    }
+    if (!partNo || partNo.length < 3 || /^(message|mfr)/i.test(partNo)) continue;
+    if (result.items.find(i => i.partNo === partNo)) continue;
+
+    // Scan a window of 14 lines before "Item #" for price and qty ordered
+    const winStart = Math.max(0, li - 14);
+    const win = lines.slice(winStart, li + 1);
+
+    // Price: "$X.XX / EA" anywhere in window
+    let unitPrice = 0;
+    for (const wl of win) {
+      const m = wl.match(/\$([\d,]+\.\d{2})\s*\/\s*EA/i);
+      if (m) { unitPrice = parseFloat(m[1].replace(/,/g, "")); break; }
     }
 
-    // Fallback: last token of description that looks like a part #
-    if (!partNo && descFromLine) {
-      const tokens = descFromLine.split(/\s+/).reverse();
-      const t = tokens.find(tok => /^[A-Z0-9][A-Z0-9\-]+$/i.test(tok) && tok.length >= 3);
-      if (t) partNo = t;
+    // QTY Ordered: label on one line, value on the next — or same line
+    let qty = 0;
+    for (let j = 0; j < win.length; j++) {
+      const sameLine = win[j].match(/qty\s+ordered\s+(\d+)/i);
+      if (sameLine) { qty = parseInt(sameLine[1], 10); break; }
+      if (/qty\s+ordered/i.test(win[j])) {
+        const nextVal = (win[j + 1] || "").trim().match(/^(\d+)$/);
+        if (nextVal) { qty = parseInt(nextVal[1], 10); break; }
+      }
     }
 
-    if (!partNo || partNo.length < 3 || partNo.toLowerCase() === "message") continue;
+    if (unitPrice === 0 || qty === 0) continue;
 
-    // Strip part # from end of description if it's duplicated there
-    let description = descFromLine;
+    // Subtotal: last standalone "$X.XX" in window (not the unit price itself)
+    let total = Math.round(unitPrice * qty * 100) / 100;
+    for (let j = win.length - 1; j >= 0; j--) {
+      const m = win[j].match(/^\$([\d,]+\.\d{2})$/);
+      if (m) {
+        const v = parseFloat(m[1].replace(/,/g, ""));
+        if (v !== unitPrice) { total = v; break; }
+      }
+    }
+
+    // Description: line that contains the part # (e.g. "Allen-Bradley 1734-OA4")
+    let description = "";
+    for (const wl of win) {
+      if (wl.includes(partNo) && wl.includes(" ")) { description = wl.trim(); break; }
+    }
     if (description.toLowerCase().endsWith(partNo.toLowerCase())) {
       description = description.slice(0, -partNo.length).trim();
     }
-
-    // Avoid duplicate part numbers
-    if (result.items.find(i => i.partNo === partNo)) continue;
 
     result.items.push({ partNo, description, qty, unitPrice, total, uom: "EA", include: true });
   }
@@ -193,6 +203,7 @@ export default function ImportPackingSlipModal({
   const [parsing, setParsing]   = useState(false);
   const [order, setOrder]       = useState<ParsedOrder | null>(null);
   const [items, setItems]       = useState<SlipItem[]>([]);
+  const [rawLines, setRawLines] = useState<string[]>([]);
   const [saving, setSaving]     = useState(false);
   const [error, setError]       = useState<string | null>(null);
 
@@ -219,6 +230,7 @@ export default function ImportPackingSlipModal({
     setError(null); setParsing(true);
     try {
       const lines = await extractLines(f);
+      setRawLines(lines);
       const parsed = parseOrderDetails(lines);
       setOrder(parsed);
       setItems(parsed.items);
@@ -320,6 +332,21 @@ export default function ImportPackingSlipModal({
             )}
 
             {/* Items table */}
+            {items.length === 0 && (
+              <div style={{ marginBottom: 16, background: "#fffbeb", border: "1px solid #fcd34d", borderRadius: 8, overflow: "hidden" }}>
+                <div style={{ padding: "12px 14px", display: "flex", gap: 10, alignItems: "flex-start" }}>
+                  <span style={{ fontSize: 16 }}>⚠️</span>
+                  <div style={{ fontSize: 13, color: "#92400e", fontWeight: 600 }}>No items detected. The packing slip will not update any PO items.</div>
+                </div>
+                <details style={{ borderTop: "1px solid #fcd34d" }}>
+                  <summary style={{ padding: "8px 14px", fontSize: 12, color: "#92400e", cursor: "pointer", userSelect: "none" }}>Show extracted PDF text (for debugging)</summary>
+                  <pre style={{ margin: 0, padding: "10px 14px", fontSize: 11, color: "#78350f", background: "#fefce8", whiteSpace: "pre-wrap", wordBreak: "break-all", maxHeight: 300, overflowY: "auto" }}>
+                    {rawLines.join("\n")}
+                  </pre>
+                </details>
+              </div>
+            )}
+
             {items.length > 0 ? (
               <div style={{ border: "1px solid #e5e7eb", borderRadius: 8, overflow: "hidden", marginBottom: 16 }}>
                 <div style={{ padding: "10px 14px", background: "#f9fafb", borderBottom: "1px solid #e5e7eb", display: "flex", alignItems: "center", gap: 8 }}>
@@ -355,10 +382,6 @@ export default function ImportPackingSlipModal({
                     ))}
                   </tbody>
                 </table>
-              </div>
-            ) : (
-              <div style={{ marginBottom: 16, padding: "12px 14px", background: "#fffbeb", border: "1px solid #fcd34d", borderRadius: 8, fontSize: 13, color: "#92400e", fontWeight: 600 }}>
-                ⚠️ No items detected. Expand raw text to debug.
               </div>
             )}
 
