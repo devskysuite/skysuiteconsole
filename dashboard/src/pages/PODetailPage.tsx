@@ -3,6 +3,7 @@ import { arrayUnion, collection, doc, getDoc, getDocs, onSnapshot, query, update
 import { auth, db } from "../firebase";
 import { Link, useParams } from "react-router-dom";
 import ImportBillModal from "./ImportBillModal";
+import ImportPackingSlipModal from "./ImportPackingSlipModal";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 interface POItem {
@@ -417,6 +418,7 @@ export default function PODetailPage() {
   const [employees, setEmployees] = useState<string[]>([]);
   const [editingItem, setEditingItem] = useState<POItem | null>(null);
   const [showImport, setShowImport] = useState(false);
+  const [showSlipImport, setShowSlipImport] = useState(false);
   const firstEditField = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -513,6 +515,13 @@ export default function PODetailPage() {
           poNumber={po.poNumber}
           vendor={po.vendor}
           onClose={() => setShowImport(false)}
+        />
+      )}
+      {showSlipImport && (
+        <ImportPackingSlipModal
+          poId={po.id}
+          poNumber={po.poNumber}
+          onClose={() => setShowSlipImport(false)}
         />
       )}
 
@@ -737,6 +746,9 @@ export default function PODetailPage() {
                   </table>
                 </div>
                 <AddItemRow poId={po.id} jobNumber={po.jobNumber} />
+                <button onClick={() => setShowSlipImport(true)} style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 6, background: "#f0fdf4", border: "1px solid #86efac", borderRadius: 7, padding: "7px 14px", fontSize: 12, fontWeight: 700, color: "#166534", cursor: "pointer" }}>
+                  📦 Import Packing Slip
+                </button>
               </div>
 
               {/* Totals card */}
