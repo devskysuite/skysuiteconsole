@@ -84,12 +84,26 @@ function parseInvoice(lines: string[]): ParsedInvoice {
       if (poMatch) result.poNumber = poMatch[1];
     }
   }
-  const dateMatch = full.match(/(?:invoice\s+)?date\s*:?\s*(\d{1,4}[\/\-]\d{1,2}[\/\-]\d{2,4})/i);
-  if (dateMatch) {
-    const raw = dateMatch[1]; const parts = raw.split(/[\/\-]/);
-    if (parts[0].length === 4) result.date = `${parts[0]}-${parts[1].padStart(2,"0")}-${parts[2].padStart(2,"0")}`;
-    else if (parts[2].length === 4) result.date = `${parts[2]}-${parts[1].padStart(2,"0")}-${parts[0].padStart(2,"0")}`;
-    else result.date = raw;
+  // Date: try inline first, then look at lines following a date-label
+  function normalizeDate(raw: string): string {
+    const parts = raw.split(/[\/\-]/);
+    if (parts.length !== 3) return raw;
+    if (parts[0].length === 4) return `${parts[0]}-${parts[1].padStart(2,"0")}-${parts[2].padStart(2,"0")}`;
+    if (parts[2].length === 4) return `${parts[2]}-${parts[1].padStart(2,"0")}-${parts[0].padStart(2,"0")}`;
+    return raw;
+  }
+  const dateInline = full.match(/(?:invoice\s+)?date\s*:?\s*(\d{1,4}[\/\-]\d{1,2}[\/\-]\d{2,4})/i);
+  if (dateInline) {
+    result.date = normalizeDate(dateInline[1]);
+  } else {
+    // date label and value may be on separate lines
+    const dateLabelIdx = lines.findIndex(l => /\bdate\b/i.test(l) && !/description|update|candidate/i.test(l));
+    if (dateLabelIdx >= 0) {
+      for (let k = dateLabelIdx; k <= dateLabelIdx + 3 && k < lines.length; k++) {
+        const m = lines[k].match(/(\d{1,4}[\/\-]\d{1,2}[\/\-]\d{2,4})/);
+        if (m) { result.date = normalizeDate(m[1]); break; }
+      }
+    }
   }
   if (lines.length > 0) result.vendor = lines[0];
   for (const line of lines) {
@@ -185,21 +199,33 @@ async function findMatchingPOs(rawPoField: string): Promise<POStub[]> {
 async function getNextBillNumber(): Promise<string> {
   const settingsRef = doc(db, "settings", "poSettings");
   let next = 10001;
-  await runTransaction(db, async tx => {
-    const snap = await tx.get(settingsRef);
-    const cur = snap.exists() ? (snap.data().nextBillNumber ?? 10001) : 10001;
-    next = cur;
-    tx.set(settingsRef, { nextBillNumber: cur + 1 }, { merge: true });
-  });
+  try {
+    await runTransaction(db, async tx => {
+      const snap = await tx.get(settingsRef);
+      const cur = snap.exists() ? (snap.data().nextBillNumber ?? 10001) : 10001;
+      next = cur;
+      tx.set(settingsRef, { nextBillNumber: cur + 1 }, { merge: true });
+    });
+  } catch {
+    // fallback: timestamp-based 5-digit number
+    next = parseInt(String(Date.now()).slice(-5), 10);
+  }
   return String(next).padStart(5, "0");
 }
 
 // ── Save ───────────────────────────────────────────────────────────────────────
 async function saveImport(targetPoId: string, invoice: ParsedInvoice, editLines: InvoiceLine[], file: File) {
   const billNumber = await getNextBillNumber();
-  const sRef = storageRef(storage, `bills/${billNumber}.pdf`);
-  await uploadBytes(sRef, file, { contentType: "application/pdf" });
-  const pdfUrl = await getDownloadURL(sRef);
+
+  // PDF upload is best-effort — bill is saved even if storage fails
+  let pdfUrl = "";
+  try {
+    const sRef = storageRef(storage, `bills/${billNumber}.pdf`);
+    await uploadBytes(sRef, file, { contentType: "application/pdf" });
+    pdfUrl = await getDownloadURL(sRef);
+  } catch (e) {
+    console.warn("PDF upload failed — saving bill without attachment:", e);
+  }
   const bill = {
     id: crypto.randomUUID(), billNumber,
     receiptNumber: invoice.invoiceNumber, vendor: invoice.vendor,
