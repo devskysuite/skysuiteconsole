@@ -115,13 +115,33 @@ function parseInvoice(lines: string[]): ParsedInvoice {
     }
   }
   if (lines.length > 0) result.vendor = lines[0];
-  for (const line of lines) {
-    const subMatch = line.match(/sub\s*total\s+\$?\s*(\d[\d,]*\.?\d*)/i);
-    if (subMatch) { result.subtotal = parseFloat(subMatch[1].replace(/,/g, "")); continue; }
-    const taxMatch = line.match(/^(hst|gst|pst|qst|tax(?:\s*\(?\d+(?:\.\d+)?%?\)?)?)\s+\$?\s*(\d[\d,]*\.\d+)/i);
-    if (taxMatch) { result.taxLabel = taxMatch[1].replace(/\s+/g," ").toUpperCase(); result.taxAmount = parseFloat(taxMatch[2].replace(/,/g, "")); continue; }
-    const totalMatch = line.match(/^(?:grand\s+)?total\s+\$?\s*(\d[\d,]*\.\d+)/i);
-    if (totalMatch && !line.match(/sub\s*total/i)) { result.grandTotal = parseFloat(totalMatch[1].replace(/,/g, "")); continue; }
+  // Extract the last dollar amount on a line (right-aligned invoice values)
+  const getLastAmt = (line: string): number | null => {
+    const matches = [...line.matchAll(/\$?\s*([\d,]+\.\d{2})/g)];
+    if (!matches.length) return null;
+    return parseFloat(matches[matches.length - 1][1].replace(/,/g, ""));
+  };
+  for (let li = 0; li < lines.length; li++) {
+    const line = lines[li];
+    const next = lines[li + 1] || "";
+    if (/sub[\s\-]?total|subtotal/i.test(line) && !/grand/i.test(line)) {
+      const amt = getLastAmt(line) ?? getLastAmt(next);
+      if (amt !== null) result.subtotal = amt;
+      continue;
+    }
+    if (/^(hst|gst|pst|qst|tax(?:\s*\(?\d+(?:\.\d+)?%?\)?)?)\b/i.test(line)) {
+      const amt = getLastAmt(line) ?? getLastAmt(next);
+      if (amt !== null) {
+        result.taxLabel = line.split(/\s+/)[0].replace(/\s+/g, " ").toUpperCase();
+        result.taxAmount = amt;
+      }
+      continue;
+    }
+    if (/\btotal\b/i.test(line) && !/sub[\s\-]?total|subtotal/i.test(line)) {
+      const amt = getLastAmt(line) ?? getLastAmt(next);
+      if (amt !== null) result.grandTotal = amt;
+      continue;
+    }
   }
   const UOMS = /^(EA|EACH|PC|PCS|LB|FT|M|L|KG|BOX|RL|BAG|HR|SET|PR|CS|GAL|TON|YD|ROLL|CAN|PAIR)$/i;
   const skipP = /^(ship|bill|invoice|date|p\.?o|purchase|customer|sub|total|hst|gst|tax|page|line|qty|description|unit|amount|price|receipt)/i;
