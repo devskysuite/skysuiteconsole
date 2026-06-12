@@ -121,16 +121,50 @@ function autoMatchLines(lines: InvoiceLine[], poItems: POItem[]): InvoiceLine[] 
 }
 
 // ── PO Lookup ─────────────────────────────────────────────────────────────────
+// Gerrie format: 26-15698-{PO#} — always use the LAST numeric segment first.
+// PO numbers may be stored as strings or integers in Firestore, so query both.
 async function findMatchingPOs(rawPoField: string): Promise<POStub[]> {
   if (!rawPoField) return [];
-  const segs = Array.from(new Set(rawPoField.match(/\d{4,8}/g) || []));
-  if (segs.length === 0) return [];
+
+  // Split on non-digit runs and take segments of 4–8 digits
+  const allSegs = (rawPoField.match(/\d{4,8}/g) || []);
+  if (allSegs.length === 0) return [];
+
+  // Prioritise: last segment first, then remaining (deduped)
+  const lastSeg = allSegs[allSegs.length - 1];
+  const otherSegs = Array.from(new Set(allSegs.slice(0, -1)));
+  const ordered = [lastSeg, ...otherSegs];
+
+  // Build two candidate arrays: strings and numbers (Firestore may store either)
+  const strCandidates = Array.from(new Set(ordered));
+  const numCandidates = strCandidates.map(s => parseInt(s, 10)).filter(n => !isNaN(n));
+
+  const seen = new Set<string>();
   const results: POStub[] = [];
-  for (let i = 0; i < segs.length; i += 30) {
-    const chunk = segs.slice(i, i + 30);
-    const snap = await getDocs(query(collection(db, "purchaseOrders"), where("poNumber", "in", chunk)));
-    snap.forEach(d => results.push({ id: d.id, poNumber: d.data().poNumber, vendor: d.data().vendor || "", jobNumber: d.data().jobNumber || "", status: d.data().status || "" }));
+
+  async function runQuery(candidates: (string | number)[]) {
+    for (let i = 0; i < candidates.length; i += 30) {
+      const chunk = candidates.slice(i, i + 30);
+      const snap = await getDocs(query(collection(db, "purchaseOrders"), where("poNumber", "in", chunk)));
+      snap.forEach(d => {
+        if (!seen.has(d.id)) {
+          seen.add(d.id);
+          results.push({ id: d.id, poNumber: String(d.data().poNumber), vendor: d.data().vendor || "", jobNumber: d.data().jobNumber || "", status: d.data().status || "" });
+        }
+      });
+    }
   }
+
+  await runQuery(strCandidates);
+  await runQuery(numCandidates);
+
+  // Sort so the last-segment match comes first
+  results.sort((a, b) => {
+    const aIsLast = String(a.poNumber) === lastSeg ? 0 : 1;
+    const bIsLast = String(b.poNumber) === lastSeg ? 0 : 1;
+    return aIsLast - bIsLast;
+  });
+
   return results;
 }
 
