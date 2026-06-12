@@ -451,6 +451,7 @@ export default function QuoteDetailPage() {
         <QuoteScopeTab
           quoteId={quoteId!}
           pricing={migratePricing((quote as any).pricing)}
+          customerId={quote.customerId}
         />
       )}
 

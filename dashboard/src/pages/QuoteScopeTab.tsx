@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { addDoc, collection, deleteDoc, doc, onSnapshot, orderBy, query, updateDoc } from "firebase/firestore";
+import { addDoc, collection, deleteDoc, doc, getDoc, onSnapshot, orderBy, query, updateDoc } from "firebase/firestore";
 import { db } from "../firebase";
 import { calcSectionTotals, labourRate, migratePricing, PricingData } from "./QuotePricingTab";
 import { useIsAdmin } from "../hooks/useIsAdmin";
@@ -168,7 +168,7 @@ function SectionLineItems({ sec, pricing }: { sec: PricingData["sections"][0]; p
 }
 
 // ── Main component ─────────────────────────────────────────────────────────────
-export default function QuoteScopeTab({ quoteId, pricing: raw }: { quoteId: string; pricing: PricingData }) {
+export default function QuoteScopeTab({ quoteId, pricing: raw, customerId }: { quoteId: string; pricing: PricingData; customerId?: string }) {
   const isAdmin = useIsAdmin();
   const [p, setP] = useState<PricingData>(() => migratePricing(raw));
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle");
@@ -177,6 +177,7 @@ export default function QuoteScopeTab({ quoteId, pricing: raw }: { quoteId: stri
   const [newPresetName, setNewPresetName] = useState("");
   const [savingPreset, setSavingPreset] = useState(false);
   const [loadMenuOpen, setLoadMenuOpen] = useState<string | null>(null);
+  const [customerTaxRate, setCustomerTaxRate] = useState<number | null>(null);
   const timers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const savedTimer = useRef<ReturnType<typeof setTimeout>>();
 
@@ -184,6 +185,16 @@ export default function QuoteScopeTab({ quoteId, pricing: raw }: { quoteId: stri
     const q = query(collection(db, "scopePresets"), orderBy("name"));
     return onSnapshot(q, snap => setPresets(snap.docs.map(d => ({ id: d.id, ...d.data() } as ScopePreset))));
   }, []);
+
+  useEffect(() => {
+    if (!customerId) return;
+    getDoc(doc(db, "customers", customerId)).then(snap => {
+      if (!snap.exists()) return;
+      const taxCode: string = (snap.data() as any).taxCode || "";
+      const match = taxCode.match(/\((\d+(?:\.\d+)?)%\)/);
+      if (match) setCustomerTaxRate(parseFloat(match[1]) / 100);
+    });
+  }, [customerId]);
 
   const save = useCallback(async (data: PricingData) => {
     setSaveState("saving");
@@ -345,7 +356,7 @@ export default function QuoteScopeTab({ quoteId, pricing: raw }: { quoteId: stri
       {/* Totals summary */}
       {p.sections.length > 0 && (() => {
         const subtotal = p.sections.reduce((sum, sec) => sum + calcSectionTotals(sec, p.settings).sectionSell, 0);
-        const taxRate = p.settings.taxRate ?? 0.265;
+        const taxRate = customerTaxRate ?? 0;
         const taxAmt = subtotal * taxRate;
         const grandTotal = subtotal + taxAmt;
         const row = (label: string, value: string, bold?: boolean, topBorder?: string): React.ReactNode => (
@@ -357,7 +368,7 @@ export default function QuoteScopeTab({ quoteId, pricing: raw }: { quoteId: stri
         return (
           <div style={{ background: "#fff", borderRadius: 12, border: "1px solid #e5e7eb", padding: "8px 20px 4px" }}>
             {row("Taxable Subtotal", fmt$(subtotal), false, "none")}
-            {row(`HST / Tax (${(taxRate * 100).toFixed(1)}%)`, fmt$(taxAmt))}
+            {row(`Tax${taxRate > 0 ? ` (${(taxRate * 100).toFixed(0)}%)` : " — Exempt"}`, fmt$(taxAmt))}
             {row("Grand Total", fmt$(grandTotal), true, "2px solid #0d2e5e")}
           </div>
         );
