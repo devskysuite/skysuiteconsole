@@ -163,11 +163,6 @@ function SectionLineItems({ sec, pricing }: { sec: PricingData["sections"][0]; p
         );
       })()}
 
-      {/* Section total */}
-      <div style={{ display: "flex", justifyContent: "flex-end", borderTop: "2px solid #0d2e5e", marginTop: 8, paddingTop: 8 }}>
-        <span style={{ fontSize: 13, fontWeight: 800, color: "#0d2e5e", marginRight: 12 }}>Section Total</span>
-        <span style={{ fontSize: 13, fontWeight: 900, color: "#0d2e5e", width: 100, textAlign: "right" }}>{fmt$(sectionSell)}</span>
-      </div>
     </div>
   );
 }
@@ -328,6 +323,14 @@ export default function QuoteScopeTab({ quoteId, pricing: raw }: { quoteId: stri
 
               {/* Line items from Overview */}
               <SectionLineItems sec={sec} pricing={p} />
+
+              {/* Section total */}
+              {sectionSell > 0 && (
+                <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", borderTop: "2px solid #1e40af", marginTop: 12, paddingTop: 10, gap: 12 }}>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: "#374151" }}>Section Total</span>
+                  <span style={{ fontSize: 14, fontWeight: 900, color: "#1e40af", minWidth: 110, textAlign: "right" }}>{fmt$(sectionSell)}</span>
+                </div>
+              )}
             </div>
           </div>
         );
@@ -352,13 +355,8 @@ export default function QuoteScopeTab({ quoteId, pricing: raw }: { quoteId: stri
           </div>
         );
         return (
-          <div style={{ background: "#fff", borderRadius: 12, border: "1px solid #e5e7eb", padding: "4px 20px 4px" }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase" as const, letterSpacing: 0.5, padding: "12px 0 4px" }}>Quote Summary</div>
-            {p.sections.map(sec => {
-              const { sectionSell } = calcSectionTotals(sec, p.settings);
-              return row(sec.name || "Unnamed Section", fmt$(sectionSell));
-            })}
-            {row("Taxable Subtotal", fmt$(subtotal), false, "2px solid #e5e7eb")}
+          <div style={{ background: "#fff", borderRadius: 12, border: "1px solid #e5e7eb", padding: "8px 20px 4px" }}>
+            {row("Taxable Subtotal", fmt$(subtotal), false, "none")}
             {row(`HST / Tax (${(taxRate * 100).toFixed(1)}%)`, fmt$(taxAmt))}
             {row("Grand Total", fmt$(grandTotal), true, "2px solid #0d2e5e")}
           </div>
