@@ -333,6 +333,7 @@ export default function ImportBillModal({
 
   const [saving, setSaving]     = useState(false);
   const [error, setError]       = useState<string | null>(null);
+  const [rawLines, setRawLines] = useState<string[]>([]);
 
   const isGlobal = !fixedPoId;
   const targetPoId = fixedPoId || selectedPO?.id;
@@ -359,6 +360,7 @@ export default function ImportBillModal({
     setFile(f); setError(null); setParsing(true);
     try {
       const lines = await extractLines(f);
+      setRawLines(lines);
       const parsed = parseInvoice(lines);
       const matched = autoMatchLines(parsed.lines, poItems);
       setInvoice(parsed);
@@ -506,9 +508,17 @@ export default function ImportBillModal({
 
               {/* No lines warning */}
               {editLines.length === 0 && (
-                <div style={{ margin: "0 0 14px 0", padding: "12px 14px", background: "#fffbeb", border: "1px solid #fcd34d", borderRadius: 8, display: "flex", alignItems: "flex-start", gap: 10 }}>
-                  <span style={{ fontSize: 16 }}>⚠️</span>
-                  <div style={{ fontSize: 13, color: "#92400e", fontWeight: 600 }}>No line items detected. The bill record will still be saved.</div>
+                <div style={{ margin: "0 0 14px 0", background: "#fffbeb", border: "1px solid #fcd34d", borderRadius: 8, overflow: "hidden" }}>
+                  <div style={{ padding: "12px 14px", display: "flex", alignItems: "flex-start", gap: 10 }}>
+                    <span style={{ fontSize: 16 }}>⚠️</span>
+                    <div style={{ fontSize: 13, color: "#92400e", fontWeight: 600 }}>No line items detected. The bill record will still be saved.</div>
+                  </div>
+                  <details style={{ borderTop: "1px solid #fcd34d" }}>
+                    <summary style={{ padding: "8px 14px", fontSize: 12, color: "#92400e", cursor: "pointer", userSelect: "none" }}>Show extracted PDF text (for debugging)</summary>
+                    <pre style={{ margin: 0, padding: "10px 14px", fontSize: 11, color: "#78350f", background: "#fefce8", whiteSpace: "pre-wrap", wordBreak: "break-all", maxHeight: 300, overflowY: "auto" }}>
+                      {rawLines.join("\n")}
+                    </pre>
+                  </details>
                 </div>
               )}
 
