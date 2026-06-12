@@ -284,33 +284,7 @@ export default function QuoteScopeTab({ quoteId, pricing: raw, customerId }: { q
                 <span style={{ fontSize: 11, fontWeight: 700, color: "#93c5fd", textTransform: "uppercase", letterSpacing: 0.4, background: "#0d2e5e", padding: "2px 8px", borderRadius: 4 }}>Section {i + 1}</span>
                 <span style={{ fontSize: 15, fontWeight: 800, color: "#1e40af" }}>{sec.name || `Section ${i + 1}`}</span>
               </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                {sectionSell > 0 && <span style={{ fontSize: 15, fontWeight: 800, color: "#1e40af" }}>{fmt$(sectionSell)}</span>}
-                {/* Load preset */}
-                <div style={{ position: "relative" }}>
-                  <button onClick={() => setLoadMenuOpen(loadMenuOpen === sec.id ? null : sec.id)}
-                    style={{ background: "#f1f5f9", border: "1px solid #cbd5e1", color: "#374151", borderRadius: 6, padding: "4px 12px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
-                    Load Preset ▾
-                  </button>
-                  {loadMenuOpen === sec.id && (
-                    <div style={{ position: "absolute", right: 0, top: "calc(100% + 4px)", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, boxShadow: "0 4px 16px rgba(0,0,0,0.12)", minWidth: 200, zIndex: 50, overflow: "hidden" }}>
-                      {presets.length === 0 && <div style={{ padding: "12px 16px", fontSize: 12, color: "#9ca3af" }}>No presets saved yet.</div>}
-                      {presets.map(pr => (
-                        <button key={pr.id} onClick={() => applyPreset(sec.id, pr.content)}
-                          style={{ display: "block", width: "100%", textAlign: "left", padding: "10px 16px", fontSize: 13, fontWeight: 600, color: "#0d2e5e", background: "none", border: "none", borderBottom: "1px solid #f1f5f9", cursor: "pointer" }}
-                          onMouseEnter={e => (e.currentTarget.style.background = "#f8fafc")}
-                          onMouseLeave={e => (e.currentTarget.style.background = "none")}>
-                          {pr.name}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <button onClick={() => { setSavePresetModal({ sectionId: sec.id, content: sec.scopeOfWork || "" }); setNewPresetName(""); }}
-                  style={{ background: "#f1f5f9", border: "1px solid #cbd5e1", color: "#374151", borderRadius: 6, padding: "4px 12px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
-                  Save as Preset
-                </button>
-              </div>
+              {sectionSell > 0 && <span style={{ fontSize: 15, fontWeight: 800, color: "#1e40af" }}>{fmt$(sectionSell)}</span>}
             </div>
 
             <div style={{ padding: "16px 20px" }}>
