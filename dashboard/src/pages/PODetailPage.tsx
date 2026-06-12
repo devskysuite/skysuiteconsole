@@ -37,11 +37,12 @@ const TAX_RATES      = ["None","GST (5%)","HST ON (13%)","HST BC (12%)","PST (7%
 // ── Helpers ────────────────────────────────────────────────────────────────────
 const PO_STATUSES = ["Open", "Pending", "Cancelled", "Draft"];
 const STATUS_COLORS: Record<string, { bg: string; color: string; border: string }> = {
-  Fulfilled: { bg: "#dcfce7", color: "#166534", border: "#86efac" },
-  Open:      { bg: "#dbeafe", color: "#1e40af", border: "#93c5fd" },
-  Pending:   { bg: "#fef3c7", color: "#92400e", border: "#fcd34d" },
-  Cancelled: { bg: "#fee2e2", color: "#991b1b", border: "#fca5a5" },
-  Draft:     { bg: "#f3f4f6", color: "#6b7280", border: "#d1d5db" },
+  Fulfilled:            { bg: "#dcfce7", color: "#166534", border: "#86efac" },
+  Open:                 { bg: "#dbeafe", color: "#1e40af", border: "#93c5fd" },
+  Pending:              { bg: "#fef3c7", color: "#92400e", border: "#fcd34d" },
+  "Waiting on Material":{ bg: "#fef9c3", color: "#854d0e", border: "#fde047" },
+  Cancelled:            { bg: "#fee2e2", color: "#991b1b", border: "#fca5a5" },
+  Draft:                { bg: "#f3f4f6", color: "#6b7280", border: "#d1d5db" },
 };
 function fmtC(n: number) { return `$${(n || 0).toLocaleString("en-CA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; }
 function fmtDate(iso: string) {
