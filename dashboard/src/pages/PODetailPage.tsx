@@ -746,9 +746,6 @@ export default function PODetailPage() {
                   </table>
                 </div>
                 <AddItemRow poId={po.id} jobNumber={po.jobNumber} />
-                <button onClick={() => setShowSlipImport(true)} style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 6, background: "#f0fdf4", border: "1px solid #86efac", borderRadius: 7, padding: "7px 14px", fontSize: 12, fontWeight: 700, color: "#166534", cursor: "pointer" }}>
-                  📦 Import Packing Slip
-                </button>
               </div>
 
               {/* Totals card */}
@@ -858,6 +855,12 @@ export default function PODetailPage() {
                   style={{ display: "flex", alignItems: "center", gap: 6, background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 7, padding: "7px 14px", fontSize: 12, fontWeight: 700, color: "#1565c0", cursor: "pointer" }}
                 >
                   📄 IMPORT INVOICE PDF
+                </button>
+                <button
+                  onClick={() => setShowSlipImport(true)}
+                  style={{ display: "flex", alignItems: "center", gap: 6, background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 7, padding: "7px 14px", fontSize: 12, fontWeight: 700, color: "#1565c0", cursor: "pointer" }}
+                >
+                  📦 IMPORT PACKING SLIP
                 </button>
               </div>
             </>
