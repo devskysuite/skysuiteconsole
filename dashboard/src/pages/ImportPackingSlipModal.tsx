@@ -82,69 +82,52 @@ function parseOrderDetails(lines: string[]): ParsedOrder {
     if (gm) result.total = parseFloat(gm[1].replace(/,/g, ""));
   }
 
-  // Items: web-printed PDFs from Gerrie put each cell on its own line.
-  // Strategy: find every "Item #" marker, then scan a context window around it
-  // to locate price ($X.XX / EA), QTY Ordered, and description.
-  // We capture QTY Ordered only — ship qty intentionally ignored.
+  // Gerrie Order Details layout (web-printed PDF):
+  // Each item ends with: "Item # MFR Part #:" on one line,
+  // then "{GERRIE_PART} {MFR_PART} Promised Date Required Date Status" on the next.
+  // Price + QTY Ordered are on a line "$X.XX / EA {QTY} ..." a few lines above.
   for (let li = 0; li < lines.length; li++) {
-    const line = lines[li];
-    if (!/item\s*#/i.test(line)) continue;
+    if (!/item\s*#/i.test(lines[li])) continue;
 
-    // Part # — same line ("Item # 1734-OA4") or next line
-    let partNo = "";
-    const slM = line.match(/item\s*#:?\s+(\S+)/i);
-    if (slM) {
-      partNo = slM[1];
-    } else {
-      const nxt = (lines[li + 1] || "").trim();
-      if (nxt && !/^(mfr|price|qty|status|promised|required)/i.test(nxt)) {
-        partNo = nxt.split(/\s+/)[0];
-      }
-    }
-    if (!partNo || partNo.length < 3 || /^(message|mfr)/i.test(partNo)) continue;
-    if (result.items.find(i => i.partNo === partNo)) continue;
+    // Part # is always on the NEXT line, first token
+    // e.g. "1734-OA4 1734-OA4 Promised Date Required Date Status"
+    const nextLine = (lines[li + 1] || "").trim();
+    const partNo = nextLine.split(/\s+/)[0];
+    if (!partNo || partNo.length < 2) continue;
+    if (/^(message|mfr|promised|required|status)/i.test(partNo)) continue;
+    if (/^\d+$/.test(partNo)) continue; // skip the placeholder "Item #\n0\nMESSAGE" block
 
-    // Scan a window of 14 lines before "Item #" for price and qty ordered
-    const winStart = Math.max(0, li - 14);
-    const win = lines.slice(winStart, li + 1);
+    // Scan 6 lines above this marker — price line is always within that window
+    const win = lines.slice(Math.max(0, li - 6), li);
 
-    // Price: "$X.XX / EA" anywhere in window
-    let unitPrice = 0;
-    for (const wl of win) {
-      const m = wl.match(/\$([\d,]+\.\d{2})\s*\/\s*EA/i);
-      if (m) { unitPrice = parseFloat(m[1].replace(/,/g, "")); break; }
-    }
-
-    // QTY Ordered: label on one line, value on the next — or same line
-    let qty = 0;
-    for (let j = 0; j < win.length; j++) {
-      const sameLine = win[j].match(/qty\s+ordered\s+(\d+)/i);
-      if (sameLine) { qty = parseInt(sameLine[1], 10); break; }
-      if (/qty\s+ordered/i.test(win[j])) {
-        const nextVal = (win[j + 1] || "").trim().match(/^(\d+)$/);
-        if (nextVal) { qty = parseInt(nextVal[1], 10); break; }
-      }
+    // Price line: "$X.XX / EA {QTY_ORDERED} [Backordered] ... ${SUBTOTAL}"
+    let unitPrice = 0, qty = 0, total = 0;
+    for (let j = win.length - 1; j >= 0; j--) {
+      const m = win[j].match(/\$([\d,]+\.\d{2})\s*\/\s*EA\s+(\d+)/i);
+      if (!m) continue;
+      unitPrice = parseFloat(m[1].replace(/,/g, ""));
+      qty = parseInt(m[2], 10);
+      // Subtotal is the last dollar amount on the same line
+      const allAmts = [...win[j].matchAll(/\$([\d,]+\.\d{2})/g)];
+      total = allAmts.length >= 2
+        ? parseFloat(allAmts[allAmts.length - 1][1].replace(/,/g, ""))
+        : Math.round(unitPrice * qty * 100) / 100;
+      break;
     }
 
     if (unitPrice === 0 || qty === 0) continue;
 
-    // Subtotal: last standalone "$X.XX" in window (not the unit price itself)
-    let total = Math.round(unitPrice * qty * 100) / 100;
-    for (let j = win.length - 1; j >= 0; j--) {
-      const m = win[j].match(/^\$([\d,]+\.\d{2})$/);
-      if (m) {
-        const v = parseFloat(m[1].replace(/,/g, ""));
-        if (v !== unitPrice) { total = v; break; }
-      }
-    }
-
-    // Description: line that contains the part # (e.g. "Allen-Bradley 1734-OA4")
+    // Description: line in the window that contains the part # with surrounding text
+    // e.g. "Allen-Bradley 1734-OA4" → strip trailing part# → "Allen-Bradley"
     let description = "";
-    for (const wl of win) {
-      if (wl.includes(partNo) && wl.includes(" ")) { description = wl.trim(); break; }
-    }
-    if (description.toLowerCase().endsWith(partNo.toLowerCase())) {
-      description = description.slice(0, -partNo.length).trim();
+    for (let j = win.length - 1; j >= 0; j--) {
+      if (win[j].includes(partNo) && win[j].trim() !== partNo) {
+        description = win[j].trim();
+        if (description.toLowerCase().endsWith(partNo.toLowerCase())) {
+          description = description.slice(0, -partNo.length).trim();
+        }
+        break;
+      }
     }
 
     result.items.push({ partNo, description, qty, unitPrice, total, uom: "EA", include: true });
