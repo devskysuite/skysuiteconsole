@@ -36,6 +36,9 @@ interface PrintOptions {
   showLabourPricing: boolean;
   showLabourQty: boolean;
   showLabourTotal: boolean;
+  timeTypeRegular: boolean;
+  timeTypeOvertime: boolean;
+  timeTypeDouble: boolean;
   showOtherCosts: boolean;
   showTravel: boolean;
   showSummaryTable: boolean;
@@ -54,6 +57,9 @@ const DEFAULT_OPTIONS: PrintOptions = {
   showLabourPricing: true,
   showLabourQty: true,
   showLabourTotal: true,
+  timeTypeRegular: true,
+  timeTypeOvertime: true,
+  timeTypeDouble: true,
   showOtherCosts: true,
   showTravel: true,
   showSummaryTable: true,
@@ -103,9 +109,15 @@ function SectionRows({ sec, pricing, opts }: { sec: QuoteSection; pricing: Prici
   const s = pricing.settings;
   const { elecLines, progLines } = calcSectionTotals(sec, s);
 
+  const allowedTypes = new Set([
+    opts.timeTypeRegular  && "Regular Time",
+    opts.timeTypeOvertime && "1.5x Overtime",
+    opts.timeTypeDouble   && "Double Time",
+  ].filter(Boolean) as string[]);
+
   const mats  = sec.materials.filter(m => (m.qty || 0) > 0 || m.description.trim() || m.partNumber.trim());
-  const elec  = elecLines.filter(l => (l.hours || 0) > 0 || l.description.trim());
-  const prog  = progLines.filter(l => (l.hours || 0) > 0 || l.description.trim());
+  const elec  = elecLines.filter(l => ((l.hours || 0) > 0 || l.description.trim()) && allowedTypes.has(l.timeType));
+  const prog  = progLines.filter(l => ((l.hours || 0) > 0 || l.description.trim()) && allowedTypes.has(l.timeType));
   const other = sec.otherCosts.filter(o => (o.cost || 0) > 0);
   const hasTrav = (sec.travel.days || 0) > 0 || (sec.travel.kmPerDay || 0) > 0;
 
@@ -190,13 +202,14 @@ function SectionRows({ sec, pricing, opts }: { sec: QuoteSection; pricing: Prici
             {opts.showMaterialPricing && <span style={{ ...HDR_LABEL, ...COL_AMT }}>Subtotal</span>}
           </div>
           {mats.map(m => {
-            const sell = (m.qty || 0) * (m.unitPrice || 0) * (1 + s.materialMarkup);
+            const unitSell = (m.unitPrice || 0) * (1 + s.materialMarkup);
+            const sell = (m.qty || 0) * unitSell;
             return (
               <div key={m.id} style={ROW}>
                 <span style={COL_DESC}>{m.description || "—"}</span>
                 <span style={{ width: 140, fontSize: 12, color: "#6b7280", flexShrink: 0 }}>{[m.partNumber, m.manufacturer].filter(Boolean).join(" · ") || "—"}</span>
-                {opts.showMaterialQty    && <span style={COL_SM}>{m.qty || 0} {m.unit || "ea"}</span>}
-                {opts.showMaterialPricing && <span style={COL_SM}>{fmt$(m.unitPrice || 0)}</span>}
+                {opts.showMaterialQty     && <span style={COL_SM}>{m.qty || 0} {m.unit || "ea"}</span>}
+                {opts.showMaterialPricing && <span style={COL_SM}>{fmt$(unitSell)}</span>}
                 {opts.showMaterialPricing && <span style={COL_AMT}>{fmt$(sell)}</span>}
               </div>
             );
@@ -312,10 +325,13 @@ export default function QuotePrintPage() {
                 <Toggle label="Section Total"   checked={opts.showSectionSubtotal} onChange={set("showSectionSubtotal")} />
               </OptGroup>
               <OptGroup title="Labour">
-                <Toggle label="Show Total"          checked={opts.showLabourTotal}    onChange={set("showLabourTotal")} />
-                <Toggle label="Show Itemized"       checked={opts.showItemizedLabour} onChange={set("showItemizedLabour")} />
-                <Toggle label="Pricing"  checked={opts.showLabourPricing} onChange={set("showLabourPricing")} indent disabled={!opts.showItemizedLabour} />
-                <Toggle label="Hours"    checked={opts.showLabourQty}     onChange={set("showLabourQty")}     indent disabled={!opts.showItemizedLabour} />
+                <Toggle label="Show Total"      checked={opts.showLabourTotal}    onChange={set("showLabourTotal")} />
+                <Toggle label="Show Itemized"   checked={opts.showItemizedLabour} onChange={set("showItemizedLabour")} />
+                <Toggle label="Pricing"         checked={opts.showLabourPricing}  onChange={set("showLabourPricing")}  indent disabled={!opts.showItemizedLabour} />
+                <Toggle label="Hours"           checked={opts.showLabourQty}      onChange={set("showLabourQty")}      indent disabled={!opts.showItemizedLabour} />
+                <Toggle label="Regular Time"    checked={opts.timeTypeRegular}    onChange={set("timeTypeRegular")}    indent disabled={!opts.showItemizedLabour} />
+                <Toggle label="1.5x Overtime"   checked={opts.timeTypeOvertime}   onChange={set("timeTypeOvertime")}   indent disabled={!opts.showItemizedLabour} />
+                <Toggle label="Double Time"     checked={opts.timeTypeDouble}     onChange={set("timeTypeDouble")}     indent disabled={!opts.showItemizedLabour} />
               </OptGroup>
               <OptGroup title="Materials">
                 <Toggle label="Show Total"          checked={opts.showMaterialsTotal}    onChange={set("showMaterialsTotal")} />
