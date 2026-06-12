@@ -60,7 +60,8 @@ input:focus, select:focus, textarea:focus {
   color: #fff !important;
   -webkit-text-fill-color: #fff !important;
 }
-.global-search-input:focus {
+.global-search-input:focus,
+.input-on-dark:focus {
   border-color: transparent !important;
   background: transparent !important;
   color: #fff !important;

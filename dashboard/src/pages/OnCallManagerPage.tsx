@@ -100,9 +100,9 @@ export default function OnCallManagerPage({ adminMode = false }: { adminMode?: b
   const today=new Date();
   const [year,setYear]=useState(today.getFullYear());
   const [month,setMonth]=useState(today.getMonth());
-  const [tab,setTab]=useState<"calendar"|"swaps"|"stats"|"setup">(adminMode ? "swaps" : "calendar");
+  const [tab,setTab]=useState<"swaps"|"stats"|"setup">("swaps");
   const [refreshKey,setRefreshKey]=useState(0);
-  function switchTab(t:"calendar"|"swaps"|"stats"|"setup"){setTab(t);setRefreshKey(k=>k+1);}
+  function switchTab(t:"swaps"|"stats"|"setup"){setTab(t);setRefreshKey(k=>k+1);}
   const [statVisMinRole,setStatVisMinRole]=useState("manager");
 
   const [accessToken,setAccessToken]=useState("");
@@ -356,12 +356,12 @@ export default function OnCallManagerPage({ adminMode = false }: { adminMode?: b
     })().catch(()=>setLoading(false));
   },[accessToken,year,month,refreshKey]);
 
-  // Auto-refresh Outlook events every 60s when calendar tab is open
+  // Auto-refresh Outlook events every 60s
   useEffect(()=>{
-    if(!connected||tab!=="calendar") return;
+    if(!connected) return;
     const id=setInterval(()=>setRefreshKey(k=>k+1),60_000);
     return ()=>clearInterval(id);
-  },[connected,tab]);
+  },[connected]);
 
   async function connectOutlook() {
     const v=genVerifier(), c=await genChallenge(v);
@@ -670,10 +670,7 @@ export default function OnCallManagerPage({ adminMode = false }: { adminMode?: b
     return ord[((since % ord.length) + ord.length) % ord.length];
   }
 
-  const eventMap:Record<string,CalEvent[]>={};
-  events.forEach(e=>{if(!eventMap[e.start])eventMap[e.start]=[];eventMap[e.start].push(e);});
   const todayStr=`${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,"0")}-${String(today.getDate()).padStart(2,"0")}`;
-  const grid=calGrid(year,month);
 
   const myPendingSwaps=swapRequests.filter(s=>s.status==="PENDING"&&(s.targetUid===currentUser?.uid||(isAdmin)));
   const pendingCount=myPendingSwaps.length;
@@ -698,7 +695,6 @@ export default function OnCallManagerPage({ adminMode = false }: { adminMode?: b
 
       {/* Tabs */}
       <div style={{display:"flex",gap:4,marginBottom:20,borderBottom:"2px solid #e5e7eb"}}>
-        <TabBtn label="Calendar" active={tab==="calendar"} onClick={()=>switchTab("calendar")}/>
         {(adminMode||pendingCount>0)&&<TabBtn label={`Swaps${pendingCount>0?` (${pendingCount})`:""}`} active={tab==="swaps"} onClick={()=>switchTab("swaps")}/>}
         {adminMode&&roleAtLeast(role||"user",statVisMinRole)&&<TabBtn label="Stat Holidays" active={tab==="stats"} onClick={()=>switchTab("stats")}/>}
         {adminMode&&isAdmin&&<TabBtn label="Setup" active={tab==="setup"} onClick={()=>switchTab("setup")}/>}
@@ -736,65 +732,6 @@ export default function OnCallManagerPage({ adminMode = false }: { adminMode?: b
           )}
           {triggerResult&&(
             <button onClick={()=>setTriggerResult(null)} style={{background:"none",border:"none",cursor:"pointer",color:"#9ca3af",fontSize:16,marginLeft:"auto",padding:0}}>✕</button>
-          )}
-        </div>
-      )}
-
-      {/* ── CALENDAR TAB ── */}
-      {tab==="calendar"&&(
-        <div style={{background:"white",borderRadius:12,padding:20,boxShadow:"0 1px 4px rgba(0,0,0,0.07)"}}>
-          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
-            <button onClick={()=>{let m=month-1,y=year;if(m<0){m=11;y--;}setMonth(m);setYear(y);}} style={navS}>◀</button>
-            <span style={{fontWeight:700,fontSize:18,color:"#0d2e5e"}}>{MONTHS[month]} {year}</span>
-            <button onClick={()=>{let m=month+1,y=year;if(m>11){m=0;y++;}setMonth(m);setYear(y);}} style={navS}>▶</button>
-          </div>
-          <div style={{display:"flex",gap:16,marginBottom:14,flexWrap:"wrap",alignItems:"center"}}>
-            <span style={{background:"#1565c0",color:"#fff",fontSize:11,fontWeight:600,padding:"2px 8px",borderRadius:99}}>On Call</span>
-            {connected&&<span style={{fontSize:11,color:"#9ca3af"}}>Click your on-call day to request a swap{isAdmin?" · tap ＋ to add an event":""}</span>}
-          </div>
-          {(loading||tokenLoading)&&<div style={{textAlign:"center",padding:40,color:"#9ca3af"}}>⏳ Loading...</div>}
-          {!tokenLoading&&!connected&&!loading&&isAdmin&&<div style={{textAlign:"center",padding:40,color:"#9ca3af"}}>Connect Outlook above to view the calendar.</div>}
-          {!tokenLoading&&!connected&&!loading&&!isAdmin&&<div style={{textAlign:"center",padding:40,color:"#9ca3af"}}>Calendar not available — ask an admin to connect Outlook.</div>}
-          {connected&&!loading&&(
-            <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:3}}>
-              {DAYS.map(d=><div key={d} style={{textAlign:"center",fontSize:12,fontWeight:700,color:"#6b7280",padding:"8px 0",textTransform:"uppercase"}}>{d}</div>)}
-              {grid.map((date,i)=>{
-                const isOnCall=(s:string)=>{const l=s.toLowerCase();return(l.includes("on call")||l.includes("oncall"))&&!l.includes("vacation");};
-                const dayEvs=date?(eventMap[date]||[]).filter(e=>isOnCall(e.subject)):[];
-                const isToday=date===todayStr;
-                const inMonth=date.slice(0,7)===`${year}-${String(month+1).padStart(2,"0")}`;
-                const myOncall=dayEvs.find(e=>getName(e.subject).toLowerCase()===currentUser?.displayName?.split(" ")[0].toLowerCase());
-                // Admin can click any on-call event; user can only click their own
-                const clickableOncall=isAdmin?dayEvs.find(e=>isOnCall(e.subject)):myOncall;
-                return(
-                  <div key={i} style={{minHeight:110,background:isToday?"#eff6ff":(inMonth?"#fafafa":"#f1f1f1"),border:isToday?"2px solid #1565c0":"1px solid #e5e7eb",borderRadius:6,padding:6,opacity:inMonth?1:0.55,cursor:clickableOncall?"pointer":"default"}}
-                    onClick={()=>{ if(clickableOncall&&connected) setSwapModal({event:clickableOncall}); }}>
-                    {date&&<>
-                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:2}}>
-                        <span style={{fontSize:inMonth?12:10,fontWeight:isToday?800:500,color:isToday?"#1565c0":"#9ca3af"}}>
-                          {inMonth ? parseInt(date.slice(8)) : `${SHORT_MONTHS[parseInt(date.slice(5,7))-1]} ${parseInt(date.slice(8))}`}
-                        </span>
-                        {isAdmin&&connected&&<button title="Add event" onClick={(e)=>{e.stopPropagation();setAddModal({date});setAddName(getRotationPerson(date));setAddType("oncall");setAddMultiDay(false);setAddEndDate(date);}} style={{background:"none",border:"none",color:"#1565c0",fontSize:14,fontWeight:700,cursor:"pointer",lineHeight:1,padding:0}}>＋</button>}
-                      </div>
-                      {dayEvs.map(ev=>{const c=pillStyle(ev.subject);const n=getName(ev.subject);return(
-                        <div key={ev.id}
-                          style={{fontSize:11,fontWeight:600,background:c.bg,color:c.color,borderRadius:4,padding:"2px 5px",marginBottom:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",cursor:isAdmin?"pointer":"default"}}
-                          onClick={isAdmin?(e)=>{e.stopPropagation();setOcActionModal({date,assignment:{id:"",date,uid:"",employeeName:n}});}:undefined}>
-                          {n}
-                        </div>);})}
-                      {date&&fsAssignments.filter(a=>a.date===date).map(a=>(
-                        <div key={a.id}
-                          onClick={e=>{e.stopPropagation();if(isAdmin)setOcActionModal({date:a.date,assignment:a});}}
-                          title={isAdmin?"Click for options":undefined}
-                          style={{fontSize:11,fontWeight:700,background:"#f5f3ff",color:"#6d28d9",border:"1px solid #ddd6fe",borderRadius:4,padding:"2px 5px",marginBottom:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",cursor:isAdmin?"pointer":"default"}}>
-                          {a.employeeName.split(" ")[0]} ✦
-                        </div>
-                      ))}
-                      {!isAdmin&&clickableOncall&&<div style={{fontSize:9,color:"#1565c0",marginTop:2}}>tap to swap</div>}
-                    </>}
-                  </div>);
-              })}
-            </div>
           )}
         </div>
       )}
