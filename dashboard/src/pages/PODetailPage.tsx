@@ -866,7 +866,7 @@ export default function PODetailPage() {
                   <button
                     onClick={async () => {
                       if (!confirm(`Clear all bills and ordered parts? This cannot be undone.`)) return;
-                      await updateDoc(doc(db, "purchaseOrders", po.id), { bills: [], items: [], subtotal: 0, taxAmount: 0, total: 0 });
+                      await updateDoc(doc(db, "purchaseOrders", po.id), { bills: [], items: [], subtotal: 0, taxAmount: 0, total: 0, status: "Open" });
                     }}
                     style={{ display: "flex", alignItems: "center", gap: 6, background: "#fff5f5", border: "1px solid #fca5a5", borderRadius: 7, padding: "7px 14px", fontSize: 12, fontWeight: 700, color: "#dc2626", cursor: "pointer", marginLeft: "auto" }}
                   >
