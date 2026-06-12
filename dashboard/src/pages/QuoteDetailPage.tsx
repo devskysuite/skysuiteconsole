@@ -218,6 +218,14 @@ export default function QuoteDetailPage() {
             <span style={{ background:"#eff6ff", color:"#1565c0", fontSize:11, fontWeight:700, padding:"4px 10px", borderRadius:6, whiteSpace:"nowrap" as const }}>
               Version {quote.version || 1} · Primary
             </span>
+            <a
+              href={`/quotes/${quoteId}/print`}
+              target="_blank"
+              rel="noreferrer"
+              style={{ background:"#1e7d3a", color:"#fff", textDecoration:"none", borderRadius:7, padding:"6px 14px", fontSize:13, fontWeight:700, display:"flex", alignItems:"center", gap:6, whiteSpace:"nowrap" as const }}
+            >
+              🖨 Generate PDF
+            </a>
             {dirty && (
               <button onClick={save} disabled={saving} style={{ background:"#1565c0", color:"#fff", border:"none", borderRadius:7, padding:"6px 16px", fontSize:13, fontWeight:700, cursor:"pointer", opacity:saving?0.6:1 }}>
                 {saving ? "Saving…" : "Save"}

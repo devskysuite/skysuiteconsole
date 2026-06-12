@@ -44,6 +44,7 @@ import PODetailPage from "./pages/PODetailPage";
 import ImportJobsPage from "./pages/ImportJobsPage";
 import QuoteDetailPage from "./pages/QuoteDetailPage";
 import QuoteSetupPage from "./pages/QuoteSetupPage";
+import QuotePrintPage from "./pages/QuotePrintPage";
 import Nav from "./components/Nav";
 import { ToastProvider } from "./components/Toast";
 import Spinner from "./components/Spinner";
@@ -102,6 +103,7 @@ export default function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/" element={<OAuthRedirect />} />
           <Route path="/tools/:toolId/print" element={<PrintLabelPage />} />
+          <Route path="/quotes/:quoteId/print" element={<QuotePrintPage />} />
           <Route
             path="/*"
             element={
