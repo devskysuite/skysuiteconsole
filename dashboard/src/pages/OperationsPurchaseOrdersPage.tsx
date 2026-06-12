@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { collection, doc, getDoc, onSnapshot, orderBy, query, setDoc } from "firebase/firestore";
 import { db } from "../firebase";
 import { Link } from "react-router-dom";
+import ImportBillModal from "./ImportBillModal";
 
 interface PO {
   id: string;
@@ -118,6 +119,7 @@ export default function OperationsPurchaseOrdersPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch]   = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
+  const [showImport, setShowImport] = useState(false);
 
   useEffect(() => {
     const unsub = onSnapshot(
@@ -149,6 +151,7 @@ export default function OperationsPurchaseOrdersPage() {
 
   return (
     <div style={{ background: "#f9fafb", minHeight: "calc(100vh - 96px)", padding: "28px 32px" }}>
+      {showImport && <ImportBillModal onClose={() => setShowImport(false)} />}
       <div style={{ maxWidth: 1300, margin: "0 auto" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24 }}>
           <div>
@@ -156,6 +159,9 @@ export default function OperationsPurchaseOrdersPage() {
             <div style={{ fontSize: 13, color: "#6b7280", marginTop: 4 }}>{filtered.length} of {pos.length} POs — {fmtC(grandTotal)} total</div>
           </div>
           <div style={{ display: "flex", gap: 10 }}>
+            <button onClick={() => setShowImport(true)} style={{ background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, color: "#1565c0", cursor: "pointer" }}>
+              📄 Import Invoice PDF
+            </button>
             <select
               value={statusFilter}
               onChange={e => setStatusFilter(e.target.value)}
