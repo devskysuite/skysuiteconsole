@@ -1,6 +1,11 @@
 import { useEffect, useState } from "react";
-import { addDoc, collection, doc, getDocs, query, runTransaction, where } from "firebase/firestore";
+import { addDoc, collection, doc, getDocs, getDoc, query, runTransaction, where } from "firebase/firestore";
 import { auth, db } from "../firebase";
+
+function resolveDefaultPricebook(books: { name: string; year?: number | null; isDefault?: boolean }[]): string {
+  const cy = new Date().getFullYear();
+  return (books.find(b => b.year === cy) || books.find(b => b.isDefault) || books[0])?.name || "";
+}
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface PropertyCtx {
@@ -133,13 +138,18 @@ export default function CreateJobModal({ property, onClose, onCreated }: Props) 
       }).catch(() => {});
     }
 
-    getDocs(collection(db, "pricebooks")).then(snap => {
+    getDocs(collection(db, "pricebooks")).then(async snap => {
       const books = snap.docs
-        .map(d => ({ id: d.id, name: d.data().name as string, isDefault: d.data().isDefault as boolean }))
+        .map(d => ({ id: d.id, name: d.data().name as string, year: d.data().year as number | null, isDefault: d.data().isDefault as boolean }))
         .sort((a, b) => a.name.localeCompare(b.name));
       setPricebooks(books);
-      const def = books.find(b => b.isDefault);
-      if (def) setForm(f => f.pricebook ? f : { ...f, pricebook: def.name });
+      let customerPricebook = "";
+      if (property.customerId) {
+        const cSnap = await getDoc(doc(db, "customers", property.customerId));
+        customerPricebook = (cSnap.data()?.pricebook as string) || "";
+      }
+      const fallback = resolveDefaultPricebook(books);
+      setForm(f => f.pricebook ? f : { ...f, pricebook: customerPricebook || fallback });
     }).catch(() => {});
 
     getDocs(query(collection(db, "users"), where("showInDispatch", "==", true))).then(snap => {

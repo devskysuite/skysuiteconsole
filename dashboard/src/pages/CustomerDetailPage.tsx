@@ -167,6 +167,7 @@ export default function CustomerDetailPage() {
 
   const [customer,       setCustomer]       = useState<Customer | null>(null);
   const [loading,        setLoading]        = useState(true);
+  const [defaultPricebook, setDefaultPricebook] = useState("");
   const [properties,     setProperties]     = useState<Property[]>([]);
   const [contacts,       setContacts]       = useState<Contact[]>([]);
   const [propAuthContacts, setPropAuthContacts] = useState<(Contact & { propertyName: string; propertyId: string })[]>([]);
@@ -220,6 +221,16 @@ export default function CustomerDetailPage() {
   const [contactModal, setContactModal] = useState<Contact | null | "new">(null);
   const [contactMenu,  setContactMenu]  = useState<string | null>(null); // open contact id for ⋮ menu
   const [createJobOpen, setCreateJobOpen] = useState(false);
+
+  // Load default pricebook (current year → isDefault → first)
+  useEffect(() => {
+    getDocs(collection(db, "pricebooks")).then(snap => {
+      const cy = new Date().getFullYear();
+      const books = snap.docs.map(d => ({ name: d.data().name as string, year: d.data().year as number | null, isDefault: d.data().isDefault as boolean }));
+      const pb = books.find(b => b.year === cy) || books.find(b => b.isDefault) || books[0];
+      if (pb) setDefaultPricebook(pb.name);
+    }).catch(() => {});
+  }, []);
 
   // Load customer
   useEffect(() => {
@@ -539,7 +550,11 @@ export default function CustomerDetailPage() {
                   : <span style={{ color: "#9ca3af" }}>—</span>}
               </StatField>
               <StatField label="Pricebook">
-                {customer.pricebook || <span style={{ color: "#9ca3af" }}>—</span>}
+                {customer.pricebook
+                  ? customer.pricebook
+                  : defaultPricebook
+                    ? <span>{defaultPricebook} <span style={{ fontSize: 10, color: "#9ca3af", fontWeight: 600 }}>(default)</span></span>
+                    : <span style={{ color: "#9ca3af" }}>—</span>}
               </StatField>
               <StatField label="Tax Code">
                 {customer.taxCode || <span style={{ color: "#9ca3af" }}>—</span>}

@@ -1,6 +1,11 @@
 import { useEffect, useState } from "react";
-import { addDoc, collection, getDocs, query, runTransaction, doc, where } from "firebase/firestore";
+import { addDoc, collection, getDocs, getDoc, query, runTransaction, doc, where } from "firebase/firestore";
 import { db, auth } from "../firebase";
+
+function resolveDefaultPricebook(books: { name: string; year?: number | null; isDefault?: boolean }[]): string {
+  const cy = new Date().getFullYear();
+  return (books.find(b => b.year === cy) || books.find(b => b.isDefault) || books[0])?.name || "";
+}
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 const DEPARTMENTS = ["Automation and Controls","Electrical","Panel Build","Programming","Bucket Truck","Service"];
@@ -74,12 +79,17 @@ export default function CreateQuoteModal({
       setUsers(names);
     });
 
-    // Load pricebooks
-    getDocs(collection(db, "pricebooks")).then(snap => {
-      const list = snap.docs.map(d => ({ id: d.id, name: d.data().name as string }));
+    // Load pricebooks, then resolve customer's pricebook or current-year default
+    getDocs(collection(db, "pricebooks")).then(async snap => {
+      const list = snap.docs.map(d => ({ id: d.id, name: d.data().name as string, year: d.data().year as number | null, isDefault: d.data().isDefault as boolean }));
       setPricebooks(list);
-      const def = list.find(p => p.name.toLowerCase().includes("2026")) || list[0];
-      if (def) setForm(f => ({ ...f, pricebook: def.name }));
+      let customerPricebook = "";
+      if (customerId) {
+        const cSnap = await getDoc(doc(db, "customers", customerId));
+        customerPricebook = (cSnap.data()?.pricebook as string) || "";
+      }
+      const fallback = resolveDefaultPricebook(list);
+      setForm(f => ({ ...f, pricebook: customerPricebook || fallback }));
     }).catch(() => {});
 
     // Load property contacts (property reps)
