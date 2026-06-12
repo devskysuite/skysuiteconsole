@@ -93,12 +93,12 @@ function parseInvoice(lines: string[]): ParsedInvoice {
   }
   if (lines.length > 0) result.vendor = lines[0];
   for (const line of lines) {
-    const subMatch = line.match(/^sub\s*total\s+(\d[\d,]*\.?\d*)$/i);
+    const subMatch = line.match(/sub\s*total\s+\$?\s*(\d[\d,]*\.?\d*)/i);
     if (subMatch) { result.subtotal = parseFloat(subMatch[1].replace(/,/g, "")); continue; }
-    const taxMatch = line.match(/^(hst|gst|pst|qst|tax(?:\s*\d+%?)?)\s+(\d[\d,]*\.\d+)$/i);
-    if (taxMatch) { result.taxLabel = taxMatch[1].toUpperCase(); result.taxAmount = parseFloat(taxMatch[2].replace(/,/g, "")); continue; }
-    const totalMatch = line.match(/^(?:grand\s+)?total\s+(\d[\d,]*\.\d+)$/i);
-    if (totalMatch) { result.grandTotal = parseFloat(totalMatch[1].replace(/,/g, "")); continue; }
+    const taxMatch = line.match(/^(hst|gst|pst|qst|tax(?:\s*\(?\d+(?:\.\d+)?%?\)?)?)\s+\$?\s*(\d[\d,]*\.\d+)/i);
+    if (taxMatch) { result.taxLabel = taxMatch[1].replace(/\s+/g," ").toUpperCase(); result.taxAmount = parseFloat(taxMatch[2].replace(/,/g, "")); continue; }
+    const totalMatch = line.match(/^(?:grand\s+)?total\s+\$?\s*(\d[\d,]*\.\d+)/i);
+    if (totalMatch && !line.match(/sub\s*total/i)) { result.grandTotal = parseFloat(totalMatch[1].replace(/,/g, "")); continue; }
   }
   const UOMS = /^(EA|EACH|PC|PCS|LB|FT|M|L|KG|BOX|RL|BAG|HR|SET|PR|CS|GAL|TON|YD|ROLL|CAN|PAIR)$/i;
   const skipP = /^(ship|bill|invoice|date|p\.?o|purchase|customer|sub|total|hst|gst|tax|page|line|qty|description|unit|amount|price|receipt)/i;
