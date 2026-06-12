@@ -13,7 +13,7 @@ interface POItem {
 }
 interface Bill {
   id: string; billNumber: string; receiptNumber: string; vendor: string;
-  dateIssued: string; createdBy: string; total: number;
+  dateIssued: string; createdBy: string; total: number; pdfUrl?: string;
 }
 interface PO {
   id: string; poNumber: string; status: string; fieldOrder: boolean; tags: string;
@@ -781,7 +781,11 @@ export default function PODetailPage() {
                   {bills.filter(b => b.receiptNumber).map((b, i) => (
                     <tr key={b.id || i}>
                       <td style={{ ...tdStyle, fontWeight: 600 }}>{b.receiptNumber || "—"}</td>
-                      <td style={tdStyle}>{b.billNumber || "—"}</td>
+                      <td style={tdStyle}>
+                        {b.pdfUrl ? (
+                          <a href={b.pdfUrl} target="_blank" rel="noopener noreferrer" style={{ color: "#1565c0", textDecoration: "none", fontWeight: 700 }}>{b.billNumber || "—"}</a>
+                        ) : (b.billNumber || "—")}
+                      </td>
                       <td style={tdStyle}>{b.vendor || "—"}</td>
                       <td style={tdStyle}>{fmtDate(b.dateIssued)}</td>
                       <td style={tdStyle}>{b.createdBy || "—"}</td>
@@ -814,7 +818,11 @@ export default function PODetailPage() {
                     )}
                     {bills.map((b, i) => (
                       <tr key={b.id || i}>
-                        <td style={{ ...tdStyle, fontWeight: 600 }}>{b.billNumber || "—"}</td>
+                        <td style={{ ...tdStyle, fontWeight: 600 }}>
+                          {b.pdfUrl ? (
+                            <a href={b.pdfUrl} target="_blank" rel="noopener noreferrer" style={{ color: "#1565c0", textDecoration: "none", fontWeight: 700 }}>{b.billNumber || "—"}</a>
+                          ) : (b.billNumber || "—")}
+                        </td>
                         <td style={tdStyle}>{b.receiptNumber || "—"}</td>
                         <td style={tdStyle}>{b.vendor || "—"}</td>
                         <td style={tdStyle}>{fmtDate(b.dateIssued)}</td>
