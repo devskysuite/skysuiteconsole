@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import * as pdfjsLib from "pdfjs-dist";
 import { arrayUnion, collection, doc, getDoc, getDocs, orderBy, query, updateDoc } from "firebase/firestore";
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
-import { auth, db, storage } from "../firebase";
+import { httpsCallable } from "firebase/functions";
+import { auth, db, storage, functions } from "../firebase";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   "pdfjs-dist/build/pdf.worker.min.mjs",
@@ -247,6 +248,7 @@ export default function ImportPackingSlipModal({
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [parsing, setParsing]     = useState(false);
+  const [aiReading, setAiReading] = useState(false);
   const [orders, setOrders]       = useState<Array<{ fileName: string; file: File; parsed: ParsedOrder }>>([]);
   const [items, setItems]         = useState<SlipItem[]>([]);
   const [rawLines, setRawLines]   = useState<string[]>([]);
@@ -285,7 +287,36 @@ export default function ImportPackingSlipModal({
       for (const file of pdfs) {
         const lines = await extractLines(file);
         allRaw.push(...lines);
-        const parsed = parseOrderDetails(lines);
+        let parsed = parseOrderDetails(lines);
+
+        // Fall back to the AI reader when the regex parser finds no line items.
+        if (parsed.items.length === 0 && lines.length > 0) {
+          setAiReading(true);
+          try {
+            const call = httpsCallable(functions, "parseInvoiceAI");
+            const resp: any = await call({ text: lines.join("\n") });
+            const ai = resp?.data;
+            if (ai && Array.isArray(ai.lines) && ai.lines.length > 0) {
+              parsed = {
+                orderNumber: ai.invoiceNumber || ai.poNumber || parsed.orderNumber,
+                orderDate:   ai.date || parsed.orderDate,
+                vendor:      ai.vendor || parsed.vendor,
+                subtotal:    Number(ai.subtotal) || 0,
+                tax:         Number(ai.taxAmount) || 0,
+                total:       Number(ai.grandTotal) || 0,
+                items: ai.lines.map((l: any) => ({
+                  partNo: String(l.partNo || ""), description: String(l.description || ""),
+                  qty: Number(l.qty) || 0, uom: String(l.uom || "EA"),
+                  unitPrice: Number(l.unitPrice) || 0, total: Number(l.total) || 0, include: true,
+                })),
+              };
+            }
+          } catch (e) {
+            console.warn("[AI packing slip parse] failed:", e);
+          }
+          setAiReading(false);
+        }
+
         newOrders.push({ fileName: file.name, file, parsed });
         allItems.push(...parsed.items.map(item => ({ ...item, source: parsed.orderNumber || file.name })));
       }
@@ -293,6 +324,7 @@ export default function ImportPackingSlipModal({
       setOrders(newOrders);
       setItems(allItems);
     } catch (e) { setError("Failed to parse PDF."); console.error(e); }
+    setAiReading(false);
     setParsing(false);
   }
 
@@ -395,7 +427,7 @@ export default function ImportPackingSlipModal({
                 <input ref={fileRef} type="file" accept=".pdf" multiple style={{ display: "none" }}
                   onChange={e => { if (e.target.files?.length) handleFiles(e.target.files); }} />
                 {parsing ? (
-                  <div style={{ color: "#6b7280", fontSize: 14 }}>Parsing PDFs…</div>
+                  <div style={{ color: "#6b7280", fontSize: 14 }}>{aiReading ? "Reading with AI…" : "Parsing PDFs…"}</div>
                 ) : (
                   <>
                     <div style={{ fontSize: 32, marginBottom: 8 }}>📦</div>
