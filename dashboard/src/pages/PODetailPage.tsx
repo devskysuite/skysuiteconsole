@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { arrayUnion, collection, doc, getDoc, getDocs, onSnapshot, query, updateDoc, where } from "firebase/firestore";
+import { arrayUnion, collection, deleteDoc, doc, getDoc, getDocs, onSnapshot, query, updateDoc, where } from "firebase/firestore";
 import { auth, db } from "../firebase";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import ImportBillModal from "./ImportBillModal";
 import ImportPackingSlipModal from "./ImportPackingSlipModal";
 
@@ -126,7 +126,8 @@ function EditItemModal({
       const newSubtotal = updated.reduce((s, i) => s + (i.totalCost || 0), 0);
       const poTaxPct = ({ "GST (5%)": 0.05, "HST ON (13%)": 0.13, "HST BC (12%)": 0.12, "PST (7%)": 0.07 } as Record<string,number>)[poSnap.data()?.taxRate || ""] ?? 0;
       const newTaxAmt = updated.filter(i => i.taxable).reduce((s, i) => s + (i.totalCost || 0), 0) * poTaxPct;
-      const allFulfilled = updated.length > 0 && updated.every(i => i.fulfillmentStatus === "Fulfilled");
+      const hasBills = (poSnap.data()?.bills?.length || 0) > 0;
+      const allFulfilled = updated.length > 0 && updated.every(i => i.fulfillmentStatus === "Fulfilled") && hasBills;
       const curStatus = poSnap.data()?.status || "Open";
       const updates: Record<string, unknown> = { items: updated, subtotal: newSubtotal, taxAmount: newTaxAmt, total: newSubtotal + newTaxAmt };
       if (!["Cancelled", "Draft"].includes(curStatus)) {
@@ -303,7 +304,8 @@ function AddItemRow({ poId, jobNumber }: { poId: string; jobNumber: string }) {
       const newSubtotal = allItems.reduce((s, i) => s + (i.totalCost || 0), 0);
       const poTaxPct = ({ "GST (5%)": 0.05, "HST ON (13%)": 0.13, "HST BC (12%)": 0.12, "PST (7%)": 0.07 } as Record<string,number>)[poData?.taxRate || ""] ?? 0;
       const newTaxAmt = allItems.filter(i => i.taxable).reduce((s, i) => s + (i.totalCost || 0), 0) * poTaxPct;
-      const allFulfilled = allItems.length > 0 && allItems.every(i => i.fulfillmentStatus === "Fulfilled");
+      const hasBills2 = (poData?.bills?.length || 0) > 0;
+      const allFulfilled = allItems.length > 0 && allItems.every(i => i.fulfillmentStatus === "Fulfilled") && hasBills2;
       const curStatus2 = poData?.status || "Open";
       const updates: Record<string, unknown> = {
         items: allItems, subtotal: newSubtotal, taxAmount: newTaxAmt, total: newSubtotal + newTaxAmt,
@@ -414,6 +416,7 @@ function AddBillRow({ poId, vendor }: { poId: string; vendor: string }) {
 // ── Main Page ──────────────────────────────────────────────────────────────────
 export default function PODetailPage() {
   const { poId } = useParams<{ poId: string }>();
+  const navigate = useNavigate();
   const [po, setPo]           = useState<PO | null>(null);
   const [vendorInfo, setVendorInfo] = useState<VendorInfo>({});
   const [loading, setLoading] = useState(true);
@@ -495,6 +498,19 @@ export default function PODetailPage() {
     await updateDoc(doc(db, "purchaseOrders", poId), { status }).catch(console.error);
   }
 
+  async function cancelPO() {
+    if (!poId || !po) return;
+    if (!confirm(`Cancel PO ${po.poNumber}? This will set status to Cancelled.`)) return;
+    await updateDoc(doc(db, "purchaseOrders", poId), { status: "Cancelled" }).catch(console.error);
+  }
+
+  async function deletePO() {
+    if (!poId || !po) return;
+    if (!confirm(`Permanently delete PO ${po.poNumber}?\n\nThis cannot be undone. All bills, items, and receipts on this PO will be deleted.`)) return;
+    await deleteDoc(doc(db, "purchaseOrders", poId));
+    navigate("/operations/purchase-orders");
+  }
+
   if (loading) return <div style={{ padding: 60, textAlign: "center", color: "#9ca3af" }}>Loading…</div>;
   if (!po)     return <div style={{ padding: 60, textAlign: "center", color: "#9ca3af" }}>Purchase order not found.</div>;
 
@@ -554,6 +570,10 @@ export default function PODetailPage() {
               <button onClick={startEdit} style={{ background: "#fff", border: "1px solid #d1d5db", borderRadius: 6, padding: "6px 16px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>EDIT</button>
               <button style={{ background: "#1f2937", color: "#fff", border: "none", borderRadius: 6, padding: "6px 16px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>GENERATE PDF</button>
               <button style={{ background: "#16a34a", color: "#fff", border: "none", borderRadius: 6, padding: "6px 16px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>GENERATE RECEIPT</button>
+              {po.status !== "Cancelled" && (
+                <button onClick={cancelPO} style={{ background: "#fff", border: "1px solid #fca5a5", borderRadius: 6, padding: "6px 16px", fontSize: 12, fontWeight: 700, cursor: "pointer", color: "#dc2626" }}>CANCEL PO</button>
+              )}
+              <button onClick={deletePO} style={{ background: "#fee2e2", border: "1px solid #fca5a5", borderRadius: 6, padding: "6px 16px", fontSize: 12, fontWeight: 700, cursor: "pointer", color: "#991b1b" }}>DELETE PO</button>
             </>
           )}
         </div>

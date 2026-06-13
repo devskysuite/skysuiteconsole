@@ -319,6 +319,7 @@ async function saveImport(targetPoId: string, invoice: ParsedInvoice, editLines:
   const poTaxPct = ({ "GST (5%)": 0.05, "HST ON (13%)": 0.13, "HST BC (12%)": 0.12, "PST (7%)": 0.07 } as Record<string, number>)[poData?.taxRate || ""] ?? 0;
   const newSubtotal = allItems.reduce((s, i) => s + (i.totalCost || 0), 0);
   const newTaxAmt = allItems.filter(i => i.taxable).reduce((s, i) => s + (i.totalCost || 0), 0) * poTaxPct;
+  // Bills are present (we're adding one right now), so gate on that too
   const allFulfilled = allItems.length > 0 && allItems.every(i => i.fulfillmentStatus === "Fulfilled");
   const curStatus = poData?.status || "Open";
 
