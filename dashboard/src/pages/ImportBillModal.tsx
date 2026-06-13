@@ -108,6 +108,60 @@ function parseDigiKey(lines: string[], full: string): ParsedInvoice {
   return result;
 }
 
+// ── Robust generic line parser ───────────────────────────────────────────────
+// Instead of demanding a fixed column layout, this finds a (qty × unitPrice ≈ total)
+// combination on the line and treats the leading text as the part/description.
+// This handles most invoice layouts — with or without a UOM column, $ signs, or
+// leading line numbers — and naturally rejects summary/header lines (which have
+// only one money amount or no valid arithmetic).
+function parseGenericLine(line: string): { partNo: string; description: string; qty: number; uom: string; unitPrice: number; total: number } | null {
+  // Money amounts: 1,234.56 or 12.5000 (>= 2 decimals). Capture value + position.
+  const money: Array<{ val: number; start: number; end: number }> = [];
+  const moneyRe = /\$?\s*(\d{1,3}(?:,\d{3})+|\d+)\.(\d{2,})/g;
+  let mm: RegExpExecArray | null;
+  while ((mm = moneyRe.exec(line))) {
+    money.push({ val: parseFloat((mm[1] + "." + mm[2]).replace(/,/g, "")), start: mm.index, end: mm.index + mm[0].length });
+  }
+  if (money.length < 2) return null; // need a unit price AND an extended total
+
+  const total = money[money.length - 1].val;
+  if (!(total > 0)) return null;
+
+  // Quantity candidates: standalone integers/decimals anywhere on the line.
+  const qtys: Array<{ val: number; start: number; end: number }> = [];
+  const qtyRe = /\b(\d+(?:\.\d+)?)\b/g;
+  let qm: RegExpExecArray | null;
+  while ((qm = qtyRe.exec(line))) {
+    qtys.push({ val: parseFloat(qm[1]), start: qm.index, end: qm.index + qm[0].length });
+  }
+
+  // Try each money amount (except the last) as the unit price, paired with a qty
+  // that appears before it. Prefer the unit price nearest the total.
+  for (let u = money.length - 2; u >= 0; u--) {
+    const unit = money[u];
+    if (!(unit.val > 0)) continue;
+    for (const q of qtys) {
+      if (q.val <= 0 || q.val > 100000) continue;
+      if (money.some(a => q.start >= a.start && q.end <= a.end)) continue; // qty isn't part of a money token
+      if (q.start >= unit.start) continue; // qty comes before the unit price
+      if (Math.abs(q.val * unit.val - total) <= total * 0.02 + 0.01) {
+        // Description = everything before the unit price, minus the qty token itself,
+        // so it survives whether qty is the first column or sits mid-line.
+        let seg = line.slice(0, unit.start);
+        seg = (seg.slice(0, q.start) + " " + seg.slice(q.end)).replace(/\s{2,}/g, " ").trim();
+        seg = seg.replace(/^\d{1,4}\s+(?=\S*[A-Za-z])/, "");                              // leading line number
+        seg = seg.replace(/^(EA|EACH|PC|PCS|LB|FT|KG|BOX|SET|PR|CS|ROLL|PAIR|UN|UNIT)\s+/i, ""); // leading UOM
+        seg = seg.trim();
+        const sp = seg.indexOf(" ");
+        const partNo = sp > 0 ? seg.slice(0, sp) : seg;
+        const description = sp > 0 ? seg.slice(sp + 1).trim() : "";
+        return { partNo: partNo || description, description, qty: q.val, uom: "EA", unitPrice: unit.val, total };
+      }
+    }
+  }
+  return null;
+}
+
 // ── Invoice Parser ─────────────────────────────────────────────────────────────
 function parseInvoice(lines: string[]): ParsedInvoice {
   const result: ParsedInvoice = { invoiceNumber: "", poNumber: "", vendor: "", date: "", lines: [], subtotal: 0, taxAmount: 0, grandTotal: 0, taxLabel: "Tax" };
@@ -195,7 +249,6 @@ function parseInvoice(lines: string[]): ParsedInvoice {
       continue;
     }
   }
-  const UOMS = /^(EA|EACH|PC|PCS|LB|FT|M|L|KG|BOX|RL|BAG|HR|SET|PR|CS|GAL|TON|YD|ROLL|CAN|PAIR)$/i;
   const skipP = /^(ship|bill|invoice|date|p\.?o|purchase|customer|sub|total|hst|gst|tax|page|line|qty|description|unit|amount|price|receipt)/i;
   const isGerrieLine = (s: string) => /^\d+\.\d+\s+[A-Z]/i.test(s);
   const isSummaryLine = (s: string) => /^(sub[\s\-]?total|hst|gst|pst|qst|tax|total|freight|shipping|pack\s*slip|please\s*remit)/i.test(s);
@@ -220,18 +273,12 @@ function parseInvoice(lines: string[]): ParsedInvoice {
       result.lines.push({ partNo, description, qty, uom: uom.toUpperCase(), unitPrice, total, taxable: true, mode: "new", matchedItemId: null });
       continue;
     }
-    // Generic format: {description} {qty} {UOM} {unitPrice} {total}
-    if (skipP.test(line)) continue;
-    const m = line.match(/^(.+?)\s+(\d+(?:\.\d+)?)\s+([A-Z]{1,6})\s+(\d[\d,]*\.\d+)\s+(\d[\d,]*\.\d+)\s*$/i);
-    if (!m) continue;
-    const [, raw, qtyStr, uom, upStr, totStr] = m;
-    if (!UOMS.test(uom)) continue;
-    const qty = parseFloat(qtyStr), unitPrice = parseFloat(upStr.replace(/,/g, "")), total = parseFloat(totStr.replace(/,/g, ""));
-    if (qty > 0 && unitPrice > 0 && Math.abs(qty * unitPrice - total) > total * 0.05 + 0.1) continue;
-    const rawT = raw.trim(), si = rawT.indexOf(" ");
-    const partNo = si > 0 ? rawT.slice(0, si) : rawT;
-    const description = si > 0 ? rawT.slice(si + 1).trim() : "";
-    result.lines.push({ partNo, description, qty, uom: uom.toUpperCase(), unitPrice, total, taxable: true, mode: "new", matchedItemId: null });
+    // Generic format — robust arithmetic-validated parse (handles layouts with or
+    // without a UOM column, $ signs, leading line numbers, etc.)
+    if (skipP.test(line) || isSummaryLine(line)) continue;
+    const g = parseGenericLine(line);
+    if (!g) continue;
+    result.lines.push({ partNo: g.partNo, description: g.description, qty: g.qty, uom: g.uom, unitPrice: g.unitPrice, total: g.total, taxable: true, mode: "new", matchedItemId: null });
   }
   return result;
 }
