@@ -13,5 +13,8 @@
       "codebase": "scheduled-tasks",
       "runtime": "nodejs20"
     }
-  ]
+  ],
+  "storage": {
+    "rules": "storage.rules"
+  }
 }

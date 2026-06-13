@@ -151,10 +151,10 @@ async function savePackingSlip(poId: string, items: SlipItem[], receipts: SlipRe
     try {
       const key = (r.orderNumber || r.file.name.replace(/\.pdf$/i, "")).replace(/[^a-zA-Z0-9_-]/g, "_");
       const sRef = storageRef(storage, `receipts/${key}_${Date.now()}.pdf`);
-      const timeout = new Promise<never>((_, rej) => setTimeout(() => rej(new Error("timeout")), 8000));
+      const timeout = new Promise<never>((_, rej) => setTimeout(() => rej(new Error("upload timed out after 30s")), 30000));
       const upload = uploadBytes(sRef, r.file, { contentType: "application/pdf" }).then(s => getDownloadURL(s.ref));
       pdfUrl = await Promise.race([upload, timeout]);
-    } catch (e) { console.warn("Packing slip PDF upload failed:", e); }
+    } catch (e) { console.warn("Packing slip PDF upload failed:", e instanceof Error ? e.message : e); }
     receiptRecords.push({
       id: crypto.randomUUID(),
       billNumber: "",

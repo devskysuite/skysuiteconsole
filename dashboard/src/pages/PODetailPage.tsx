@@ -388,7 +388,7 @@ function AddBillRow({ poId, vendor }: { poId: string; vendor: string }) {
 
   if (!open) return (
     <button onClick={() => setOpen(true)} style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "1px dashed #d1d5db", borderRadius: 7, padding: "7px 14px", fontSize: 12, color: "#6b7280", cursor: "pointer", marginTop: 8 }}>
-      + ADD BILL
+      + ADD INVOICE
     </button>
   );
 
@@ -403,7 +403,7 @@ function AddBillRow({ poId, vendor }: { poId: string; vendor: string }) {
       </div>
       <div style={{ display: "flex", gap: 8 }}>
         <button onClick={submit} disabled={saving} style={{ background: "#1565c0", color: "#fff", border: "none", borderRadius: 6, padding: "6px 18px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
-          {saving ? "Saving…" : "Add Bill"}
+          {saving ? "Saving…" : "Add Invoice"}
         </button>
         <button onClick={() => { setOpen(false); setF(blank); }} style={{ background: "none", border: "1px solid #d1d5db", borderRadius: 6, padding: "6px 14px", fontSize: 12, cursor: "pointer" }}>
           Cancel
@@ -506,7 +506,7 @@ export default function PODetailPage() {
 
   async function deletePO() {
     if (!poId || !po) return;
-    if (!confirm(`Permanently delete PO ${po.poNumber}?\n\nThis cannot be undone. All bills, items, and receipts on this PO will be deleted.`)) return;
+    if (!confirm(`Permanently delete PO ${po.poNumber}?\n\nThis cannot be undone. All invoices, packing slips, and items on this PO will be deleted.`)) return;
     await deleteDoc(doc(db, "purchaseOrders", poId));
     navigate("/operations/purchase-orders");
   }
@@ -515,8 +515,10 @@ export default function PODetailPage() {
   if (!po)     return <div style={{ padding: 60, textAlign: "center", color: "#9ca3af" }}>Purchase order not found.</div>;
 
   const statusStyle = STATUS_COLORS[po.status] || STATUS_COLORS.Draft;
-  const items: POItem[] = po.items || [];
-  const bills: Bill[]   = po.bills  || [];
+  const items: POItem[]    = po.items || [];
+  const bills: Bill[]      = po.bills  || [];
+  const invoiceBills       = bills.filter(b => b.billNumber);
+  const packingSlipBills   = bills.filter(b => !b.billNumber);
 
   const thStyle: React.CSSProperties = { padding: "9px 12px", fontSize: 11, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: 0.4, textAlign: "left", whiteSpace: "nowrap", background: "#f9fafb", borderBottom: "1px solid #e5e7eb" };
   const tdStyle: React.CSSProperties = { padding: "9px 12px", fontSize: 13, color: "#374151", verticalAlign: "middle", borderBottom: "1px solid #f3f4f6" };
@@ -707,7 +709,7 @@ export default function PODetailPage() {
 
           {/* Tabs */}
           <div style={{ display: "flex", gap: 0, borderBottom: "2px solid #e5e7eb", marginBottom: 16 }}>
-            {["Order", "Receipts", "Bills"].map(tab => (
+            {["Order", "Receipts", "Packing Slips"].map(tab => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
@@ -796,54 +798,15 @@ export default function PODetailPage() {
             </div>
           )}
 
-          {/* ── Receipts tab ── */}
+          {/* ── Receipts tab (invoices) ── */}
           {activeTab === "Receipts" && (
-            <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                <thead>
-                  <tr>
-                    <th style={thStyle}>Receipt #</th>
-                    <th style={thStyle}>Bill #</th>
-                    <th style={thStyle}>Vendor</th>
-                    <th style={thStyle}>Date Issued</th>
-                    <th style={thStyle}>Created By</th>
-                    <th style={{ ...thStyle, textAlign: "right" }}>Total</th>
-                    <th style={thStyle}>PDF</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {bills.filter(b => b.receiptNumber).length === 0 && (
-                    <tr><td colSpan={7} style={{ padding: "32px 12px", textAlign: "center", color: "#9ca3af", fontSize: 13 }}>No receipts yet.</td></tr>
-                  )}
-                  {bills.filter(b => b.receiptNumber).map((b, i) => (
-                    <tr key={b.id || i}>
-                      <td style={{ ...tdStyle, fontWeight: 600 }}>{b.receiptNumber || "—"}</td>
-                      <td style={{ ...tdStyle, fontWeight: 600 }}>{b.billNumber || "—"}</td>
-                      <td style={tdStyle}>{b.vendor || "—"}</td>
-                      <td style={tdStyle}>{fmtDate(b.dateIssued)}</td>
-                      <td style={tdStyle}>{b.createdBy || "—"}</td>
-                      <td style={{ ...tdStyle, textAlign: "right", fontWeight: 700 }}>{fmtC(b.total)}</td>
-                      <td style={tdStyle}>
-                        {b.pdfUrl
-                          ? <a href={b.pdfUrl} target="_blank" rel="noopener noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 6, padding: "3px 10px", fontSize: 12, fontWeight: 700, color: "#1565c0", textDecoration: "none", cursor: "pointer" }}>📄 View</a>
-                          : <span style={{ color: "#d1d5db", fontSize: 12 }}>—</span>}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          {/* ── Bills tab ── */}
-          {activeTab === "Bills" && (
             <>
               <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden" }}>
                 <table style={{ width: "100%", borderCollapse: "collapse" }}>
                   <thead>
                     <tr>
                       <th style={thStyle}>Bill #</th>
-                      <th style={thStyle}>Receipt #</th>
+                      <th style={thStyle}>Invoice #</th>
                       <th style={thStyle}>Vendor</th>
                       <th style={thStyle}>Date Issued</th>
                       <th style={thStyle}>Created By</th>
@@ -853,10 +816,10 @@ export default function PODetailPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {bills.length === 0 && (
-                      <tr><td colSpan={8} style={{ padding: "32px 12px", textAlign: "center", color: "#9ca3af", fontSize: 13 }}>No bills yet.</td></tr>
+                    {invoiceBills.length === 0 && (
+                      <tr><td colSpan={8} style={{ padding: "32px 12px", textAlign: "center", color: "#9ca3af", fontSize: 13 }}>No invoices yet.</td></tr>
                     )}
-                    {bills.map((b, i) => (
+                    {invoiceBills.map((b, i) => (
                       <tr key={b.id || i}>
                         <td style={{ ...tdStyle, fontWeight: 600 }}>{b.billNumber || "—"}</td>
                         <td style={tdStyle}>{b.receiptNumber || "—"}</td>
@@ -886,10 +849,10 @@ export default function PODetailPage() {
                         </td>
                       </tr>
                     ))}
-                    {bills.length > 0 && (
+                    {invoiceBills.length > 0 && (
                       <tr style={{ background: "#f9fafb", borderTop: "2px solid #e5e7eb" }}>
                         <td colSpan={7} style={{ padding: "10px 12px", fontWeight: 800, fontSize: 13 }}>Total</td>
-                        <td style={{ padding: "10px 12px", textAlign: "right", fontWeight: 800, fontSize: 14 }}>{fmtC(bills.reduce((s, b) => s + (b.total || 0), 0))}</td>
+                        <td style={{ padding: "10px 12px", textAlign: "right", fontWeight: 800, fontSize: 14 }}>{fmtC(invoiceBills.reduce((s, b) => s + (b.total || 0), 0))}</td>
                       </tr>
                     )}
                   </tbody>
@@ -903,23 +866,59 @@ export default function PODetailPage() {
                 >
                   📄 IMPORT INVOICE PDF
                 </button>
+              </div>
+            </>
+          )}
+
+          {/* ── Packing Slips tab ── */}
+          {activeTab === "Packing Slips" && (
+            <>
+              <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                  <thead>
+                    <tr>
+                      <th style={thStyle}>Order #</th>
+                      <th style={thStyle}>Vendor</th>
+                      <th style={thStyle}>Date Issued</th>
+                      <th style={thStyle}>Created By</th>
+                      <th style={{ ...thStyle, textAlign: "right" }}>Total</th>
+                      <th style={thStyle}>PDF</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {packingSlipBills.length === 0 && (
+                      <tr><td colSpan={6} style={{ padding: "32px 12px", textAlign: "center", color: "#9ca3af", fontSize: 13 }}>No packing slips yet.</td></tr>
+                    )}
+                    {packingSlipBills.map((b, i) => (
+                      <tr key={b.id || i}>
+                        <td style={{ ...tdStyle, fontWeight: 600 }}>{b.receiptNumber || "—"}</td>
+                        <td style={tdStyle}>{b.vendor || "—"}</td>
+                        <td style={tdStyle}>{fmtDate(b.dateIssued)}</td>
+                        <td style={tdStyle}>{b.createdBy || "—"}</td>
+                        <td style={{ ...tdStyle, textAlign: "right", fontWeight: 700 }}>{fmtC(b.total)}</td>
+                        <td style={tdStyle}>
+                          {b.pdfUrl
+                            ? <a href={b.pdfUrl} target="_blank" rel="noopener noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 6, padding: "3px 10px", fontSize: 12, fontWeight: 700, color: "#1565c0", textDecoration: "none", cursor: "pointer" }}>📄 View</a>
+                            : <span style={{ color: "#d1d5db", fontSize: 12 }}>—</span>}
+                        </td>
+                      </tr>
+                    ))}
+                    {packingSlipBills.length > 0 && (
+                      <tr style={{ background: "#f9fafb", borderTop: "2px solid #e5e7eb" }}>
+                        <td colSpan={5} style={{ padding: "10px 12px", fontWeight: 800, fontSize: 13 }}>Total</td>
+                        <td style={{ padding: "10px 12px", textAlign: "right", fontWeight: 800, fontSize: 14 }}>{fmtC(packingSlipBills.reduce((s, b) => s + (b.total || 0), 0))}</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap", alignItems: "center" }}>
                 <button
                   onClick={() => setShowSlipImport(true)}
                   style={{ display: "flex", alignItems: "center", gap: 6, background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 7, padding: "7px 14px", fontSize: 12, fontWeight: 700, color: "#1565c0", cursor: "pointer" }}
                 >
                   📦 IMPORT PACKING SLIP
                 </button>
-                {bills.length > 0 && (
-                  <button
-                    onClick={async () => {
-                      if (!confirm(`Clear all bills and ordered parts? This cannot be undone.`)) return;
-                      await updateDoc(doc(db, "purchaseOrders", po.id), { bills: [], items: [], subtotal: 0, taxAmount: 0, total: 0, status: "Open" });
-                    }}
-                    style={{ display: "flex", alignItems: "center", gap: 6, background: "#fff5f5", border: "1px solid #fca5a5", borderRadius: 7, padding: "7px 14px", fontSize: 12, fontWeight: 700, color: "#dc2626", cursor: "pointer", marginLeft: "auto" }}
-                  >
-                    🗑 CLEAR ALL BILLS
-                  </button>
-                )}
               </div>
             </>
           )}

@@ -267,18 +267,18 @@ async function getNextBillNumber(): Promise<string> {
 }
 
 // ── Save ───────────────────────────────────────────────────────────────────────
-async function saveImport(targetPoId: string, invoice: ParsedInvoice, editLines: InvoiceLine[], file: File) {
+async function saveImport(targetPoId: string, invoice: ParsedInvoice, editLines: InvoiceLine[], file: File): Promise<{ pdfError?: string }> {
   const billNumber = await getNextBillNumber();
 
-  // PDF upload is best-effort — bill is saved even if storage fails or times out
   let pdfUrl = "";
+  let pdfError: string | undefined;
   try {
     const sRef = storageRef(storage, `bills/${billNumber}.pdf`);
-    const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error("upload timeout")), 8000));
+    const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error("upload timed out after 30s")), 30000));
     const upload = uploadBytes(sRef, file, { contentType: "application/pdf" }).then(snap => getDownloadURL(snap.ref));
     pdfUrl = await Promise.race([upload, timeout]);
   } catch (e) {
-    console.warn("PDF upload failed — saving bill without attachment:", e);
+    pdfError = e instanceof Error ? e.message : String(e);
   }
   const bill = {
     id: crypto.randomUUID(), billNumber,
@@ -328,6 +328,7 @@ async function saveImport(targetPoId: string, invoice: ParsedInvoice, editLines:
     updates.status = allItems.length === 0 ? "Open" : allFulfilled ? "Fulfilled" : "Waiting on Material";
   }
   await updateDoc(doc(db, "purchaseOrders", targetPoId), updates);
+  return { pdfError };
 }
 
 // ── helpers ────────────────────────────────────────────────────────────────────
@@ -465,10 +466,13 @@ export default function ImportBillModal({
       const tPoId = fixedPoId || job.selectedPO?.id || "";
       if (!tPoId || !job.invoice) continue;
       try {
-        await saveImport(tPoId, job.invoice, job.editLines, job.file);
-        results.push({ ok: true, label: `Invoice ${job.invoice.invoiceNumber || job.file.name} ✓` });
-      } catch {
-        results.push({ ok: false, label: `${job.file.name} — failed to save` });
+        const { pdfError } = await saveImport(tPoId, job.invoice, job.editLines, job.file);
+        const label = pdfError
+          ? `Invoice ${job.invoice.invoiceNumber || job.file.name} ✓ — PDF attachment failed: ${pdfError}`
+          : `Invoice ${job.invoice.invoiceNumber || job.file.name} ✓`;
+        results.push({ ok: true, label });
+      } catch (e) {
+        results.push({ ok: false, label: `${job.file.name} — failed to save: ${e instanceof Error ? e.message : String(e)}` });
       }
     }
     setSavingIdx(-1);
