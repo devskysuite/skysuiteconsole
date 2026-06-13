@@ -238,10 +238,13 @@ export default function PartsAndPurchasingTab({ jobId, jobNumber }: Props) {
 
   const allItems = pos.flatMap(po => (po.items || []).map((item, idx) => ({ ...item, poId: po.id, poNumber: po.poNumber, lineNumber: idx + 1, vendor: po.vendor || item.description })));
   const allBills = pos.flatMap(po => (po.bills || []).map(bill => ({ ...bill, poId: po.id, poNumber: po.poNumber })));
-  const poGrandTotal      = pos.reduce((s, p) => s + (p.total || 0), 0);
-  const itemGrandTotal    = allItems.reduce((s, i) => s + (i.totalCost || 0), 0);
-  const billGrandTotal    = allBills.reduce((s, b) => s + (b.total || 0), 0);
-  const visitPartsTotal   = visitParts.reduce((s, p) => s + (p.qty || 0) * (p.unitCost || 0), 0);
+  const allInvoices     = allBills.filter(b => !!b.billNumber);
+  const allPackingSlips = allBills.filter(b => !b.billNumber);
+  const poGrandTotal        = pos.reduce((s, p) => s + (p.total || 0), 0);
+  const itemGrandTotal      = allItems.reduce((s, i) => s + (i.totalCost || 0), 0);
+  const invoiceGrandTotal   = allInvoices.reduce((s, b) => s + (b.total || 0), 0);
+  const packingSlipTotal    = allPackingSlips.reduce((s, b) => s + (b.total || 0), 0);
+  const visitPartsTotal     = visitParts.reduce((s, p) => s + (p.qty || 0) * (p.unitCost || 0), 0);
 
   async function changePOStatus(poId: string, status: string) {
     await updateDoc(doc(db, "purchaseOrders", poId), { status });
@@ -443,10 +446,10 @@ export default function PartsAndPurchasingTab({ jobId, jobNumber }: Props) {
         </div>
       )}
 
-      {/* ── Bills ── */}
-      {allBills.length > 0 && (
+      {/* ── Invoices ── */}
+      {allInvoices.length > 0 && (
         <div>
-          <SectionHead title="Bills" />
+          <SectionHead title="Invoices" />
           <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden" }}>
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
@@ -461,7 +464,7 @@ export default function PartsAndPurchasingTab({ jobId, jobNumber }: Props) {
                 </tr>
               </thead>
               <tbody>
-                {allBills.map((b, i) => (
+                {allInvoices.map((b, i) => (
                   <tr key={b.id + i} style={{ borderBottom: "1px solid #f3f4f6" }}>
                     <td style={td}>{b.billNumber || "—"}</td>
                     <td style={td}>{b.receiptNumber || "—"}</td>
@@ -476,7 +479,46 @@ export default function PartsAndPurchasingTab({ jobId, jobNumber }: Props) {
                 ))}
                 <tr style={{ background: "#f9fafb", borderTop: "2px solid #e5e7eb" }}>
                   <td colSpan={6} style={{ ...td, fontWeight: 800 }}>TOTAL</td>
-                  <td style={{ ...td, textAlign: "right", fontWeight: 800, fontSize: 14 }}>{fmtC(billGrandTotal)}</td>
+                  <td style={{ ...td, textAlign: "right", fontWeight: 800, fontSize: 14 }}>{fmtC(invoiceGrandTotal)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ── Packing Slips ── */}
+      {allPackingSlips.length > 0 && (
+        <div>
+          <SectionHead title="Packing Slips" />
+          <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead>
+                <tr style={{ background: "#f9fafb", borderBottom: "1px solid #e5e7eb" }}>
+                  <th style={th}>Receipt Number</th>
+                  <th style={th}>Vendor</th>
+                  <th style={th}>PO Number</th>
+                  <th style={th}>Date Issued</th>
+                  <th style={th}>Created By</th>
+                  <th style={{ ...th, textAlign: "right" }}>Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {allPackingSlips.map((b, i) => (
+                  <tr key={b.id + i} style={{ borderBottom: "1px solid #f3f4f6" }}>
+                    <td style={td}>{b.receiptNumber || "—"}</td>
+                    <td style={td}>{b.vendor || "—"}</td>
+                    <td style={{ ...td, fontWeight: 700 }}>
+                      <Link to={`/purchase-orders/${b.poId}`} style={{ color: "#1565c0", textDecoration: "none" }}>{b.poNumber}</Link>
+                    </td>
+                    <td style={td}>{fmtDate(b.dateIssued)}</td>
+                    <td style={td}>{b.createdBy || "—"}</td>
+                    <td style={{ ...td, textAlign: "right", fontWeight: 600 }}>{fmtC(b.total)}</td>
+                  </tr>
+                ))}
+                <tr style={{ background: "#f9fafb", borderTop: "2px solid #e5e7eb" }}>
+                  <td colSpan={5} style={{ ...td, fontWeight: 800 }}>TOTAL</td>
+                  <td style={{ ...td, textAlign: "right", fontWeight: 800, fontSize: 14 }}>{fmtC(packingSlipTotal)}</td>
                 </tr>
               </tbody>
             </table>
