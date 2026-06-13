@@ -11,7 +11,7 @@
     {
       "source": "functions",
       "codebase": "scheduled-tasks",
-      "runtime": "nodejs20"
+      "runtime": "nodejs22"
     }
   ],
   "storage": {
