@@ -4,6 +4,7 @@ import { arrayUnion, collection, doc, getDoc, getDocs, orderBy, query, updateDoc
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import { httpsCallable } from "firebase/functions";
 import { auth, db, storage, functions } from "../firebase";
+import { loadRecipes, matchRecipe, applyRecipe, validateParsed, saveRecipe, type NeutralParsed } from "../utils/invoiceRecipes";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   "pdfjs-dist/build/pdf.worker.min.mjs",
@@ -289,32 +290,47 @@ export default function ImportPackingSlipModal({
         allRaw.push(...lines);
         let parsed = parseOrderDetails(lines);
 
-        // Fall back to the AI reader when the regex parser finds no line items.
+        // No line items from the regex parser: try a saved vendor recipe first
+        // (free), then fall back to the AI reader (which teaches us a recipe).
         if (parsed.items.length === 0 && lines.length > 0) {
-          setAiReading(true);
+          let neutral: NeutralParsed | null = null;
+
           try {
-            const call = httpsCallable(functions, "parseInvoiceAI");
-            const resp: any = await call({ text: lines.join("\n") });
-            const ai = resp?.data;
-            if (ai && Array.isArray(ai.lines) && ai.lines.length > 0) {
-              parsed = {
-                orderNumber: ai.invoiceNumber || ai.poNumber || parsed.orderNumber,
-                orderDate:   ai.date || parsed.orderDate,
-                vendor:      ai.vendor || parsed.vendor,
-                subtotal:    Number(ai.subtotal) || 0,
-                tax:         Number(ai.taxAmount) || 0,
-                total:       Number(ai.grandTotal) || 0,
-                items: ai.lines.map((l: any) => ({
-                  partNo: String(l.partNo || ""), description: String(l.description || ""),
-                  qty: Number(l.qty) || 0, uom: String(l.uom || "EA"),
-                  unitPrice: Number(l.unitPrice) || 0, total: Number(l.total) || 0, include: true,
-                })),
-              };
+            const recipe = matchRecipe(await loadRecipes(), lines.join("\n"));
+            if (recipe) {
+              const r = applyRecipe(recipe, lines);
+              if (validateParsed(r)) neutral = r;
             }
-          } catch (e) {
-            console.warn("[AI packing slip parse] failed:", e);
+          } catch (e) { console.warn("[recipe parse] failed:", e); }
+
+          if (!neutral) {
+            setAiReading(true);
+            try {
+              const call = httpsCallable(functions, "parseInvoiceAI");
+              const resp: any = await call({ text: lines.join("\n") });
+              const ai = resp?.data;
+              if (ai && Array.isArray(ai.lines) && ai.lines.length > 0) {
+                neutral = ai;
+                if (ai.recipe) await saveRecipe({ ...ai.recipe, vendor: ai.vendor });
+              }
+            } catch (e) { console.warn("[AI packing slip parse] failed:", e); }
+            setAiReading(false);
           }
-          setAiReading(false);
+
+          if (neutral && neutral.lines.length > 0) {
+            parsed = {
+              orderNumber: neutral.invoiceNumber || neutral.poNumber || parsed.orderNumber,
+              orderDate:   neutral.date || parsed.orderDate,
+              vendor:      neutral.vendor || parsed.vendor,
+              subtotal:    Number(neutral.subtotal) || 0,
+              tax:         Number(neutral.taxAmount) || 0,
+              total:       Number(neutral.grandTotal) || 0,
+              items: neutral.lines.map(l => ({
+                partNo: l.partNo, description: l.description,
+                qty: l.qty, uom: l.uom, unitPrice: l.unitPrice, total: l.total, include: true,
+              })),
+            };
+          }
         }
 
         newOrders.push({ fileName: file.name, file, parsed });

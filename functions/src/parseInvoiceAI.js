@@ -47,6 +47,25 @@ const INVOICE_TOOL = {
       taxAmount: { type: "number", description: "Total tax (HST/GST/PST). 0 if none." },
       taxLabel: { type: "string", description: "Tax label shown, e.g. HST. Empty string if none." },
       grandTotal: { type: "number", description: "Final total including tax." },
+      recipe: {
+        type: "object",
+        description:
+          "A REUSABLE extraction recipe so future invoices from THIS SAME vendor can be parsed without calling you again. " +
+          "Build it from this document's structure. Omit entirely only if the layout is too irregular to capture.",
+        properties: {
+          vendorKey: { type: "string", description: "Short normalized vendor id, lowercase, e.g. 'digikey' or 'gerrie'." },
+          detect: { type: "string", description: "A short lowercase string that reliably appears in this vendor's documents, e.g. 'digi-key'." },
+          lineRegex: { type: "string", description: "A JavaScript regular expression (NO slashes, NO flags) that matches ONE line-item row, using named capture groups (?<partNo>...), (?<description>...), (?<qty>...), (?<unitPrice>...), (?<total>...). qty/unitPrice/total must capture plain numbers (digits, optional decimal). Verify it matches the line-item rows in the text below." },
+          flags: { type: "string", description: "Regex flags, usually 'i'." },
+          dateRegex: { type: "string", description: "Regex capturing the document date in group 1. Optional." },
+          invoiceRegex: { type: "string", description: "Regex capturing the invoice/order number in group 1. Optional." },
+          poRegex: { type: "string", description: "Regex capturing the customer PO reference in group 1. Optional." },
+          subtotalRegex: { type: "string", description: "Regex capturing the pre-tax subtotal amount in group 1. Optional." },
+          taxRegex: { type: "string", description: "Regex capturing the tax amount in group 1. Optional." },
+          totalRegex: { type: "string", description: "Regex capturing the grand total amount in group 1. Optional." },
+          taxLabel: { type: "string", description: "Tax label, e.g. HST. Optional." },
+        },
+      },
     },
     required: ["vendor", "lines", "subtotal", "taxAmount", "grandTotal"],
   },
@@ -85,6 +104,11 @@ export const parseInvoiceAI = onCall(
                 "Extract the line items and totals from this supplier invoice / packing slip. " +
                 "Only include real product line items — skip shipping, freight, tariff, tax, and summary rows. " +
                 "Use the document's own numbers; do not invent values.\n\n" +
+                "ALSO build a reusable 'recipe' so future invoices from this same vendor can be parsed without you. " +
+                "The recipe's lineRegex must be a JavaScript regular expression with named groups " +
+                "(?<partNo>), (?<description>), (?<qty>), (?<unitPrice>), (?<total>) that matches the line-item rows " +
+                "in the text below — mentally test it before returning. Include a 'detect' string that reliably appears " +
+                "in this vendor's documents. If the layout is too irregular to capture reliably, omit the recipe.\n\n" +
                 "DOCUMENT TEXT:\n" + clipped,
             },
           ],
@@ -122,6 +146,40 @@ export const parseInvoiceAI = onCall(
     out.poNumber = String(out.poNumber || "");
     out.date = String(out.date || "");
     out.taxLabel = String(out.taxLabel || "Tax");
+
+    // Sanity-check the AI-generated recipe so we never store a broken one. The
+    // lineRegex must compile AND contain the required named groups; otherwise drop it.
+    if (out.recipe && typeof out.recipe === "object") {
+      const r = out.recipe;
+      let ok = false;
+      try {
+        if (r.lineRegex && typeof r.lineRegex === "string") {
+          const re = new RegExp(r.lineRegex, typeof r.flags === "string" ? r.flags : "i");
+          const src = re.source;
+          ok = ["partNo", "qty", "unitPrice", "total"].every((g) => src.includes(`<${g}>`));
+        }
+      } catch { ok = false; }
+      if (ok) {
+        out.recipe = {
+          vendorKey: String(r.vendorKey || out.vendor || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""),
+          detect: String(r.detect || "").toLowerCase(),
+          lineRegex: String(r.lineRegex),
+          flags: typeof r.flags === "string" ? r.flags : "i",
+          dateRegex: r.dateRegex ? String(r.dateRegex) : "",
+          invoiceRegex: r.invoiceRegex ? String(r.invoiceRegex) : "",
+          poRegex: r.poRegex ? String(r.poRegex) : "",
+          subtotalRegex: r.subtotalRegex ? String(r.subtotalRegex) : "",
+          taxRegex: r.taxRegex ? String(r.taxRegex) : "",
+          totalRegex: r.totalRegex ? String(r.totalRegex) : "",
+          taxLabel: r.taxLabel ? String(r.taxLabel) : out.taxLabel,
+        };
+        if (!out.recipe.vendorKey || !out.recipe.detect) out.recipe = null;
+      } else {
+        out.recipe = null;
+      }
+    } else {
+      out.recipe = null;
+    }
 
     return out;
   }

@@ -4,6 +4,7 @@ import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage
 import { arrayUnion, collection, doc, getDoc, getDocs, query, runTransaction, updateDoc, where } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 import { auth, db, storage, functions } from "../firebase";
+import { loadRecipes, matchRecipe, applyRecipe, validateParsed, saveRecipe, type NeutralParsed } from "../utils/invoiceRecipes";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   "pdfjs-dist/build/pdf.worker.min.mjs",
@@ -501,35 +502,51 @@ export default function ImportBillModal({
       const lines = await extractLines(file);
       let parsed = parseInvoice(lines);
 
-      // If the free regex parsers found no line items, fall back to the AI reader.
+      // If the free regex parsers found no line items: try a saved vendor recipe
+      // first (free), then fall back to the AI reader (which also teaches us a
+      // recipe so this vendor is free next time).
       if (parsed.lines.length === 0 && lines.length > 0) {
-        setJobs(prev => prev.map(j => j.id !== jobId ? j : { ...j, aiReading: true }));
+        let neutral: NeutralParsed | null = null;
+
         try {
-          const call = httpsCallable(functions, "parseInvoiceAI");
-          const resp: any = await call({ text: lines.join("\n") });
-          const ai = resp?.data;
-          if (ai && Array.isArray(ai.lines) && ai.lines.length > 0) {
-            parsed = {
-              invoiceNumber: ai.invoiceNumber || parsed.invoiceNumber,
-              poNumber:      ai.poNumber || parsed.poNumber,
-              vendor:        ai.vendor || parsed.vendor,
-              date:          ai.date || parsed.date,
-              subtotal:      Number(ai.subtotal) || 0,
-              taxAmount:     Number(ai.taxAmount) || 0,
-              grandTotal:    Number(ai.grandTotal) || 0,
-              taxLabel:      ai.taxLabel || "Tax",
-              lines: ai.lines.map((l: any) => ({
-                partNo: String(l.partNo || ""), description: String(l.description || ""),
-                qty: Number(l.qty) || 0, uom: String(l.uom || "EA"),
-                unitPrice: Number(l.unitPrice) || 0, total: Number(l.total) || 0,
-                taxable: l.taxable !== false, mode: "new" as LineMode, matchedItemId: null,
-              })),
-            };
+          const recipe = matchRecipe(await loadRecipes(), lines.join("\n"));
+          if (recipe) {
+            const r = applyRecipe(recipe, lines);
+            if (validateParsed(r)) neutral = r;
           }
-        } catch (e) {
-          console.warn("[AI invoice parse] failed:", e);
+        } catch (e) { console.warn("[recipe parse] failed:", e); }
+
+        if (!neutral) {
+          setJobs(prev => prev.map(j => j.id !== jobId ? j : { ...j, aiReading: true }));
+          try {
+            const call = httpsCallable(functions, "parseInvoiceAI");
+            const resp: any = await call({ text: lines.join("\n") });
+            const ai = resp?.data;
+            if (ai && Array.isArray(ai.lines) && ai.lines.length > 0) {
+              neutral = ai;
+              if (ai.recipe) await saveRecipe({ ...ai.recipe, vendor: ai.vendor });
+            }
+          } catch (e) { console.warn("[AI invoice parse] failed:", e); }
+          setJobs(prev => prev.map(j => j.id !== jobId ? j : { ...j, aiReading: false }));
         }
-        setJobs(prev => prev.map(j => j.id !== jobId ? j : { ...j, aiReading: false }));
+
+        if (neutral && neutral.lines.length > 0) {
+          parsed = {
+            invoiceNumber: neutral.invoiceNumber || parsed.invoiceNumber,
+            poNumber:      neutral.poNumber || parsed.poNumber,
+            vendor:        neutral.vendor || parsed.vendor,
+            date:          neutral.date || parsed.date,
+            subtotal:      Number(neutral.subtotal) || 0,
+            taxAmount:     Number(neutral.taxAmount) || 0,
+            grandTotal:    Number(neutral.grandTotal) || 0,
+            taxLabel:      neutral.taxLabel || "Tax",
+            lines: neutral.lines.map(l => ({
+              partNo: l.partNo, description: l.description,
+              qty: l.qty, uom: l.uom, unitPrice: l.unitPrice, total: l.total,
+              taxable: l.taxable, mode: "new" as LineMode, matchedItemId: null,
+            })),
+          };
+        }
       }
 
       let matchedPOs: POStub[] = [];
