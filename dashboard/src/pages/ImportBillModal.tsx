@@ -277,8 +277,9 @@ async function saveImport(targetPoId: string, invoice: ParsedInvoice, editLines:
     const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error("upload timed out after 30s")), 30000));
     const upload = uploadBytes(sRef, file, { contentType: "application/pdf" }).then(snap => getDownloadURL(snap.ref));
     pdfUrl = await Promise.race([upload, timeout]);
-  } catch (e) {
-    pdfError = e instanceof Error ? e.message : String(e);
+  } catch (e: any) {
+    pdfError = e?.code ? `${e.code}: ${e.message}` : (e instanceof Error ? e.message : String(e));
+    console.error("[PDF upload]", e);
   }
   const bill = {
     id: crypto.randomUUID(), billNumber,
