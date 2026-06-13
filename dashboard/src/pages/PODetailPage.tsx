@@ -866,6 +866,17 @@ export default function PODetailPage() {
                 >
                   📄 IMPORT INVOICE PDF
                 </button>
+                {invoiceBills.length > 0 && (
+                  <button
+                    onClick={async () => {
+                      if (!confirm(`Clear all invoices and ordered items? This cannot be undone.`)) return;
+                      await updateDoc(doc(db, "purchaseOrders", po.id), { bills: packingSlipBills, items: [], subtotal: 0, taxAmount: 0, total: 0, status: "Open" });
+                    }}
+                    style={{ display: "flex", alignItems: "center", gap: 6, background: "#fff5f5", border: "1px solid #fca5a5", borderRadius: 7, padding: "7px 14px", fontSize: 12, fontWeight: 700, color: "#dc2626", cursor: "pointer", marginLeft: "auto" }}
+                  >
+                    🗑 CLEAR ALL INVOICES
+                  </button>
+                )}
               </div>
             </>
           )}
@@ -919,6 +930,17 @@ export default function PODetailPage() {
                 >
                   📦 IMPORT PACKING SLIP
                 </button>
+                {packingSlipBills.length > 0 && (
+                  <button
+                    onClick={async () => {
+                      if (!confirm(`Clear all packing slips? This cannot be undone.`)) return;
+                      await updateDoc(doc(db, "purchaseOrders", po.id), { bills: invoiceBills });
+                    }}
+                    style={{ display: "flex", alignItems: "center", gap: 6, background: "#fff5f5", border: "1px solid #fca5a5", borderRadius: 7, padding: "7px 14px", fontSize: 12, fontWeight: 700, color: "#dc2626", cursor: "pointer", marginLeft: "auto" }}
+                  >
+                    🗑 CLEAR ALL PACKING SLIPS
+                  </button>
+                )}
               </div>
             </>
           )}
