@@ -207,13 +207,20 @@ export default function PartsAndPurchasingTab({ jobId, jobNumber }: Props) {
   const [expandedPO, setExpandedPO]   = useState<string | null>(null);
   const [addingItemTo, setAddingItemTo] = useState<string | null>(null);
   const [addingBillTo, setAddingBillTo] = useState<string | null>(null);
-  const [quickTag, setQuickTag]       = useState("");
+  const [quickVendor, setQuickVendor] = useState("");
   const [quickAdding, setQuickAdding] = useState(false);
   const [quickError, setQuickError]   = useState("");
+  const [vendors, setVendors]         = useState<string[]>([]);
+
+  useEffect(() => {
+    getDocs(collection(db, "vendors"))
+      .then(snap => setVendors(snap.docs.map(d => (d.data().name as string) || "").filter(Boolean).sort()))
+      .catch(() => {});
+  }, []);
 
   async function quickAddPO() {
-    const tag = quickTag.trim();
-    if (!tag) { setQuickError("Enter a tag name first"); return; }
+    const vendor = quickVendor.trim();
+    if (!vendor) { setQuickError("Pick a vendor first"); return; }
     setQuickAdding(true);
     setQuickError("");
     try {
@@ -233,13 +240,13 @@ export default function PartsAndPurchasingTab({ jobId, jobNumber }: Props) {
         jobId, jobNumber,
         poNumber:    assignedPoNumber,
         status:      "Open",
-        vendor:      tag,
+        vendor:      vendor,
         vendorType:  "Supplier",
-        poType:      "Vendor delivery",
+        poType:      "Credit Card order",
         poDate:      today,
         fieldOrder:  false,
-        tags:        tag,
-        description: tag,
+        tags:        vendor,
+        description: vendor,
         department:  "General",
         assignTo: "", assignedTo: "", requiredBy: "", projectManager: "",
         taxRate: "HST ON (13%)", directPayerSalesTax: false, shipTo: "",
@@ -247,7 +254,7 @@ export default function PartsAndPurchasingTab({ jobId, jobNumber }: Props) {
         createdBy: auth.currentUser?.displayName || auth.currentUser?.email || "Unknown",
         createdAt: today,
       });
-      setQuickTag("");
+      setQuickVendor("");
       window.location.href = `/purchase-orders/${newPoRef.id}`;
     } catch (e: any) {
       console.error("[quickAddPO]", e);
@@ -308,12 +315,14 @@ export default function PartsAndPurchasingTab({ jobId, jobNumber }: Props) {
           action={
             <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
               <input
-                style={{ padding: "6px 10px", border: "1px solid #d1d5db", borderRadius: 6, fontSize: 13, outline: "none", width: 180 }}
-                placeholder="Tag name (e.g. Olymel)…"
-                value={quickTag}
-                onChange={e => { setQuickTag(e.target.value); setQuickError(""); }}
+                list="quick-vendor-list"
+                style={{ padding: "6px 10px", border: "1px solid #d1d5db", borderRadius: 6, fontSize: 13, outline: "none", width: 200 }}
+                placeholder="Pick a vendor (credit card)…"
+                value={quickVendor}
+                onChange={e => { setQuickVendor(e.target.value); setQuickError(""); }}
                 onKeyDown={e => { if (e.key === "Enter") quickAddPO(); }}
               />
+              <datalist id="quick-vendor-list">{vendors.map(v => <option key={v} value={v} />)}</datalist>
               <button
                 onClick={quickAddPO}
                 disabled={quickAdding}
