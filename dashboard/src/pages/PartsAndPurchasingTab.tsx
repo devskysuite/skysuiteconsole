@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { arrayUnion, collection, doc, getDoc, getDocs, onSnapshot, query, runTransaction, updateDoc, where } from "firebase/firestore";
+import { arrayUnion, collection, doc, getDoc, getDocs, onSnapshot, query, setDoc, updateDoc, where } from "firebase/firestore";
 import { auth, db } from "../firebase";
 import { Link, useNavigate } from "react-router-dom";
 import CreatePOModal from "./CreatePOModal";
@@ -210,48 +210,49 @@ export default function PartsAndPurchasingTab({ jobId, jobNumber }: Props) {
   const [addingBillTo, setAddingBillTo] = useState<string | null>(null);
   const [quickTag, setQuickTag]       = useState("");
   const [quickAdding, setQuickAdding] = useState(false);
+  const [quickError, setQuickError]   = useState("");
 
   async function quickAddPO() {
     const tag = quickTag.trim();
     if (!tag) return;
     setQuickAdding(true);
+    setQuickError("");
     try {
-      const poRef       = doc(collection(db, "purchaseOrders"));
       const settingsRef = doc(db, "settings", "poSettings");
+      const settingsSnap = await getDoc(settingsRef);
       let assignedPoNumber = "";
-      await runTransaction(db, async (tx) => {
-        const settingsSnap = await tx.get(settingsRef);
-        if (settingsSnap.exists() && settingsSnap.data().nextPoNumber) {
-          const next = settingsSnap.data().nextPoNumber as number;
-          assignedPoNumber = String(next);
-          tx.set(settingsRef, { nextPoNumber: next + 1 }, { merge: true });
-        } else {
-          assignedPoNumber = `PO-${Date.now().toString(36).toUpperCase()}`;
-        }
-        tx.set(poRef, {
-          jobId, jobNumber,
-          poNumber:    assignedPoNumber,
-          status:      "Open",
-          vendor:      tag,
-          vendorType:  "Supplier",
-          poType:      "Vendor delivery",
-          poDate:      new Date().toISOString().slice(0, 10),
-          fieldOrder:  false,
-          tags:        tag,
-          description: tag,
-          department:  "General",
-          assignTo: "", assignedTo: "", requiredBy: "", projectManager: "",
-          taxRate: "HST ON (13%)", directPayerSalesTax: false, shipTo: "",
-          items: [], bills: [], subtotal: 0, taxAmount: 0, total: 0,
-          createdBy: auth.currentUser?.displayName || auth.currentUser?.email || "Unknown",
-          createdAt: new Date().toISOString().slice(0, 10),
-        });
+      if (settingsSnap.exists() && settingsSnap.data()?.nextPoNumber) {
+        const next = settingsSnap.data()!.nextPoNumber as number;
+        assignedPoNumber = String(next);
+        await updateDoc(settingsRef, { nextPoNumber: next + 1 });
+      } else {
+        assignedPoNumber = `PO-${Date.now().toString(36).toUpperCase()}`;
+      }
+      const today = new Date().toISOString().slice(0, 10);
+      const newPoRef = doc(collection(db, "purchaseOrders"));
+      await setDoc(newPoRef, {
+        jobId, jobNumber,
+        poNumber:    assignedPoNumber,
+        status:      "Open",
+        vendor:      tag,
+        vendorType:  "Supplier",
+        poType:      "Vendor delivery",
+        poDate:      today,
+        fieldOrder:  false,
+        tags:        tag,
+        description: tag,
+        department:  "General",
+        assignTo: "", assignedTo: "", requiredBy: "", projectManager: "",
+        taxRate: "HST ON (13%)", directPayerSalesTax: false, shipTo: "",
+        items: [], bills: [], subtotal: 0, taxAmount: 0, total: 0,
+        createdBy: auth.currentUser?.displayName || auth.currentUser?.email || "Unknown",
+        createdAt: today,
       });
       setQuickTag("");
-      navigate(`/purchase-orders/${poRef.id}`);
-    } catch (e) {
-      console.error(e);
-      alert("Failed to create PO.");
+      navigate(`/purchase-orders/${newPoRef.id}`);
+    } catch (e: any) {
+      console.error("[quickAddPO]", e);
+      setQuickError(e?.message || "Failed to create PO.");
     } finally {
       setQuickAdding(false);
     }
@@ -328,6 +329,11 @@ export default function PartsAndPurchasingTab({ jobId, jobNumber }: Props) {
             </div>
           }
         />
+        {quickError && (
+          <div style={{ marginBottom: 8, padding: "8px 12px", background: "#fee2e2", border: "1px solid #fca5a5", borderRadius: 7, fontSize: 13, color: "#991b1b" }}>
+            {quickError}
+          </div>
+        )}
         <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden" }}>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
