@@ -171,6 +171,10 @@ async function savePackingSlip(poId: string, items: SlipItem[], receipts: SlipRe
     });
   }
 
+  // Only confirm receipt off a packing slip if the PO has actually been invoiced.
+  // An invoice is a bill with a billNumber set; packing slips have billNumber "".
+  const hasInvoice = (poSnap.data()?.bills || []).some((b: any) => (b.billNumber || "").trim() !== "");
+
   for (const item of items) {
     if (!item.include) continue;
     const pn = item.partNo.toLowerCase().trim();
@@ -180,26 +184,35 @@ async function savePackingSlip(poId: string, items: SlipItem[], receipts: SlipRe
       return en === pn || (en.includes(pn) && pn.length >= 4) || (pn.includes(en) && en.length >= 4);
     });
     if (matchIdx >= 0) {
-      // Packing slip confirms receipt — increment quantityReceived
       const e = existing[matchIdx];
-      const newQtyRec = (e.quantityReceived || 0) + item.qty;
-      const fulfilled = (e.quantityOrdered || 0) > 0 && newQtyRec >= (e.quantityOrdered || 0);
-      existing[matchIdx] = {
-        ...e,
-        quantityReceived: newQtyRec,
-        fulfillmentStatus: fulfilled ? "Fulfilled" : "Pending",
-        ...(!e.unitCost ? { unitCost: item.unitPrice, totalCost: item.total } : {}),
-      };
+      if (hasInvoice) {
+        // Invoice exists for this PO — the packing slip confirms physical receipt
+        const newQtyRec = (e.quantityReceived || 0) + item.qty;
+        const fulfilled = (e.quantityOrdered || 0) > 0 && newQtyRec >= (e.quantityOrdered || 0);
+        existing[matchIdx] = {
+          ...e,
+          quantityReceived: newQtyRec,
+          fulfillmentStatus: fulfilled ? "Fulfilled" : "Pending",
+          ...(!e.unitCost ? { unitCost: item.unitPrice, totalCost: item.total } : {}),
+        };
+      } else {
+        // No invoice yet — record pricing if missing but DO NOT mark received
+        existing[matchIdx] = {
+          ...e,
+          ...(!e.unitCost ? { unitCost: item.unitPrice, totalCost: item.total } : {}),
+        };
+      }
     } else {
-      // No prior invoice for this item — add it as fully received
+      // New item from the packing slip — no invoice line covers it, so it is
+      // recorded as ordered but NOT received.
       existing.push({
         id: crypto.randomUUID(),
         name: item.partNo, description: item.description,
-        quantityOrdered: item.qty, quantityReceived: item.qty,
+        quantityOrdered: item.qty, quantityReceived: 0,
         unitCost: item.unitPrice, totalCost: item.total,
         taxable: true, unitOfMeasure: item.uom || "EA",
         costCode: "Materials", jobCostType: "Materials", revenueType: "Materials",
-        fulfillmentStatus: "Fulfilled",
+        fulfillmentStatus: "Pending",
       });
     }
   }
