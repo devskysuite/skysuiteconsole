@@ -47,6 +47,7 @@ const INVOICE_TOOL = {
       taxAmount: { type: "number", description: "Total tax (HST/GST/PST). 0 if none." },
       taxLabel: { type: "string", description: "Tax label shown, e.g. HST. Empty string if none." },
       grandTotal: { type: "number", description: "Final total including tax." },
+      isCreditCard: { type: "boolean", description: "True if paid by credit card — e.g. payment terms / method shows Visa, Mastercard, Amex, Debit, 'Credit Card', or a card number appears." },
       recipe: {
         type: "object",
         description:
@@ -146,6 +147,7 @@ export const parseInvoiceAI = onCall(
     out.poNumber = String(out.poNumber || "");
     out.date = String(out.date || "");
     out.taxLabel = String(out.taxLabel || "Tax");
+    out.isCreditCard = out.isCreditCard === true;
 
     // Sanity-check the AI-generated recipe so we never store a broken one. The
     // lineRegex must compile AND contain the required named groups; otherwise drop it.

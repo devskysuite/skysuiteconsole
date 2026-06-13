@@ -34,7 +34,21 @@ export interface NeutralParsed {
   subtotal: number;
   taxAmount: number;
   grandTotal: number;
+  isCreditCard?: boolean;
   lines: Array<{ partNo: string; description: string; qty: number; uom: string; unitPrice: number; total: number; taxable: boolean }>;
+}
+
+// Detect whether a document is a credit-card order. Credit-card orders are paid
+// and shipped immediately, so on import we treat ordered qty as fully received.
+// Runs on the raw text so it works for every parse tier (regex / recipe / AI).
+export function detectCreditCard(text: string): boolean {
+  const t = text.toLowerCase();
+  if (/credit\s*card/.test(t)) return true;
+  // A card brand named alongside payment wording.
+  if (/payment/.test(t) && /\b(visa|mastercard|master\s*card|amex|american\s*express|debit)\b/.test(t)) return true;
+  // A masked card number, e.g. ****1234 or xxxx-xxxx-xxxx-1234.
+  if (/(\*{2,}\s*\d{4})|((?:x{4}[\s-]*){2,}\d{4})/i.test(text)) return true;
+  return false;
 }
 
 let _cache: InvoiceRecipe[] | null = null;

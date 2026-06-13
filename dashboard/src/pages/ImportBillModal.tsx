@@ -4,7 +4,7 @@ import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage
 import { arrayUnion, collection, doc, getDoc, getDocs, query, runTransaction, updateDoc, where } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 import { auth, db, storage, functions } from "../firebase";
-import { loadRecipes, matchRecipe, applyRecipe, validateParsed, saveRecipe, type NeutralParsed } from "../utils/invoiceRecipes";
+import { loadRecipes, matchRecipe, applyRecipe, validateParsed, saveRecipe, detectCreditCard, type NeutralParsed } from "../utils/invoiceRecipes";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   "pdfjs-dist/build/pdf.worker.min.mjs",
@@ -32,6 +32,7 @@ interface InvoiceLine {
 interface ParsedInvoice {
   invoiceNumber: string; poNumber: string; vendor: string; date: string;
   lines: InvoiceLine[]; subtotal: number; taxAmount: number; grandTotal: number; taxLabel: string;
+  isCreditCard?: boolean;
 }
 
 interface POStub { id: string; poNumber: string; vendor: string; jobNumber: string; status: string; }
@@ -406,10 +407,13 @@ async function saveImport(targetPoId: string, invoice: ParsedInvoice, editLines:
         return { ...i, quantityReceived: newQtyRec, fulfillmentStatus: fulfilled ? "Fulfilled" : "Pending" };
       });
     } else if (line.mode === "new") {
+      // Credit-card orders are received on purchase → ordered qty counts as received.
+      const received = invoice.isCreditCard ? line.qty : 0;
+      const fulfilled = invoice.isCreditCard && line.qty > 0;
       newItems.push({
         id: crypto.randomUUID(), name: line.partNo || line.description,
         description: line.partNo && line.description ? line.description : "",
-        fulfillmentStatus: "Pending", quantityOrdered: line.qty, quantityReceived: 0,
+        fulfillmentStatus: fulfilled ? "Fulfilled" : "Pending", quantityOrdered: line.qty, quantityReceived: received,
         unitCost: line.unitPrice, totalCost: line.total, taxable: line.taxable,
         unitOfMeasure: line.uom, costCode: "Materials", jobCostType: "Materials", revenueType: "Materials",
       });
@@ -540,6 +544,7 @@ export default function ImportBillModal({
             taxAmount:     Number(neutral.taxAmount) || 0,
             grandTotal:    Number(neutral.grandTotal) || 0,
             taxLabel:      neutral.taxLabel || "Tax",
+            isCreditCard:  neutral.isCreditCard === true,
             lines: neutral.lines.map(l => ({
               partNo: l.partNo, description: l.description,
               qty: l.qty, uom: l.uom, unitPrice: l.unitPrice, total: l.total,
@@ -548,6 +553,10 @@ export default function ImportBillModal({
           };
         }
       }
+
+      // Credit-card orders are paid + shipped immediately → treat ordered as received.
+      // Detect from the raw text (covers every parse tier) and OR in any AI signal.
+      parsed.isCreditCard = detectCreditCard(lines.join("\n")) || parsed.isCreditCard === true;
 
       let matchedPOs: POStub[] = [];
       let selectedPO: POStub | null = null;
@@ -787,6 +796,7 @@ export default function ImportBillModal({
                           {receiveCount > 0 && <span style={{ background: "#f0fdf4", color: "#166534", border: "1px solid #86efac", borderRadius: 6, padding: "3px 10px", fontSize: 12, fontWeight: 700 }}>↓ {receiveCount} receiving</span>}
                           {newCount > 0 && <span style={{ background: "#eff6ff", color: "#1e40af", border: "1px solid #bfdbfe", borderRadius: 6, padding: "3px 10px", fontSize: 12, fontWeight: 700 }}>+ {newCount} new</span>}
                           {skipCount > 0 && <span style={{ background: "#f9fafb", color: "#9ca3af", border: "1px solid #e5e7eb", borderRadius: 6, padding: "3px 10px", fontSize: 12, fontWeight: 700 }}>— {skipCount} skipped</span>}
+                          {job.invoice?.isCreditCard && <span style={{ background: "#fef3c7", color: "#92400e", border: "1px solid #fcd34d", borderRadius: 6, padding: "3px 10px", fontSize: 12, fontWeight: 700 }}>💳 Credit card — marking received</span>}
                           {!hasExisting && job.editLines.length > 0 && <span style={{ fontSize: 12, color: "#9ca3af", alignSelf: "center" }}>No existing PO items — all added as new</span>}
                         </div>
                       )}

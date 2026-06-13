@@ -4,7 +4,7 @@ import { arrayUnion, collection, doc, getDoc, getDocs, orderBy, query, updateDoc
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import { httpsCallable } from "firebase/functions";
 import { auth, db, storage, functions } from "../firebase";
-import { loadRecipes, matchRecipe, applyRecipe, validateParsed, saveRecipe, type NeutralParsed } from "../utils/invoiceRecipes";
+import { loadRecipes, matchRecipe, applyRecipe, validateParsed, saveRecipe, detectCreditCard, type NeutralParsed } from "../utils/invoiceRecipes";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   "pdfjs-dist/build/pdf.worker.min.mjs",
@@ -142,7 +142,7 @@ function parseOrderDetails(lines: string[]): ParsedOrder {
 // ── Save ───────────────────────────────────────────────────────────────────────
 interface SlipReceipt { file: File; orderNumber: string; vendor: string; orderDate: string; total: number; }
 
-async function savePackingSlip(poId: string, items: SlipItem[], receipts: SlipReceipt[]): Promise<{ pdfError?: string }> {
+async function savePackingSlip(poId: string, items: SlipItem[], receipts: SlipReceipt[], isCreditCard = false): Promise<{ pdfError?: string }> {
   const poSnap = await getDoc(doc(db, "purchaseOrders", poId));
   const existing: any[] = ((poSnap.data()?.items) || []).map((i: any) => ({ ...i }));
 
@@ -173,9 +173,11 @@ async function savePackingSlip(poId: string, items: SlipItem[], receipts: SlipRe
     });
   }
 
-  // Only confirm receipt off a packing slip if the PO has actually been invoiced.
+  // Confirm receipt off a packing slip only if the PO has actually been invoiced —
+  // UNLESS it's a credit-card order, which is paid + received on purchase.
   // An invoice is a bill with a billNumber set; packing slips have billNumber "".
   const hasInvoice = (poSnap.data()?.bills || []).some((b: any) => (b.billNumber || "").trim() !== "");
+  const confirmReceipt = hasInvoice || isCreditCard;
 
   for (const item of items) {
     if (!item.include) continue;
@@ -187,8 +189,8 @@ async function savePackingSlip(poId: string, items: SlipItem[], receipts: SlipRe
     });
     if (matchIdx >= 0) {
       const e = existing[matchIdx];
-      if (hasInvoice) {
-        // Invoice exists for this PO — the packing slip confirms physical receipt
+      if (confirmReceipt) {
+        // Invoice exists (or credit-card order) — confirm physical receipt
         const newQtyRec = (e.quantityReceived || 0) + item.qty;
         const fulfilled = (e.quantityOrdered || 0) > 0 && newQtyRec >= (e.quantityOrdered || 0);
         existing[matchIdx] = {
@@ -205,16 +207,17 @@ async function savePackingSlip(poId: string, items: SlipItem[], receipts: SlipRe
         };
       }
     } else {
-      // New item from the packing slip — no invoice line covers it, so it is
-      // recorded as ordered but NOT received.
+      // New item from the packing slip. Received only on a credit-card order;
+      // otherwise recorded as ordered but NOT received (no invoice line covers it).
+      const received = isCreditCard ? item.qty : 0;
       existing.push({
         id: crypto.randomUUID(),
         name: item.partNo, description: item.description,
-        quantityOrdered: item.qty, quantityReceived: 0,
+        quantityOrdered: item.qty, quantityReceived: received,
         unitCost: item.unitPrice, totalCost: item.total,
         taxable: true, unitOfMeasure: item.uom || "EA",
         costCode: "Materials", jobCostType: "Materials", revenueType: "Materials",
-        fulfillmentStatus: "Pending",
+        fulfillmentStatus: isCreditCard && item.qty > 0 ? "Fulfilled" : "Pending",
       });
     }
   }
@@ -355,7 +358,8 @@ export default function ImportPackingSlipModal({
         orderDate: o.parsed.orderDate,
         total: o.parsed.total,
       }));
-      const { pdfError } = await savePackingSlip(targetPoId, items, receipts);
+      const isCreditCard = detectCreditCard(rawLines.join("\n"));
+      const { pdfError } = await savePackingSlip(targetPoId, items, receipts, isCreditCard);
       if (pdfError) {
         setError(`Saved — but PDF attachment failed: ${pdfError}`);
         setSaving(false);
