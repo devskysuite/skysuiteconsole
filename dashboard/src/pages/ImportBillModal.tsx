@@ -85,17 +85,43 @@ function parseDigiKey(lines: string[], full: string): ParsedInvoice {
   const date = full.match(/Order\s+Date:\s*(\d{1,2}-[A-Z]{3}-\d{4})/i);
   if (date) result.date = normalizeDigiKeyDate(date[1]);
 
-  // Line items
-  const lineRe = /^\d+\s+(\d+)\s+\d+\s+\d+\s+PART:\s*(\S+)\s+DESC:\s*(.+?)\s+([\d,]+\.\d+)\s+([\d,]+\.\d+)\s*T?\s*$/i;
-  for (const line of lines) {
-    const m = line.match(lineRe);
-    if (!m) continue;
-    const [, qtyStr, partNo, desc, upStr, totStr] = m;
-    const qty = parseFloat(qtyStr);
-    const unitPrice = parseFloat(upStr.replace(/,/g, ""));
-    const total = parseFloat(totStr.replace(/,/g, ""));
-    if (!(qty > 0)) continue;
-    result.lines.push({ partNo, description: desc.trim(), qty, uom: "EA", unitPrice, total, taxable: true, mode: "new", matchedItemId: null });
+  // Line items — tolerant: key off the "PART:" label rather than a fixed column
+  // order, since PDF extraction can reorder/wrap columns. Pull the amounts from
+  // the PART: line (or the next line if they wrapped), and derive qty by which
+  // leading number makes qty x unitPrice ≈ total.
+  const amtRe = /([\d,]+\.\d{2,})/g;
+  const isCont = (s: string) => /^(MFG|ECCN|ROHS|REACH|Mercury|HTSUS|EAR)/i.test(s.trim());
+  for (let i = 0; i < lines.length; i++) {
+    const src = lines[i];
+    if (!/PART:/i.test(src)) continue;
+    const partM = src.match(/PART:\s*([^\s]+)/i);
+    const partNo = partM ? partM[1] : "";
+    if (!partNo) continue;
+
+    let amts = [...src.matchAll(amtRe)].map(m => parseFloat(m[1].replace(/,/g, "")));
+    if (amts.length < 2) {
+      const next = (lines[i + 1] || "").trim();
+      if (next && !isCont(next)) amts = amts.concat([...next.matchAll(amtRe)].map(m => parseFloat(m[1].replace(/,/g, ""))));
+    }
+    if (amts.length < 1) continue;
+    const total = amts[amts.length - 1];
+    let unitPrice = amts.length >= 2 ? amts[amts.length - 2] : 0;
+
+    const descM = src.match(/DESC:\s*(.+?)(?=\s+\$?[\d,]+\.\d{2,}|\s*$)/i);
+    const description = descM ? descM[1].trim() : "";
+
+    const head = src.slice(0, src.search(/PART:/i));
+    const headNums = (head.match(/\d+/g) || []).map(Number).filter(n => n > 0);
+    let qty = 0;
+    if (unitPrice > 0) {
+      for (const n of headNums) { if (Math.abs(n * unitPrice - total) <= total * 0.02 + 0.05) { qty = n; break; } }
+      if (!qty) qty = Math.max(1, Math.round(total / unitPrice));
+    } else {
+      qty = headNums.length >= 2 ? headNums[1] : (headNums[0] || 1);
+      unitPrice = qty > 0 ? parseFloat((total / qty).toFixed(5)) : total;
+    }
+    if (!(qty > 0) || !(total > 0)) continue;
+    result.lines.push({ partNo, description, qty, uom: "EA", unitPrice, total, taxable: true, mode: "new", matchedItemId: null });
   }
 
   // Totals
@@ -775,6 +801,14 @@ export default function ImportBillModal({
                         <div><span style={labelS}>{job.invoice.taxLabel}</span><input style={{ ...inp, background: "#f9fafb" }} value={fmtC(job.invoice.taxAmount)} readOnly /></div>
                         <div><span style={labelS}>Grand Total</span><input style={{ ...inp, background: "#f9fafb", fontWeight: 700 }} value={fmtC(job.invoice.grandTotal)} readOnly /></div>
                       </div>
+
+                      {/* Diagnostic: raw extracted text (handy for adding a vendor parser) */}
+                      {job.rawLines.length > 0 && (
+                        <details style={{ marginBottom: 14 }}>
+                          <summary style={{ fontSize: 11, color: "#9ca3af", cursor: "pointer", userSelect: "none" }}>View extracted PDF text</summary>
+                          <pre style={{ margin: "6px 0 0", padding: "10px 12px", fontSize: 11, color: "#6b7280", background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: 6, whiteSpace: "pre-wrap", wordBreak: "break-word", maxHeight: 220, overflowY: "auto" }}>{job.rawLines.join("\n")}</pre>
+                        </details>
+                      )}
 
                       {/* No lines warning */}
                       {job.editLines.length === 0 && (

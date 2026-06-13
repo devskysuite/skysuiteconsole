@@ -158,7 +158,8 @@ export const parseInvoiceAI = onCall(
         if (r.lineRegex && typeof r.lineRegex === "string") {
           const re = new RegExp(r.lineRegex, typeof r.flags === "string" ? r.flags : "i");
           const src = re.source;
-          ok = ["partNo", "qty", "unitPrice", "total"].every((g) => src.includes(`<${g}>`));
+          // Require the numeric groups; partNo/description are optional.
+          ok = ["qty", "unitPrice", "total"].every((g) => src.includes(`<${g}>`));
         }
       } catch { ok = false; }
       if (ok) {
