@@ -213,7 +213,7 @@ export default function PartsAndPurchasingTab({ jobId, jobNumber }: Props) {
 
   async function quickAddPO() {
     const tag = quickTag.trim();
-    if (!tag) return;
+    if (!tag) { setQuickError("Enter a tag name first"); return; }
     setQuickAdding(true);
     setQuickError("");
     try {
@@ -316,8 +316,8 @@ export default function PartsAndPurchasingTab({ jobId, jobNumber }: Props) {
               />
               <button
                 onClick={quickAddPO}
-                disabled={!quickTag.trim() || quickAdding}
-                style={{ background: "#16a34a", color: "#fff", border: "none", borderRadius: 6, padding: "6px 14px", fontSize: 12, fontWeight: 700, cursor: !quickTag.trim() || quickAdding ? "not-allowed" : "pointer", opacity: (!quickTag.trim() || quickAdding) ? 0.5 : 1, whiteSpace: "nowrap" }}
+                disabled={quickAdding}
+                style={{ background: "#16a34a", color: "#fff", border: "none", borderRadius: 6, padding: "6px 14px", fontSize: 12, fontWeight: 700, cursor: quickAdding ? "not-allowed" : "pointer", opacity: quickAdding ? 0.5 : 1, whiteSpace: "nowrap" }}
               >
                 {quickAdding ? "Adding…" : "QUICK ADD"}
               </button>
