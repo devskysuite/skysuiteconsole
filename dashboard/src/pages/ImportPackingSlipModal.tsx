@@ -140,12 +140,13 @@ function parseOrderDetails(lines: string[]): ParsedOrder {
 // ── Save ───────────────────────────────────────────────────────────────────────
 interface SlipReceipt { file: File; orderNumber: string; vendor: string; orderDate: string; total: number; }
 
-async function savePackingSlip(poId: string, items: SlipItem[], receipts: SlipReceipt[]) {
+async function savePackingSlip(poId: string, items: SlipItem[], receipts: SlipReceipt[]): Promise<{ pdfError?: string }> {
   const poSnap = await getDoc(doc(db, "purchaseOrders", poId));
   const existing: any[] = ((poSnap.data()?.items) || []).map((i: any) => ({ ...i }));
 
   // Upload each packing slip PDF and build receipt records
   const receiptRecords: any[] = [];
+  let pdfError: string | undefined;
   for (const r of receipts) {
     let pdfUrl = "";
     try {
@@ -154,7 +155,10 @@ async function savePackingSlip(poId: string, items: SlipItem[], receipts: SlipRe
       const timeout = new Promise<never>((_, rej) => setTimeout(() => rej(new Error("upload timed out after 30s")), 30000));
       const upload = uploadBytes(sRef, r.file, { contentType: "application/pdf" }).then(s => getDownloadURL(s.ref));
       pdfUrl = await Promise.race([upload, timeout]);
-    } catch (e) { console.warn("Packing slip PDF upload failed:", e instanceof Error ? e.message : e); }
+    } catch (e: any) {
+      pdfError = e?.code ? `${e.code}: ${e.message}` : (e instanceof Error ? e.message : String(e));
+      console.error("[PDF upload]", e);
+    }
     receiptRecords.push({
       id: crypto.randomUUID(),
       billNumber: "",
@@ -212,6 +216,7 @@ async function savePackingSlip(poId: string, items: SlipItem[], receipts: SlipRe
     updates.bills = arrayUnion(...receiptRecords);
   }
   await updateDoc(doc(db, "purchaseOrders", poId), updates);
+  return { pdfError };
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -289,8 +294,13 @@ export default function ImportPackingSlipModal({
         orderDate: o.parsed.orderDate,
         total: o.parsed.total,
       }));
-      await savePackingSlip(targetPoId, items, receipts);
-      onClose();
+      const { pdfError } = await savePackingSlip(targetPoId, items, receipts);
+      if (pdfError) {
+        setError(`Saved — but PDF attachment failed: ${pdfError}`);
+        setSaving(false);
+      } else {
+        onClose();
+      }
     } catch (e) { console.error(e); setError("Failed to save. Please try again."); setSaving(false); setConfirming(false); }
   }
 

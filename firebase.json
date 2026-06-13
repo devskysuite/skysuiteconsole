@@ -14,14 +14,8 @@
       "runtime": "nodejs22"
     }
   ],
-  "storage": [
-    {
-      "bucket": "sky-suite-d14ff.firebasestorage.app",
-      "rules": "storage.rules"
-    },
-    {
-      "bucket": "sky-suite-d14ff.appspot.com",
-      "rules": "storage.rules"
-    }
-  ]
+  "storage": {
+    "bucket": "sky-suite-d14ff.firebasestorage.app",
+    "rules": "storage.rules"
+  }
 }
