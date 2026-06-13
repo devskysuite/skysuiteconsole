@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { arrayUnion, collection, doc, getDoc, getDocs, onSnapshot, query, updateDoc, where } from "firebase/firestore";
+import { arrayUnion, collection, doc, getDoc, getDocs, onSnapshot, query, runTransaction, updateDoc, where } from "firebase/firestore";
 import { auth, db } from "../firebase";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import CreatePOModal from "./CreatePOModal";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -200,6 +200,7 @@ function AddBillRow({ poId, poNumber, poVendor, onDone }: { poId: string; poNumb
 interface VisitPart { id: string; description: string; qty: number; unitCost: number; notes: string; visitNumber: number; visitDate: string; visitId: string; }
 
 export default function PartsAndPurchasingTab({ jobId, jobNumber }: Props) {
+  const navigate = useNavigate();
   const [pos, setPOs]         = useState<PurchaseOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [visitParts, setVisitParts] = useState<VisitPart[]>([]);
@@ -207,6 +208,54 @@ export default function PartsAndPurchasingTab({ jobId, jobNumber }: Props) {
   const [expandedPO, setExpandedPO]   = useState<string | null>(null);
   const [addingItemTo, setAddingItemTo] = useState<string | null>(null);
   const [addingBillTo, setAddingBillTo] = useState<string | null>(null);
+  const [quickTag, setQuickTag]       = useState("");
+  const [quickAdding, setQuickAdding] = useState(false);
+
+  async function quickAddPO() {
+    const tag = quickTag.trim();
+    if (!tag) return;
+    setQuickAdding(true);
+    try {
+      const poRef       = doc(collection(db, "purchaseOrders"));
+      const settingsRef = doc(db, "settings", "poSettings");
+      let assignedPoNumber = "";
+      await runTransaction(db, async (tx) => {
+        const settingsSnap = await tx.get(settingsRef);
+        if (settingsSnap.exists() && settingsSnap.data().nextPoNumber) {
+          const next = settingsSnap.data().nextPoNumber as number;
+          assignedPoNumber = String(next);
+          tx.set(settingsRef, { nextPoNumber: next + 1 }, { merge: true });
+        } else {
+          assignedPoNumber = `PO-${Date.now().toString(36).toUpperCase()}`;
+        }
+        tx.set(poRef, {
+          jobId, jobNumber,
+          poNumber:    assignedPoNumber,
+          status:      "Open",
+          vendor:      tag,
+          vendorType:  "Supplier",
+          poType:      "Vendor delivery",
+          poDate:      new Date().toISOString().slice(0, 10),
+          fieldOrder:  false,
+          tags:        tag,
+          description: tag,
+          department:  "General",
+          assignTo: "", assignedTo: "", requiredBy: "", projectManager: "",
+          taxRate: "HST ON (13%)", directPayerSalesTax: false, shipTo: "",
+          items: [], bills: [], subtotal: 0, taxAmount: 0, total: 0,
+          createdBy: auth.currentUser?.displayName || auth.currentUser?.email || "Unknown",
+          createdAt: new Date().toISOString().slice(0, 10),
+        });
+      });
+      setQuickTag("");
+      navigate(`/purchase-orders/${poRef.id}`);
+    } catch (e) {
+      console.error(e);
+      alert("Failed to create PO.");
+    } finally {
+      setQuickAdding(false);
+    }
+  }
 
   useEffect(() => {
     const unsub = onSnapshot(
@@ -258,9 +307,25 @@ export default function PartsAndPurchasingTab({ jobId, jobNumber }: Props) {
         <SectionHead
           title="Purchase Orders"
           action={
-            <button onClick={() => setAddPOOpen(true)} style={{ background: "#0d2e5e", color: "#fff", border: "none", borderRadius: 6, padding: "6px 16px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
-              + ADD PURCHASE ORDER
-            </button>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <input
+                style={{ padding: "6px 10px", border: "1px solid #d1d5db", borderRadius: 6, fontSize: 13, outline: "none", width: 200 }}
+                placeholder="Tag name (e.g. Olymel)…"
+                value={quickTag}
+                onChange={e => setQuickTag(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter") quickAddPO(); }}
+              />
+              <button
+                onClick={quickAddPO}
+                disabled={!quickTag.trim() || quickAdding}
+                style={{ background: "#16a34a", color: "#fff", border: "none", borderRadius: 6, padding: "6px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", opacity: (!quickTag.trim() || quickAdding) ? 0.5 : 1, whiteSpace: "nowrap" }}
+              >
+                {quickAdding ? "…" : "QUICK ADD"}
+              </button>
+              <button onClick={() => setAddPOOpen(true)} style={{ background: "#0d2e5e", color: "#fff", border: "none", borderRadius: 6, padding: "6px 16px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                + ADD PURCHASE ORDER
+              </button>
+            </div>
           }
         />
         <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden" }}>
