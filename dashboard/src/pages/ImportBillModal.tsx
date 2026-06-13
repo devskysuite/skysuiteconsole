@@ -59,10 +59,61 @@ async function extractLines(file: File): Promise<string[]> {
   return allLines;
 }
 
+// ── DigiKey Parser ───────────────────────────────────────────────────────────
+// DigiKey PO Acknowledgement format. Line items look like:
+//   "1 2 2 0 PART: 708-1380-ND DESC: CONN RCPT MALE 10P NICKEL SCREW 113.38000 226.76 T"
+//   = {lineNo} {qtyOrdered} {available} {backordered} PART: {partNo} DESC: {desc} {unitPrice} {amount} [T]
+const DK_MONTHS: Record<string, string> = { JAN:"01", FEB:"02", MAR:"03", APR:"04", MAY:"05", JUN:"06", JUL:"07", AUG:"08", SEP:"09", OCT:"10", NOV:"11", DEC:"12" };
+function normalizeDigiKeyDate(raw: string): string {
+  const m = raw.match(/(\d{1,2})-([A-Z]{3})-(\d{4})/i);
+  if (!m) return raw;
+  const mm = DK_MONTHS[m[2].toUpperCase()] || "01";
+  return `${m[3]}-${mm}-${m[1].padStart(2, "0")}`;
+}
+function parseDigiKey(lines: string[], full: string): ParsedInvoice {
+  const result: ParsedInvoice = { invoiceNumber: "", poNumber: "", vendor: "DigiKey", date: "", lines: [], subtotal: 0, taxAmount: 0, grandTotal: 0, taxLabel: "HST" };
+
+  const ack = full.match(/PO\s+Acknowledgement\s+(\d+)/i) || full.match(/WEB\s+ORDER\s+ID:\s*(\d+)/i);
+  if (ack) result.invoiceNumber = ack[1];
+
+  const po = full.match(/Purchase\s+Order:\s*([^\n]+)/i);
+  if (po) result.poNumber = po[1].trim();
+
+  const date = full.match(/Order\s+Date:\s*(\d{1,2}-[A-Z]{3}-\d{4})/i);
+  if (date) result.date = normalizeDigiKeyDate(date[1]);
+
+  // Line items
+  const lineRe = /^\d+\s+(\d+)\s+\d+\s+\d+\s+PART:\s*(\S+)\s+DESC:\s*(.+?)\s+([\d,]+\.\d+)\s+([\d,]+\.\d+)\s*T?\s*$/i;
+  for (const line of lines) {
+    const m = line.match(lineRe);
+    if (!m) continue;
+    const [, qtyStr, partNo, desc, upStr, totStr] = m;
+    const qty = parseFloat(qtyStr);
+    const unitPrice = parseFloat(upStr.replace(/,/g, ""));
+    const total = parseFloat(totStr.replace(/,/g, ""));
+    if (!(qty > 0)) continue;
+    result.lines.push({ partNo, description: desc.trim(), qty, uom: "EA", unitPrice, total, taxable: true, mode: "new", matchedItemId: null });
+  }
+
+  // Totals
+  const sales = full.match(/Sales\s+Amount\s+([\d,]+\.\d{2})/i);
+  if (sales) result.subtotal = parseFloat(sales[1].replace(/,/g, ""));
+  const hst = full.match(/\bHST\s+([\d,]+\.\d{2})/i);
+  if (hst) { result.taxAmount = parseFloat(hst[1].replace(/,/g, "")); result.taxLabel = "HST"; }
+  // Grand total: the standalone "Total {amount}" line (not "Total Sales and Estimated…")
+  const grand = full.match(/(?:^|\n)Total\s+([\d,]+\.\d{2})/i);
+  if (grand) result.grandTotal = parseFloat(grand[1].replace(/,/g, ""));
+  if (!result.grandTotal) result.grandTotal = result.subtotal + result.taxAmount;
+
+  return result;
+}
+
 // ── Invoice Parser ─────────────────────────────────────────────────────────────
 function parseInvoice(lines: string[]): ParsedInvoice {
   const result: ParsedInvoice = { invoiceNumber: "", poNumber: "", vendor: "", date: "", lines: [], subtotal: 0, taxAmount: 0, grandTotal: 0, taxLabel: "Tax" };
   const full = lines.join("\n");
+  // DigiKey has a distinct layout — parse it separately.
+  if (/digi-?key/i.test(full)) return parseDigiKey(lines, full);
   const invMatch = full.match(/invoice\s*(?:no\.?|number|#)?\s*:?\s*(\d{5,})/i);
   if (invMatch) result.invoiceNumber = invMatch[1];
   // PO number must start with a digit to avoid grabbing column headers like "ORDERED"
