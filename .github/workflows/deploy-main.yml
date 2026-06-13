@@ -34,5 +34,9 @@ jobs:
       - name: Deploy functions
         run: npx firebase-tools deploy --only functions --project sky-suite-d14ff --token "${{ secrets.FIREBASE_TOKEN }}" --non-interactive --force
 
-      - name: Deploy hosting and storage rules to production
-        run: npx firebase-tools deploy --only hosting,storage --project sky-suite-d14ff --token "${{ secrets.FIREBASE_TOKEN }}" --non-interactive
+      - name: Deploy hosting to production
+        run: npx firebase-tools deploy --only hosting --project sky-suite-d14ff --token "${{ secrets.FIREBASE_TOKEN }}" --non-interactive
+
+      - name: Deploy storage rules to production
+        run: npx firebase-tools deploy --only storage --project sky-suite-d14ff --token "${{ secrets.FIREBASE_TOKEN }}" --non-interactive
+        continue-on-error: true

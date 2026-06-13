@@ -67,15 +67,17 @@ export const dailyOnCallFill = onSchedule(
     // 2. Get access token
     const token = await getOutlookAccessToken();
 
-    // 3. Find the 365-day window
+    // 3. Find the window: look back 7 days to backfill any recent gaps
     const today = new Date();
     const todayStr = today.toISOString().slice(0, 10);
+    const lookBack = new Date(today); lookBack.setDate(lookBack.getDate() - 7);
+    const lookBackStr = lookBack.toISOString().slice(0, 10);
     const endDate = new Date(today); endDate.setDate(endDate.getDate() + 364);
     const endStr = endDate.toISOString().slice(0, 10);
 
-    // 4. Fetch existing on-call events
+    // 4. Fetch existing on-call events (including 7-day look-back window)
     const occupied = new Set();
-    let url = `/me/calendars/${encodeURIComponent(CAL_ID)}/calendarView?startDateTime=${todayStr}T00:00:00&endDateTime=${endStr}T23:59:59&$top=999&$select=id,subject,start`;
+    let url = `/me/calendars/${encodeURIComponent(CAL_ID)}/calendarView?startDateTime=${lookBackStr}T00:00:00&endDateTime=${endStr}T23:59:59&$top=999&$select=id,subject,start`;
     while (url) {
       const data = await graphGet(token, url.startsWith("https://") ? url.replace("https://graph.microsoft.com/v1.0", "") : url);
       (data.value || []).forEach(e => {
@@ -94,7 +96,7 @@ export const dailyOnCallFill = onSchedule(
     // and rebalance: person(day) = order(year)[ daysSinceJan1(year) % len ].
     // Each year restarts its order at index 0 on Jan 1. UTC math is DST-safe.
     const toAdd = [];
-    let cur = new Date(todayStr + "T00:00:00Z");
+    let cur = new Date(lookBackStr + "T00:00:00Z");
 
     while (cur.toISOString().slice(0, 10) <= endStr) {
       const d = cur.toISOString().slice(0, 10);
