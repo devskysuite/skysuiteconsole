@@ -143,24 +143,33 @@ async function savePackingSlip(poId: string, items: SlipItem[]) {
 
   for (const item of items) {
     if (!item.include) continue;
-    const matchIdx = existing.findIndex((e: any) =>
-      (e.name || "").toLowerCase() === item.partNo.toLowerCase()
-    );
+    const pn = item.partNo.toLowerCase().trim();
+    // Match existing item by name: exact → name-contains-partno → partno-contains-name
+    const matchIdx = existing.findIndex((e: any) => {
+      const en = (e.name || "").toLowerCase().trim();
+      return en === pn || (en.includes(pn) && pn.length >= 4) || (pn.includes(en) && en.length >= 4);
+    });
     if (matchIdx >= 0) {
+      // Packing slip confirms receipt — increment quantityReceived
+      const e = existing[matchIdx];
+      const newQtyRec = (e.quantityReceived || 0) + item.qty;
+      const fulfilled = (e.quantityOrdered || 0) > 0 && newQtyRec >= (e.quantityOrdered || 0);
       existing[matchIdx] = {
-        ...existing[matchIdx],
-        quantityOrdered: item.qty,
-        ...(!(existing[matchIdx].unitCost) ? { unitCost: item.unitPrice, totalCost: item.total } : {}),
+        ...e,
+        quantityReceived: newQtyRec,
+        fulfillmentStatus: fulfilled ? "Fulfilled" : "Pending",
+        ...(!e.unitCost ? { unitCost: item.unitPrice, totalCost: item.total } : {}),
       };
     } else {
+      // No prior invoice for this item — add it as fully received
       existing.push({
         id: crypto.randomUUID(),
         name: item.partNo, description: item.description,
-        quantityOrdered: item.qty, quantityReceived: 0,
+        quantityOrdered: item.qty, quantityReceived: item.qty,
         unitCost: item.unitPrice, totalCost: item.total,
-        taxable: true, unitOfMeasure: "EA",
+        taxable: true, unitOfMeasure: item.uom || "EA",
         costCode: "Materials", jobCostType: "Materials", revenueType: "Materials",
-        fulfillmentStatus: "Pending",
+        fulfillmentStatus: "Fulfilled",
       });
     }
   }
