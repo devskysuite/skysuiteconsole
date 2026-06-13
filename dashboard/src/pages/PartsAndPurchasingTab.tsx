@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { arrayUnion, collection, doc, getDoc, getDocs, onSnapshot, query, setDoc, updateDoc, where } from "firebase/firestore";
 import { auth, db } from "../firebase";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import CreatePOModal from "./CreatePOModal";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -200,7 +200,6 @@ function AddBillRow({ poId, poNumber, poVendor, onDone }: { poId: string; poNumb
 interface VisitPart { id: string; description: string; qty: number; unitCost: number; notes: string; visitNumber: number; visitDate: string; visitId: string; }
 
 export default function PartsAndPurchasingTab({ jobId, jobNumber }: Props) {
-  const navigate = useNavigate();
   const [pos, setPOs]         = useState<PurchaseOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [visitParts, setVisitParts] = useState<VisitPart[]>([]);
@@ -249,11 +248,10 @@ export default function PartsAndPurchasingTab({ jobId, jobNumber }: Props) {
         createdAt: today,
       });
       setQuickTag("");
-      navigate(`/purchase-orders/${newPoRef.id}`);
+      window.location.href = `/purchase-orders/${newPoRef.id}`;
     } catch (e: any) {
       console.error("[quickAddPO]", e);
       setQuickError(e?.message || "Failed to create PO.");
-    } finally {
       setQuickAdding(false);
     }
   }
@@ -308,32 +306,28 @@ export default function PartsAndPurchasingTab({ jobId, jobNumber }: Props) {
         <SectionHead
           title="Purchase Orders"
           action={
-            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
               <input
-                style={{ padding: "6px 10px", border: "1px solid #d1d5db", borderRadius: 6, fontSize: 13, outline: "none", width: 200 }}
+                style={{ padding: "6px 10px", border: "1px solid #d1d5db", borderRadius: 6, fontSize: 13, outline: "none", width: 180 }}
                 placeholder="Tag name (e.g. Olymel)…"
                 value={quickTag}
-                onChange={e => setQuickTag(e.target.value)}
+                onChange={e => { setQuickTag(e.target.value); setQuickError(""); }}
                 onKeyDown={e => { if (e.key === "Enter") quickAddPO(); }}
               />
               <button
                 onClick={quickAddPO}
                 disabled={!quickTag.trim() || quickAdding}
-                style={{ background: "#16a34a", color: "#fff", border: "none", borderRadius: 6, padding: "6px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", opacity: (!quickTag.trim() || quickAdding) ? 0.5 : 1, whiteSpace: "nowrap" }}
+                style={{ background: "#16a34a", color: "#fff", border: "none", borderRadius: 6, padding: "6px 14px", fontSize: 12, fontWeight: 700, cursor: !quickTag.trim() || quickAdding ? "not-allowed" : "pointer", opacity: (!quickTag.trim() || quickAdding) ? 0.5 : 1, whiteSpace: "nowrap" }}
               >
-                {quickAdding ? "…" : "QUICK ADD"}
+                {quickAdding ? "Adding…" : "QUICK ADD"}
               </button>
+              {quickError && <span style={{ fontSize: 12, color: "#dc2626", fontWeight: 600 }}>{quickError}</span>}
               <button onClick={() => setAddPOOpen(true)} style={{ background: "#0d2e5e", color: "#fff", border: "none", borderRadius: 6, padding: "6px 16px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
                 + ADD PURCHASE ORDER
               </button>
             </div>
           }
         />
-        {quickError && (
-          <div style={{ marginBottom: 8, padding: "8px 12px", background: "#fee2e2", border: "1px solid #fca5a5", borderRadius: 7, fontSize: 13, color: "#991b1b" }}>
-            {quickError}
-          </div>
-        )}
         <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden" }}>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
