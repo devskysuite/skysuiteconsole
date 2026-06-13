@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import * as pdfjsLib from "pdfjs-dist";
-import { collection, doc, getDoc, getDocs, orderBy, query, updateDoc } from "firebase/firestore";
-import { db } from "../firebase";
+import { arrayUnion, collection, doc, getDoc, getDocs, orderBy, query, updateDoc } from "firebase/firestore";
+import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
+import { auth, db, storage } from "../firebase";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   "pdfjs-dist/build/pdf.worker.min.mjs",
@@ -137,9 +138,34 @@ function parseOrderDetails(lines: string[]): ParsedOrder {
 }
 
 // ── Save ───────────────────────────────────────────────────────────────────────
-async function savePackingSlip(poId: string, items: SlipItem[]) {
+interface SlipReceipt { file: File; orderNumber: string; vendor: string; orderDate: string; total: number; }
+
+async function savePackingSlip(poId: string, items: SlipItem[], receipts: SlipReceipt[]) {
   const poSnap = await getDoc(doc(db, "purchaseOrders", poId));
   const existing: any[] = ((poSnap.data()?.items) || []).map((i: any) => ({ ...i }));
+
+  // Upload each packing slip PDF and build receipt records
+  const receiptRecords: any[] = [];
+  for (const r of receipts) {
+    let pdfUrl = "";
+    try {
+      const key = (r.orderNumber || r.file.name.replace(/\.pdf$/i, "")).replace(/[^a-zA-Z0-9_-]/g, "_");
+      const sRef = storageRef(storage, `receipts/${key}_${Date.now()}.pdf`);
+      const timeout = new Promise<never>((_, rej) => setTimeout(() => rej(new Error("timeout")), 8000));
+      const upload = uploadBytes(sRef, r.file, { contentType: "application/pdf" }).then(s => getDownloadURL(s.ref));
+      pdfUrl = await Promise.race([upload, timeout]);
+    } catch (e) { console.warn("Packing slip PDF upload failed:", e); }
+    receiptRecords.push({
+      id: crypto.randomUUID(),
+      billNumber: "",
+      receiptNumber: r.orderNumber || r.file.name,
+      vendor: r.vendor || "",
+      dateIssued: r.orderDate || new Date().toISOString().slice(0, 10),
+      total: r.total || 0,
+      pdfUrl,
+      createdBy: auth.currentUser?.displayName || auth.currentUser?.email || "Unknown",
+    });
+  }
 
   for (const item of items) {
     if (!item.include) continue;
@@ -182,6 +208,9 @@ async function savePackingSlip(poId: string, items: SlipItem[]) {
   if (!["Cancelled", "Draft"].includes(curStatus)) {
     updates.status = existing.length === 0 ? "Open" : allFulfilled ? "Fulfilled" : "Waiting on Material";
   }
+  if (receiptRecords.length > 0) {
+    updates.bills = arrayUnion(...receiptRecords);
+  }
   await updateDoc(doc(db, "purchaseOrders", poId), updates);
 }
 
@@ -200,7 +229,7 @@ export default function ImportPackingSlipModal({
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [parsing, setParsing]     = useState(false);
-  const [orders, setOrders]       = useState<Array<{ fileName: string; parsed: ParsedOrder }>>([]);
+  const [orders, setOrders]       = useState<Array<{ fileName: string; file: File; parsed: ParsedOrder }>>([]);
   const [items, setItems]         = useState<SlipItem[]>([]);
   const [rawLines, setRawLines]   = useState<string[]>([]);
   const [saving, setSaving]       = useState(false);
@@ -239,7 +268,7 @@ export default function ImportPackingSlipModal({
         const lines = await extractLines(file);
         allRaw.push(...lines);
         const parsed = parseOrderDetails(lines);
-        newOrders.push({ fileName: file.name, parsed });
+        newOrders.push({ fileName: file.name, file, parsed });
         allItems.push(...parsed.items.map(item => ({ ...item, source: parsed.orderNumber || file.name })));
       }
       setRawLines(allRaw);
@@ -252,8 +281,17 @@ export default function ImportPackingSlipModal({
   async function save() {
     if (!targetPoId) return;
     setSaving(true); setError(null);
-    try { await savePackingSlip(targetPoId, items); onClose(); }
-    catch (e) { console.error(e); setError("Failed to save. Please try again."); setSaving(false); setConfirming(false); }
+    try {
+      const receipts: SlipReceipt[] = orders.map(o => ({
+        file: o.file,
+        orderNumber: o.parsed.orderNumber,
+        vendor: o.parsed.vendor,
+        orderDate: o.parsed.orderDate,
+        total: o.parsed.total,
+      }));
+      await savePackingSlip(targetPoId, items, receipts);
+      onClose();
+    } catch (e) { console.error(e); setError("Failed to save. Please try again."); setSaving(false); setConfirming(false); }
   }
 
   function reset() { setOrders([]); setItems([]); setRawLines([]); setConfirming(false); }
