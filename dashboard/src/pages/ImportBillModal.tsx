@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import * as pdfjsLib from "pdfjs-dist";
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import { arrayUnion, collection, doc, getDoc, getDocs, query, runTransaction, updateDoc, where } from "firebase/firestore";
-import { auth, db, storage } from "../firebase";
+import { httpsCallable } from "firebase/functions";
+import { auth, db, storage, functions } from "../firebase";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   "pdfjs-dist/build/pdf.worker.min.mjs",
@@ -442,7 +443,7 @@ const MODE_COLORS: Record<LineMode, { bg: string; color: string; border: string 
 
 // ── Main Modal ─────────────────────────────────────────────────────────────────
 interface ImportJob {
-  id: string; file: File; parsing: boolean; searching: boolean;
+  id: string; file: File; parsing: boolean; searching: boolean; aiReading: boolean;
   invoice: ParsedInvoice | null; editLines: InvoiceLine[]; rawLines: string[];
   matchedPOs: POStub[] | null; selectedPO: POStub | null;
   poItems: POItem[]; poSearch: string;
@@ -482,7 +483,7 @@ export default function ImportBillModal({
     const pdfs = Array.from(files).filter(f => f.name.toLowerCase().endsWith(".pdf"));
     if (!pdfs.length) return;
     const newJobs: ImportJob[] = pdfs.map(f => ({
-      id: crypto.randomUUID(), file: f, parsing: true, searching: false,
+      id: crypto.randomUUID(), file: f, parsing: true, searching: false, aiReading: false,
       invoice: null, editLines: [], rawLines: [],
       matchedPOs: null, selectedPO: null,
       poItems: fixedPoId ? fixedPoItems : [], poSearch: "",
@@ -498,7 +499,39 @@ export default function ImportBillModal({
   async function parseJob(jobId: string, file: File) {
     try {
       const lines = await extractLines(file);
-      const parsed = parseInvoice(lines);
+      let parsed = parseInvoice(lines);
+
+      // If the free regex parsers found no line items, fall back to the AI reader.
+      if (parsed.lines.length === 0 && lines.length > 0) {
+        setJobs(prev => prev.map(j => j.id !== jobId ? j : { ...j, aiReading: true }));
+        try {
+          const call = httpsCallable(functions, "parseInvoiceAI");
+          const resp: any = await call({ text: lines.join("\n") });
+          const ai = resp?.data;
+          if (ai && Array.isArray(ai.lines) && ai.lines.length > 0) {
+            parsed = {
+              invoiceNumber: ai.invoiceNumber || parsed.invoiceNumber,
+              poNumber:      ai.poNumber || parsed.poNumber,
+              vendor:        ai.vendor || parsed.vendor,
+              date:          ai.date || parsed.date,
+              subtotal:      Number(ai.subtotal) || 0,
+              taxAmount:     Number(ai.taxAmount) || 0,
+              grandTotal:    Number(ai.grandTotal) || 0,
+              taxLabel:      ai.taxLabel || "Tax",
+              lines: ai.lines.map((l: any) => ({
+                partNo: String(l.partNo || ""), description: String(l.description || ""),
+                qty: Number(l.qty) || 0, uom: String(l.uom || "EA"),
+                unitPrice: Number(l.unitPrice) || 0, total: Number(l.total) || 0,
+                taxable: l.taxable !== false, mode: "new" as LineMode, matchedItemId: null,
+              })),
+            };
+          }
+        } catch (e) {
+          console.warn("[AI invoice parse] failed:", e);
+        }
+        setJobs(prev => prev.map(j => j.id !== jobId ? j : { ...j, aiReading: false }));
+      }
+
       let matchedPOs: POStub[] = [];
       let selectedPO: POStub | null = null;
       let poItems: POItem[] = fixedPoId ? fixedPoItems : [];
@@ -522,7 +555,7 @@ export default function ImportBillModal({
       }));
     } catch (e) {
       console.error(e);
-      setJobs(prev => prev.map(j => j.id !== jobId ? j : { ...j, parsing: false, searching: false }));
+      setJobs(prev => prev.map(j => j.id !== jobId ? j : { ...j, parsing: false, searching: false, aiReading: false }));
     }
   }
 
@@ -650,7 +683,7 @@ export default function ImportBillModal({
                 <div style={{ padding: "20px 22px", flex: 1, overflowY: "auto" }}>
                   {(job.parsing || job.searching) && (
                     <div style={{ textAlign: "center", padding: "40px 0", color: "#6b7280", fontSize: 14 }}>
-                      {job.parsing ? "Parsing PDF…" : "Searching for matching PO…"}
+                      {job.aiReading ? "Reading with AI…" : job.parsing ? "Parsing PDF…" : "Searching for matching PO…"}
                     </div>
                   )}
                   {!job.parsing && !job.searching && !job.invoice && (
